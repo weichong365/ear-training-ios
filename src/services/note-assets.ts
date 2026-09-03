@@ -1,5 +1,11 @@
-// Metro 需要静态 require 才能把 22 个离线钢琴定音采样打进 iOS 包。
+// Metro 需要静态 require 才能把 27 个离线钢琴定音采样打进 iOS 包。
+// 音域 G3(55)~A5(81)，覆盖出题与复盘键盘的全部发声范围。
 export const NOTE_ASSETS: Record<number, number> = {
+  55: require('../../assets/audio/piano/G3.wav'),
+  56: require('../../assets/audio/piano/Gs3.wav'),
+  57: require('../../assets/audio/piano/A3.wav'),
+  58: require('../../assets/audio/piano/As3.wav'),
+  59: require('../../assets/audio/piano/B3.wav'),
   60: require('../../assets/audio/piano/C4.wav'),
   61: require('../../assets/audio/piano/Cs4.wav'),
   62: require('../../assets/audio/piano/D4.wav'),
@@ -24,9 +30,5 @@ export const NOTE_ASSETS: Record<number, number> = {
   81: require('../../assets/audio/piano/A5.wav'),
 };
 
-// 低音复盘键盘使用专门的短采样；题目合成仍只加载上面的 C4-A5 精确采样。
-export const PIANO_NOTE_ASSETS: Record<number, number> = {
-  ...NOTE_ASSETS,
-  55: require('../../assets/audio/piano/G3.wav'),
-  59: require('../../assets/audio/piano/B3.wav'),
-};
+// 复盘键盘与题目合成共用同一套 G3-A5 精确采样。
+export const PIANO_NOTE_ASSETS: Record<number, number> = NOTE_ASSETS;

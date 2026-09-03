@@ -54,6 +54,7 @@
     "test:answers": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON ./scripts/answer-smoke.mjs",
     "test:storage": "node ./scripts/local-data-smoke.cjs",
     "test:province-tier": "node ./scripts/verify-province-tier.cjs",
+    "test:sample-range": "node ./scripts/verify-sample-range.cjs",
     "export:web": "expo export --platform web --output-dir dist-check"
   },
   "private": true

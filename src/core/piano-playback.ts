@@ -4,14 +4,10 @@ export type PianoPlaybackConfig = {
 };
 
 /**
- * 复盘钢琴扩展到 G3-A5。低音区沿用小程序的两份短采样并变速，
- * 其余音区使用对应音高的离线采样。
+ * 复盘钢琴音域 G3-A5（MIDI 55~81），全部使用对应音高的离线精确采样，
+ * 无需再依赖低音区变速补偿。
  */
 export function pianoPlaybackConfig(midi: number): PianoPlaybackConfig | null {
-  if (midi >= 55 && midi <= 58) {
-    return { sampleMidi: 55, playbackRate: Math.pow(2, (midi - 67) / 12) };
-  }
-  if (midi === 59) return { sampleMidi: 59, playbackRate: 0.5 };
-  if (midi >= 60 && midi <= 81) return { sampleMidi: midi, playbackRate: 1 };
+  if (midi >= 55 && midi <= 81) return { sampleMidi: midi, playbackRate: 1 };
   return null;
 }

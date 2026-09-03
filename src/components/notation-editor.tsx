@@ -17,6 +17,7 @@ const KEYS = [
   { value: 'C', label: 'C 大调' },
   { value: 'G', label: 'G 大调（1♯）' },
   { value: 'F', label: 'F 大调（1♭）' },
+  { value: 'a', label: 'a 小调' },
 ];
 export const DURATION_OPTIONS = [
   { value: 4, label: '全音符' },

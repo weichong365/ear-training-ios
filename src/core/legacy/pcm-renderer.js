@@ -1,11 +1,11 @@
 /**
  * 整题 PCM 渲染器
  *
- * 输入：C4-A5 每个半音一份定音 PCM16 样本 + 题目数据
+ * 输入：G3-A5 每个半音一份定音 PCM16 样本 + 题目数据
  * 输出：一段连续的单声道 PCM16 WAV。播放阶段不再移调、解码或逐音符调度。
  */
-// 钢琴采样统一为 20kHz，兼顾真机音质与主包体积。
-const SAMPLE_RATE = 20000;
+// 钢琴采样统一为 16kHz，进一步压缩主包体积（16kHz 对听辨足够）。
+const SAMPLE_RATE = 16000;
 const STANDARD_MIDI = 69;
 const STANDARD_START = 0.08;
 const QUESTION_START = 1.78;
