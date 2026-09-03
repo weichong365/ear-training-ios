@@ -1,0 +1,33 @@
+:root {
+  color-scheme: light;
+  --forest: #1f6f50;
+  --deep: #123f31;
+  --cream: #f6f0e3;
+  --ivory: #fffbf2;
+  --ink: #26342f;
+  --muted: #66756e;
+  --border: #d8e2da;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); background: var(--cream); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+a { color: inherit; }
+.shell { width: min(760px, calc(100% - 32px)); margin: 0 auto; }
+.nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+.brand { color: var(--deep); font-weight: 900; letter-spacing: .04em; text-decoration: none; }
+.nav-links { display: flex; gap: 18px; color: var(--muted); font-size: 14px; }
+.nav-links a { text-decoration: none; }
+.hero { margin: 8px 0 18px; padding: clamp(28px, 7vw, 52px); border-radius: 28px; color: white; background: linear-gradient(145deg, var(--deep), var(--forest)); }
+.eyebrow { margin: 0 0 8px; color: #d3aa5f; font-size: 12px; font-weight: 900; letter-spacing: .18em; }
+h1 { margin: 0; font-size: clamp(30px, 7vw, 48px); line-height: 1.12; }
+.lead { max-width: 570px; margin: 14px 0 0; color: rgba(255,255,255,.74); line-height: 1.8; }
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.card { padding: 22px; border: 1px solid var(--border); border-radius: 20px; background: var(--ivory); }
+.card h2 { margin: 0 0 10px; font-size: 18px; }
+.card p, .card li { color: var(--muted); font-size: 14px; line-height: 1.85; }
+.card p:last-child { margin-bottom: 0; }
+.card ul { margin: 8px 0 0; padding-left: 20px; }
+.notice { margin: 12px 0; padding: 18px 20px; border-radius: 16px; background: #e4f1e9; color: var(--deep); line-height: 1.8; }
+.footer { padding: 28px 0 42px; color: var(--muted); font-size: 12px; text-align: center; }
+.button { display: inline-block; margin-top: 16px; padding: 11px 16px; border-radius: 12px; color: white; background: var(--forest); font-weight: 800; text-decoration: none; }
+@media (max-width: 620px) { .grid { grid-template-columns: 1fr; } .nav-links { gap: 10px; font-size: 12px; } }
