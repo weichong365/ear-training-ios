@@ -8,7 +8,7 @@ workflows:
     instance_type: mac_mini_m2
     integrations:
       # 这个名字必须与 Codemagic 后台 Team integrations > Developer Portal 里填的 key 名称一致
-      app_store_connect: lianerdazi-asc-key
+      app_store_connect: eartraining-codemagic
     environment:
       ios_signing:
         distribution_type: app_store
