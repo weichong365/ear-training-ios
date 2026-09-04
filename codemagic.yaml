@@ -29,7 +29,8 @@ workflows:
       - name: 获取或创建 App Store 签名文件
         script: |
           CERTIFICATE_KEY_FILE="$CM_BUILD_DIR/codemagic_ios_distribution.key"
-          printf '%s' "$CERTIFICATE_PRIVATE_KEY" | tr -d '\r' > "$CERTIFICATE_KEY_FILE"
+          printf '%s' "$CERTIFICATE_PRIVATE_KEY_BASE64" \
+            | openssl base64 -d -A -out "$CERTIFICATE_KEY_FILE"
           chmod 600 "$CERTIFICATE_KEY_FILE"
           openssl rsa -in "$CERTIFICATE_KEY_FILE" -check -noout
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
