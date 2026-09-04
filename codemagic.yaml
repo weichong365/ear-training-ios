@@ -1,0 +1,48 @@
+# Codemagic 构建配置（免费计划，macOS M2 每月 500 分钟）
+# 用途：在无 Mac / 无国际信用卡的情况下，用 Codemagic 免费 CI 构建 iOS 并上传 App Store Connect。
+# 前置：见 app-store-pages/codemagic-部署指南.md（GitHub 推送 + App Store Connect API Key + Codemagic 集成）
+workflows:
+  ios-build:
+    name: 练耳搭子 iOS 生产构建
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    integrations:
+      # 这个名字必须与 Codemagic 后台 Team integrations > Developer Portal 里填的 key 名称一致
+      app_store_connect: lianerdazi-asc-key
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.lianerdazi.app
+      vars:
+        BUNDLE_ID: com.lianerdazi.app
+      node: v22.11.0
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: 安装 npm 依赖
+        script: npm ci
+      - name: 生成 iOS 原生工程（Expo prebuild）
+        script: npx expo prebuild --platform ios --non-interactive
+      - name: 检测 Xcode workspace 与 scheme
+        script: |
+          WORKSPACE_FILE=$(ls ios/*.xcworkspace | head -1)
+          SCHEME_NAME=$(basename "$WORKSPACE_FILE" .xcworkspace)
+          echo "workspace=$WORKSPACE_FILE"
+          echo "scheme=$SCHEME_NAME"
+          echo "XCODE_WORKSPACE=$WORKSPACE_FILE" >> "$CM_ENV"
+          echo "XCODE_SCHEME=$SCHEME_NAME" >> "$CM_ENV"
+      - name: 设置代码签名
+        script: xcode-project use-profiles
+      - name: 构建 ipa
+        script: |
+          xcode-project build-ipa \
+            --workspace "$CM_BUILD_DIR/$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      # 自动上传到 App Store Connect（不自动提交审核，首版由人工在后台提交）
+      app_store_connect:
+        auth: integration
+        submit_to_app_store: false
