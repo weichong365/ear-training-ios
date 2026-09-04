@@ -22,6 +22,7 @@ const {
 } = await import('../src/core/music-notation.ts');
 const {
   accidentalGlyphForPitch,
+  accidentalGlyphForKeySignature,
   defaultPitchSpelling,
   formatPitchSpelling,
   naturalMidiForPitchSpelling,
@@ -140,6 +141,9 @@ assert.equal(defaultPitchSpelling(80), 'G#5', 'MIDI 80 不应回退成 C5');
 assert.equal(naturalMidiForPitchSpelling(80), 79, 'G#5 必须写在 G5 的谱位');
 assert.equal(staffSvgYFromWrittenMidi(naturalMidiForPitchSpelling(80)), 23, 'G#5 谱位必须位于第五线上方的间');
 assert.equal(accidentalGlyphForPitch(80), '♯', 'G#5 谱面必须显示升号');
+assert.equal(accidentalGlyphForKeySignature(66, 'F#4', 'G'), '', 'G 大调中 F♯ 不应重复标临时升号');
+assert.equal(accidentalGlyphForKeySignature(65, 'Fn4', 'G'), '♮', 'G 大调中 F♮ 必须显示还原号');
+assert.equal(accidentalGlyphForKeySignature(70, 'Bb4', 'F'), '', 'F 大调中 B♭ 不应重复标临时降号');
 assert.equal(formatPitchSpelling(80), 'G♯5', '谱面与答案文本必须使用同一音名');
 assert.deepEqual(ledgerLineYs(60), [78], '中央 C 必须显示第一条下加线');
 assert.deepEqual(ledgerLineYs(81), [18], 'A5 必须显示第一条上加线');

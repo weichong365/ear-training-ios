@@ -36,6 +36,14 @@ export function accidentalGlyphForPitch(midi: number, preferred?: string) {
   return accidental === '#' ? '♯' : accidental === 'b' ? '♭' : accidental === 'n' ? '♮' : '';
 }
 
+/** Hide accidentals already supplied by the key signature; keep explicit naturals. */
+export function accidentalGlyphForKeySignature(midi: number, preferred: string | undefined, keySignature: string) {
+  const parts = pitchSpellingParts(midi, preferred);
+  if ((keySignature === 'G' && parts.letter === 'F' && parts.accidental === '#')
+    || (keySignature === 'F' && parts.letter === 'B' && parts.accidental === 'b')) return '';
+  return accidentalGlyphForPitch(midi, preferred);
+}
+
 export function formatPitchSpelling(midi: number, preferred?: string) {
   const parts = pitchSpellingParts(midi, preferred);
   const accidental = parts.accidental === '#' ? '♯' : parts.accidental === 'b' ? '♭' : parts.accidental === 'n' ? '♮' : '';

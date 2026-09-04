@@ -8,11 +8,55 @@ const path = require('path');
 const NOTE_NAMES = ['C', 'Cs', 'D', 'Ds', 'E', 'F', 'Fs', 'G', 'Gs', 'A', 'As', 'B'];
 const dir = path.join(__dirname, '..', 'assets', 'audio', 'piano');
 const bank = {};
+
+function goertzelPower(samples, sampleRate, frequency) {
+  const coefficient = 2 * Math.cos(2 * Math.PI * frequency / sampleRate);
+  let previous = 0;
+  let previous2 = 0;
+  for (const sample of samples) {
+    const current = sample + coefficient * previous - previous2;
+    previous2 = previous;
+    previous = current;
+  }
+  return previous2 * previous2 + previous * previous - coefficient * previous * previous2;
+}
+
+function verifySamplePitch(sample, midi, file) {
+  const start = Math.round(sample.sampleRate * 0.05);
+  const length = Math.min(sample.samples.length - start, Math.round(sample.sampleRate * 1.45));
+  const windowed = new Float64Array(length);
+  for (let index = 0; index < length; index++) {
+    const window = 0.5 - 0.5 * Math.cos(2 * Math.PI * index / Math.max(1, length - 1));
+    windowed[index] = sample.samples[start + index] * window;
+  }
+  const expected = 440 * 2 ** ((midi - 69) / 12);
+  const step = Math.max(0.25, expected / 1000);
+  let strongestFrequency = expected;
+  let strongestPower = 0;
+  for (let frequency = expected * 0.98; frequency <= expected * 1.02; frequency += step) {
+    const power = goertzelPower(windowed, sample.sampleRate, frequency);
+    if (power > strongestPower) {
+      strongestPower = power;
+      strongestFrequency = frequency;
+    }
+  }
+  const cents = 1200 * Math.log2(strongestFrequency / expected);
+  const nearbyNoise = [0.91, 0.94, 0.96, 1.04, 1.06, 1.09]
+    .map((ratio) => goertzelPower(windowed, sample.sampleRate, expected * ratio));
+  const noiseFloor = nearbyNoise.reduce((sum, value) => sum + value, 0) / nearbyNoise.length;
+  if (Math.abs(cents) > 18 || strongestPower < noiseFloor * 8) {
+    console.error(`采样音高异常 ${path.basename(file)}: 目标 MIDI ${midi}，偏差 ${cents.toFixed(1)} cents`);
+    return false;
+  }
+  return true;
+}
+
 for (let m = 55; m <= 81; m++) {
   const file = path.join(dir, `${NOTE_NAMES[m % 12]}${Math.floor(m / 12) - 1}.wav`);
   if (!fs.existsSync(file)) { console.error('缺采样文件:', file); process.exit(1); }
   const b = fs.readFileSync(file);
   bank[m] = pcm.parsePcm16Wav(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  if (!verifySamplePitch(bank[m], m, file)) process.exit(1);
 }
 
 function midisOf(question) {
@@ -67,6 +111,6 @@ for (const [type, makeSections] of Object.entries(cases)) {
   }
 }
 console.log(fail === 0
-  ? '\n✅ 全部通过：所有题型所有档 MIDI 均落在 [55,81]（G3-A5），音频渲染无缺采样'
+  ? '\n✅ 全部通过：27 个钢琴采样的基频与 MIDI 相符；所有题型所有档 MIDI 均落在 [55,81]（G3-A5），音频渲染无缺采样'
   : `\n❌ 共 ${fail} 处失败`);
 process.exit(fail === 0 ? 0 : 1);

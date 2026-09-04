@@ -7,7 +7,7 @@ import { MusicFlag, MusicNotehead, MusicRest, noteheadHalfWidth } from '@/compon
 import { meterBeatScale, meterCapacity, splitBars, sumDuration, targetTimedEvents } from '@/core/answer-sync';
 import type { ExamAnswer, NotationEvent } from '@/core/exam-answer';
 import { augmentationDotY, durationNotation, ledgerLineYs, STAFF_LINE_YS, staffStepFromWrittenMidi, stemDirectionForWrittenMidis, type DurationNotation, type StemDirection } from '@/core/music-notation';
-import { accidentalGlyphForPitch, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
+import { accidentalGlyphForKeySignature, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
 import type { ExamQuestion } from '@/core/provinces';
 import { naturalMidiFromStaffSvgY, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
 
@@ -50,8 +50,8 @@ function writtenMidi(event: NotationEvent) {
   return naturalMidiForPitchSpelling(event.midi, event.spelling);
 }
 
-function accidentalGlyph(event: NotationEvent) {
-  return accidentalGlyphForPitch(event.midi, event.spelling);
+function accidentalGlyph(event: NotationEvent, keySignature: string) {
+  return accidentalGlyphForKeySignature(event.midi, event.spelling, keySignature);
 }
 
 function pressPoint(event: GestureResponderEvent, width: number, height: number) {
@@ -245,7 +245,7 @@ export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, 
       {!!meter && <><SvgText x="82" y="46" fontSize="17" fontWeight="700" textAnchor="middle" fill={Brand.ink}>{meter.split('/')[0]}</SvgText><SvgText x="82" y="64" fontSize="17" fontWeight="700" textAnchor="middle" fill={Brand.ink}>{meter.split('/')[1]}</SvgText></>}
       {Array.from({ length: barCount + 1 }, (_, index) => <Line key={`bar-${index}`} x1={noteStart + index * barWidth} x2={noteStart + index * barWidth} y1="28" y2="68" stroke={staffLine} strokeWidth={index === barCount ? 1.5 : 1} />)}
       {rendered.map(({ item, index, x, y, written, notation }, renderedIndex) => {
-        const glyph = accidentalGlyph(item);
+        const glyph = accidentalGlyph(item, keySignature);
         const previous = rendered[renderedIndex - 1];
         const startsTuplet = notation.tuplet && (!previous?.notation.tuplet || previous.localBar !== rendered[renderedIndex].localBar);
         return <G key={`${item.inputOrder || index}-${rendered[renderedIndex].localBar}-${rendered[renderedIndex].beat}`}>
@@ -331,8 +331,11 @@ export function NotationEditor({ question, answer, unlocked, disabled, reviewCor
       const event = events[index];
       const written = writtenMidi(event);
       const spelling = naturalSpelling(written);
-      const offset = accidental === '#' ? 1 : accidental === 'b' ? -1 : 0;
-      events[index] = { ...event, midi: written + offset, spelling: accidental ? spelling.replace(/^([A-G])/, `$1${accidental}`) : spelling };
+      const note = accidental === '' ? applyKeySignature(written, answer.keySignature) : {
+        midi: written + (accidental === '#' ? 1 : accidental === 'b' ? -1 : 0),
+        spelling: spelling.replace(/^([A-G])/, `$1${accidental}`),
+      };
+      events[index] = { ...event, ...note };
     }
     setSelectedOrder(null);
     onChange({ ...answer, events });
