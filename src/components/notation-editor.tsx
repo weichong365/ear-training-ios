@@ -20,7 +20,6 @@ const KEYS = [
   { value: 'a', label: 'a 小调' },
 ];
 export const DURATION_OPTIONS = [
-  { value: 4, label: '全音符' },
   { value: 3, label: '附点二分' },
   { value: 2, label: '二分' },
   { value: 1.5, label: '附点四分' },

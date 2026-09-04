@@ -65,8 +65,11 @@ assert.equal(answerIsComplete(chordQuestion, chordAnswer), true);
 assert.equal(scoreQuestion(chordQuestion, { ...chordAnswer, pitches: [60, 64, 69] }).score, 0, '基础题出现部分音正确时不应给部分分');
 
 const qualityOnlyQuestion = { ...chordQuestion, answerMode: 'qualityFill', answerText: 'C4 E4 G4' };
-assert.equal(answerIsComplete(qualityOnlyQuestion, { ...emptyExamAnswer(), quality: '大三和弦 · 原位' }), true);
-assert.equal(scoreQuestion(qualityOnlyQuestion, { ...emptyExamAnswer(), quality: '大三和弦 · 原位' }).correct, true);
+assert.equal(answerIsComplete(qualityOnlyQuestion, { ...emptyExamAnswer(), quality: '大三和弦' }), false, '和弦性质题未选转位时不应允许提交');
+assert.equal(answerIsComplete(qualityOnlyQuestion, { ...emptyExamAnswer(), quality: '大三和弦', inversion: '原位' }), true);
+assert.equal(scoreQuestion(qualityOnlyQuestion, { ...emptyExamAnswer(), quality: '大三和弦', inversion: '原位' }).correct, true);
+assert.equal(formatExamAnswer(qualityOnlyQuestion, { ...emptyExamAnswer(), quality: '大三和弦', inversion: '原位' }), '大三和弦 · 原位');
+assert.equal(scoreQuestion(qualityOnlyQuestion, { ...emptyExamAnswer(), quality: '大三和弦 · 原位' }).correct, true, '旧版本保存的组合答案应继续可批改');
 assert.equal(formatCorrectAnswer(qualityOnlyQuestion), '大三和弦 · 原位', '只填性质题不应把音高显示成正确答案');
 
 const staffAndQualityQuestion = { ...chordQuestion, answerMode: 'staff+quality', answerText: 'C4 E4 G4' };

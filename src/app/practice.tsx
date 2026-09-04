@@ -10,7 +10,7 @@ import { NotationEditor } from '@/components/notation-editor';
 import { PianoKeyboard } from '@/components/piano-keyboard';
 import { TeacherGradeMark } from '@/components/teacher-grade-mark';
 import { generateQuestionSet, type PracticeGenerateOptions, type PracticeMode, type PracticeProfile } from '@/core';
-import { answerIsComplete, CHORD_QUALITIES, emptyExamAnswer, formatCorrectAnswer, formatExamAnswer, isTimedQuestion, needsPitch, needsQuality, scoreQuestion, type ExamAnswer } from '@/core/exam-answer';
+import { answerIsComplete, CHORD_INVERSIONS, CHORD_QUALITY_NAMES, emptyExamAnswer, formatCorrectAnswer, formatExamAnswer, isTimedQuestion, needsPitch, needsQuality, scoreQuestion, type ExamAnswer } from '@/core/exam-answer';
 import type { ExamQuestion } from '@/core/provinces';
 import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
 import { playPianoNote, playQuestionAudio, stopQuestionAudio } from '@/services/audio-engine';
@@ -159,6 +159,9 @@ export default function PracticeScreen() {
   const compactPitchMode = mode === 'single' || mode === 'group' || mode === 'interval' || mode === 'connection' || mode === 'chord' || mode === 'chordQuality' || mode === 'chordPitch';
   const qualityOnly = scoringQuestion ? needsQuality(scoringQuestion) && !needsPitch(scoringQuestion) : false;
   const isConnection = question?.type === 'intervalConnection';
+  const legacyQualityParts = answer.quality.split(' · ');
+  const selectedChordQuality = legacyQualityParts[0] || '';
+  const selectedChordInversion = answer.inversion || legacyQualityParts[1] || '';
 
   useEffect(() => {
     if (!wrongId) return;
@@ -367,14 +370,14 @@ export default function PracticeScreen() {
                 );
               })}
             </View> : qualityOnly ? <View style={styles.qualityBlock}>
-              <Text style={styles.qualityLabel}>先选性质，再选转位</Text>
-              <View style={styles.qualityGrid}>
-                {CHORD_QUALITIES.map((quality) => (
-                  <Pressable key={quality} accessibilityRole="radio" accessibilityState={{ selected: answer.quality === quality, disabled: phase !== 'answering' }} disabled={phase !== 'answering'} onPress={() => { if (phase !== 'answering') return; Haptics.selectionAsync(); setAnswer({ ...answer, quality }); }} style={({ pressed }) => [styles.qualityOption, answer.quality === quality && styles.qualityActive, pressed && styles.pressed]}>
-                    <Text style={[styles.qualityText, answer.quality === quality && styles.qualityTextActive]}>{quality}</Text>
-                  </Pressable>
-                ))}
-              </View>
+              <Text style={styles.qualityLabel}>和弦性质</Text>
+              <View style={styles.qualityGrid}>{CHORD_QUALITY_NAMES.map((quality) => (
+                <Pressable key={quality} accessibilityRole="radio" accessibilityState={{ selected: selectedChordQuality === quality, disabled: phase !== 'answering' }} disabled={phase !== 'answering'} onPress={() => { if (phase !== 'answering') return; Haptics.selectionAsync(); setAnswer({ ...answer, quality, inversion: selectedChordInversion }); }} style={({ pressed }) => [styles.qualityOption, selectedChordQuality === quality && styles.qualityActive, pressed && styles.pressed]}><Text style={[styles.qualityText, selectedChordQuality === quality && styles.qualityTextActive]}>{quality}</Text></Pressable>
+              ))}</View>
+              <Text style={styles.qualityLabel}>转位</Text>
+              <View style={styles.qualityGrid}>{CHORD_INVERSIONS.map((inversion) => (
+                <Pressable key={inversion} accessibilityRole="radio" accessibilityState={{ selected: selectedChordInversion === inversion, disabled: phase !== 'answering' }} disabled={phase !== 'answering'} onPress={() => { if (phase !== 'answering') return; Haptics.selectionAsync(); setAnswer({ ...answer, quality: selectedChordQuality, inversion }); }} style={({ pressed }) => [styles.qualityOption, selectedChordInversion === inversion && styles.qualityActive, pressed && styles.pressed]}><Text style={[styles.qualityText, selectedChordInversion === inversion && styles.qualityTextActive]}>{inversion}</Text></Pressable>
+              ))}</View>
             </View> : <AnswerStaff compact={compactPitchMode} pitches={answer.pitches} spellings={answer.spellings} slots={answerSlots(scoringQuestion)} stacked={question.type === 'chord' || Boolean(question.harmonic)} maxStack={maxStack(scoringQuestion)} disabled={phase !== 'answering'} tone={phase === 'feedback' ? correct ? 'green' : 'red' : ''} showCorrect={phase === 'feedback' && !correct} correctPitches={question.midis || []} correctSpellings={Array.isArray(question.spellings) ? question.spellings as string[] : []} emptyText={phase === 'ready' ? '播放题目后开始作答' : phase === 'answering' ? '点击五线谱写入答案' : ''} onChange={changeBasic} onDragChange={setDragging} />}
             {phase === 'feedback' && (timed ? <View style={styles.reviewLine}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>正确答案：</Text>见绿色谱面</Text><View style={styles.reviewAnswerRow}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>你的答案：</Text>见谱面</Text><TeacherGradeMark correct={correct} size={36} /></View></View> : <View style={[styles.reviewLine, compactPitchMode && styles.compactReviewLine]}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>正确答案：</Text>{formatCorrectAnswer(scoringQuestion)}</Text><View style={styles.reviewAnswerRow}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>你的答案：</Text>{formatExamAnswer(scoringQuestion, answer)}</Text><TeacherGradeMark correct={correct} size={compactPitchMode ? 30 : 36} /></View></View>)}
           </View>

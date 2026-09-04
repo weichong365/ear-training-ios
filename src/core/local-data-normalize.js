@@ -90,6 +90,7 @@ function normalizeAnswer(value) {
     meter: text(answer.meter),
     keySignature: text(answer.keySignature),
     quality: text(answer.quality),
+    inversion: text(answer.inversion),
     choiceIndex: Number.isInteger(answer.choiceIndex) && answer.choiceIndex >= 0 ? answer.choiceIndex : null,
   };
 }

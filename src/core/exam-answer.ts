@@ -22,6 +22,7 @@ export type ExamAnswer = {
   meter: string;
   keySignature: string;
   quality: string;
+  inversion: string;
   choiceIndex: number | null;
 };
 
@@ -41,6 +42,7 @@ export function emptyExamAnswer(): ExamAnswer {
     meter: '',
     keySignature: '',
     quality: '',
+    inversion: '',
     choiceIndex: null,
   };
 }
@@ -111,7 +113,10 @@ export function scoreQuestion(question: ExamQuestion, answer: ExamAnswer): Quest
       ? sameUnorderedMidis(answer.pitches, targetPitches(question))
       : sameOrderedMidis(answer.pitches, targetPitches(question))
   );
-  const qualityCorrect = !needsQuality(question) || answer.quality === expectedQuality(question);
+  const suppliedQuality = question.type === 'chord' && answer.inversion
+    ? `${answer.quality} · ${answer.inversion}`
+    : answer.quality;
+  const qualityCorrect = !needsQuality(question) || suppliedQuality === expectedQuality(question);
   const correct = pitchCorrect && qualityCorrect;
   return { score: correct ? totalPoints : 0, total: totalPoints, ratio: correct ? 1 : 0, correct };
 }
@@ -124,6 +129,7 @@ export function answerIsStarted(answer: ExamAnswer) {
     answer.meter ||
     answer.keySignature ||
     answer.quality ||
+    answer.inversion ||
     answer.choiceIndex !== null
   );
 }
@@ -142,7 +148,9 @@ export function answerIsComplete(question: ExamQuestion, answer: ExamAnswer) {
     answer.pitches.length === targetCount
     && answer.pitches.every(Number.isFinite)
   );
-  const qualityReady = !needsQuality(question) || Boolean(answer.quality);
+  const qualityReady = !needsQuality(question) || (question.type === 'chord'
+    ? Boolean(answer.quality && (answer.inversion || answer.quality.includes(' · ')))
+    : Boolean(answer.quality));
   return pitchReady && qualityReady;
 }
 
@@ -169,7 +177,9 @@ export function formatExamAnswer(question: ExamQuestion, answer: ExamAnswer) {
   if (answer.pitches.length) {
     parts.push(answer.pitches.flatMap((midi, index) => Number.isFinite(midi) ? [pitchName(midi, answer.accidentals[index], answer.spellings[index])] : []).join(' '));
   }
-  if (answer.quality) parts.push(answer.quality);
+  if (answer.quality) parts.push(question.type === 'chord' && answer.inversion
+    ? `${answer.quality} · ${answer.inversion}`
+    : answer.quality);
   return parts.join(' · ') || '未作答';
 }
 
@@ -190,5 +200,7 @@ export const INTERVAL_QUALITIES = [
   '纯五度', '小六度', '大六度', '小七度', '大七度', '纯八度',
 ];
 
-export const CHORD_QUALITIES = ['大三和弦', '小三和弦', '增三和弦', '减三和弦']
-  .flatMap((quality) => ['原位', '第一转位', '第二转位'].map((inversion) => `${quality} · ${inversion}`));
+export const CHORD_QUALITY_NAMES = ['大三和弦', '小三和弦', '增三和弦', '减三和弦'];
+export const CHORD_INVERSIONS = ['原位', '第一转位', '第二转位'];
+export const CHORD_QUALITIES = CHORD_QUALITY_NAMES
+  .flatMap((quality) => CHORD_INVERSIONS.map((inversion) => `${quality} · ${inversion}`));

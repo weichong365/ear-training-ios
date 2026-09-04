@@ -13,7 +13,8 @@ import { Fonts, Radius, TouchTarget, TypeScale } from '@/constants/theme';
 import {
   answerIsComplete,
   answerIsStarted,
-  CHORD_QUALITIES,
+  CHORD_INVERSIONS,
+  CHORD_QUALITY_NAMES,
   emptyExamAnswer,
   formatCorrectAnswer,
   formatExamAnswer,
@@ -104,8 +105,10 @@ function ExamQuestionCard({ question, index, answer, unlocked, playCount, active
   const audioBusy = Boolean(activeAudioId || preparingId);
   const maxPlays = Number(question.repeatCount) || 3;
   const requiredPitches = targetPitches(question).length;
-  const qualities = question.type === 'interval' ? INTERVAL_QUALITIES : CHORD_QUALITIES;
   const currentComplete = answerIsComplete(question, answer);
+  const legacyQualityParts = answer.quality.split(' · ');
+  const selectedChordQuality = legacyQualityParts[0] || '';
+  const selectedChordInversion = answer.inversion || legacyQualityParts[1] || '';
 
   function update(next: ExamAnswer) {
     if (!review && unlocked) onUpdate(question, index, next);
@@ -167,7 +170,12 @@ function ExamQuestionCard({ question, index, answer, unlocked, playCount, active
             })}</View> : <AnswerStaff pitches={answer.pitches} spellings={answer.spellings || []} slots={basicStack(question) ? 1 : basicSlots(question)} stacked={basicStack(question)} maxStack={basicStack(question) ? requiredPitches : 1} ink disabled={!unlocked || review} tone={review ? result?.correct ? 'green' : 'red' : ''} correctPitches={targetPitches(question)} correctSpellings={Array.isArray(question.spellings) ? question.spellings as string[] : []} showCorrect={review && !result?.correct} onChange={updateBasic} />}
             {!review && <View style={styles.answerActions}><Pressable accessibilityRole="button" accessibilityState={{ disabled: !answer.pitches.some(Number.isFinite) }} disabled={!answer.pitches.some(Number.isFinite)} onPress={() => update({ ...answer, pitches: answer.pitches.slice(0, -1), spellings: (answer.spellings || []).slice(0, -1) })} style={styles.actionButton}><Text style={styles.actionText}>撤销一笔</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ disabled: !answer.pitches.some(Number.isFinite) }} disabled={!answer.pitches.some(Number.isFinite)} onPress={() => update({ ...answer, pitches: [], spellings: [] })} style={styles.actionButton}><Text style={styles.actionText}>清空</Text></Pressable></View>}
           </>}
-          {needsQuality(question) && <View style={styles.qualityBlock}><Text style={styles.answerHint}>请选择音程或和弦性质</Text><View style={styles.qualityGrid}>{qualities.map((quality) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: answer.quality === quality, disabled: !unlocked || review }} key={quality} disabled={!unlocked || review} onPress={() => { Haptics.selectionAsync(); update({ ...answer, quality }); }} style={({ pressed }) => [styles.qualityOption, answer.quality === quality && styles.qualityActive, pressed && styles.pressed]}><Text style={[styles.qualityText, answer.quality === quality && styles.qualityTextActive]}>{quality}</Text></Pressable>)}</View></View>}
+          {needsQuality(question) && (question.type === 'interval'
+            ? <View style={styles.qualityBlock}><Text style={styles.answerHint}>音程性质</Text><View style={styles.qualityGrid}>{INTERVAL_QUALITIES.map((quality) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: answer.quality === quality, disabled: !unlocked || review }} key={quality} disabled={!unlocked || review} onPress={() => { Haptics.selectionAsync(); update({ ...answer, quality }); }} style={({ pressed }) => [styles.qualityOption, answer.quality === quality && styles.qualityActive, pressed && styles.pressed]}><Text style={[styles.qualityText, answer.quality === quality && styles.qualityTextActive]}>{quality}</Text></Pressable>)}</View></View>
+            : <View style={styles.qualityBlock}>
+              <Text style={styles.answerHint}>和弦性质</Text><View style={styles.qualityGrid}>{CHORD_QUALITY_NAMES.map((quality) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: selectedChordQuality === quality, disabled: !unlocked || review }} key={quality} disabled={!unlocked || review} onPress={() => { Haptics.selectionAsync(); update({ ...answer, quality, inversion: selectedChordInversion }); }} style={({ pressed }) => [styles.qualityOption, selectedChordQuality === quality && styles.qualityActive, pressed && styles.pressed]}><Text style={[styles.qualityText, selectedChordQuality === quality && styles.qualityTextActive]}>{quality}</Text></Pressable>)}</View>
+              <Text style={styles.answerHint}>转位</Text><View style={styles.qualityGrid}>{CHORD_INVERSIONS.map((inversion) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: selectedChordInversion === inversion, disabled: !unlocked || review }} key={inversion} disabled={!unlocked || review} onPress={() => { Haptics.selectionAsync(); update({ ...answer, quality: selectedChordQuality, inversion }); }} style={({ pressed }) => [styles.qualityOption, selectedChordInversion === inversion && styles.qualityActive, pressed && styles.pressed]}><Text style={[styles.qualityText, selectedChordInversion === inversion && styles.qualityTextActive]}>{inversion}</Text></Pressable>)}</View>
+            </View>)}
         </>}
         {result ? <View style={styles.reviewLine}><View style={styles.reviewCopy}><Text style={styles.reviewAnswer}>正确答案：{formatCorrectAnswer(question)}</Text><Text style={styles.reviewCandidate}>你的答案：{formatExamAnswer(question, answer)}</Text><Text style={styles.reviewScore}>得分 {result.score.toFixed(1).replace(/\.0$/, '')} / {result.total.toFixed(1).replace(/\.0$/, '')}</Text></View><TeacherGradeMark correct={result.correct} size={48} /></View> : <Text style={[styles.completionText, currentComplete && styles.completionDone]}>{currentComplete ? '本题已完整作答' : '作答内容会自动保存'}</Text>}
       </View>
