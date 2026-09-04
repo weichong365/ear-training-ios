@@ -1,5 +1,5 @@
 import { router, type Href } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppIcon } from '@/components/app-icon';
@@ -7,6 +7,7 @@ import { Fonts, TouchTarget, TypeScale } from '@/constants/theme';
 import { generateProvincePaper, getProvinceFramework, getProvinceVariants, PROVINCES, type ProvinceId } from '@/core/provinces';
 import { emptyExamAnswer } from '@/core/exam-answer';
 import { getActiveExamSession, saveExamSession, type ExamSession } from '@/services/local-data';
+import { useProvince } from '@/services/province-context';
 
 const EXAM_PAPER_ROUTE = '/exam-paper' as Href;
 
@@ -19,13 +20,24 @@ const PAPER = {
 } as const;
 
 export default function ExamScreen() {
+  const { provinceId: selectedProvince } = useProvince();
   const [provinceId, setProvinceId] = useState<ProvinceId>('zhejiang');
   const [variantIndex, setVariantIndex] = useState(0);
   const [activeSession, setActiveSession] = useState<ExamSession | null>(null);
+  const [creating, setCreating] = useState(false);
+  const syncedProvince = useRef(false);
   const variants = useMemo(() => getProvinceVariants(provinceId), [provinceId]);
   const framework = useMemo(() => getProvinceFramework(provinceId, variantIndex), [provinceId, variantIndex]);
 
   useEffect(() => { getActiveExamSession().then(setActiveSession); }, []);
+
+  useEffect(() => {
+    // 首页带入的已选省份：首次就绪时同步到本地选择，之后用户手动切换不被覆盖。
+    if (selectedProvince && !syncedProvince.current) {
+      setProvinceId(selectedProvince);
+      syncedProvince.current = true;
+    }
+  }, [selectedProvince]);
 
   function selectProvince(id: ProvinceId) {
     setProvinceId(id);
@@ -33,19 +45,27 @@ export default function ExamScreen() {
   }
 
   async function createPaper() {
-    const paper = generateProvincePaper(provinceId, variantIndex);
-    const answers = Object.fromEntries(paper.questions.map((question) => [question.id, emptyExamAnswer()]));
-    const session: ExamSession = {
-      paper,
-      answers,
-      playCounts: {},
-      unlockedIds: [],
-      currentIndex: 0,
-      updatedAt: paper.createdAt,
-    };
-    await saveExamSession(session);
-    setActiveSession(session);
-    router.push(EXAM_PAPER_ROUTE);
+    if (creating) return;
+    setCreating(true);
+    try {
+      const paper = generateProvincePaper(provinceId, variantIndex);
+      const answers = Object.fromEntries(paper.questions.map((question) => [question.id, emptyExamAnswer()]));
+      const session: ExamSession = {
+        paper,
+        answers,
+        playCounts: {},
+        unlockedIds: [],
+        currentIndex: 0,
+        updatedAt: paper.createdAt,
+      };
+      await saveExamSession(session);
+      setActiveSession(session);
+      router.push(EXAM_PAPER_ROUTE);
+    } catch {
+      Alert.alert('试卷未能创建', '请检查设备存储后重试。');
+    } finally {
+      setCreating(false);
+    }
   }
 
   function startNew() {
@@ -55,7 +75,7 @@ export default function ExamScreen() {
     }
     Alert.alert('开始新试卷？', '当前未交卷进度会被新试卷替换。', [
       { text: '取消', style: 'cancel' },
-      { text: '开始新卷', style: 'destructive', onPress: createPaper },
+      { text: '开始新卷', style: 'destructive', onPress: () => void createPaper() },
     ]);
   }
 
@@ -125,8 +145,8 @@ export default function ExamScreen() {
         </View>
       </View>
 
-      <Pressable accessibilityRole="button" onPress={startNew} style={({ pressed }) => [styles.startButton, pressed && styles.pressed]}>
-        <Text style={styles.startText}>{activeSession ? '生成并开始新试卷' : '开始整卷模拟'}</Text>
+      <Pressable accessibilityRole="button" accessibilityState={{ disabled: creating, busy: creating }} disabled={creating} onPress={startNew} style={({ pressed }) => [styles.startButton, creating && styles.startDisabled, pressed && styles.pressed]}>
+        <Text style={styles.startText}>{creating ? '正在生成试卷…' : activeSession ? '生成并开始新试卷' : '开始整卷模拟'}</Text>
       </Pressable>
       <Text style={styles.footnote}>交卷前可退出页面，答题内容和播放次数会保存在当前设备。</Text>
     </ScrollView>
@@ -172,6 +192,7 @@ const styles = StyleSheet.create({
   sectionName: { flex: 1, marginLeft: 10, color: PAPER.ink, fontSize: TypeScale.footnote, fontWeight: '700' },
   sectionCount: { color: PAPER.muted, fontSize: TypeScale.caption },
   startButton: { minHeight: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 4, backgroundColor: PAPER.ink },
+  startDisabled: { opacity: 0.5 },
   startText: { color: '#FFFFFF', fontSize: TypeScale.subheadline, fontWeight: '900' },
   footnote: { paddingHorizontal: 6, color: PAPER.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' },
   pressed: { opacity: 0.72 },

@@ -40,29 +40,29 @@ export function HandIcon({ name, size = 48, color = '#2e8b57' }: HandIconProps) 
   return (
     <Svg width={size} height={size} viewBox="0 0 48 48">
       {name === 'single-note' && (
-        <G rotation={-2} origin="24,24">
-          <Ellipse cx={20} cy={37} rx={8.5} ry={5.6} stroke={color} strokeWidth={SW} fill="none" rotation={-14} origin="20,37" />
+        <G transform="rotate(-2 24 24)">
+          <Ellipse cx={20} cy={37} rx={8.5} ry={5.6} stroke={color} strokeWidth={SW} fill="none" transform="rotate(-14 20 37)" />
           <Line x1={28} y1={20} x2={28} y2={37} stroke={color} strokeWidth={SW} strokeLinecap="round" />
         </G>
       )}
       {name === 'interval' && (
-        <G rotation={2} origin="24,24">
-          <Ellipse cx={12} cy={37} rx={5.8} ry={4.4} fill={color} rotation={-14} origin="12,37" />
+        <G transform="rotate(2 24 24)">
+          <Ellipse cx={12} cy={37} rx={5.8} ry={4.4} fill={color} transform="rotate(-14 12 37)" />
           <Line x1={17} y1={18} x2={17} y2={37} stroke={color} strokeWidth={SW} strokeLinecap="round" />
-          <Ellipse cx={37} cy={29} rx={5.8} ry={4.4} fill={color} rotation={-14} origin="37,29" />
+          <Ellipse cx={37} cy={29} rx={5.8} ry={4.4} fill={color} transform="rotate(-14 37 29)" />
           <Line x1={42} y1={10} x2={42} y2={29} stroke={color} strokeWidth={SW} strokeLinecap="round" />
         </G>
       )}
       {name === 'chord' && (
         <G>
-          <Ellipse cx={19} cy={42} rx={8} ry={5} stroke={color} strokeWidth={SW} fill="none" rotation={-14} origin="19,42" />
-          <Ellipse cx={19} cy={33} rx={8} ry={5} stroke={color} strokeWidth={SW} fill="none" rotation={-14} origin="19,33" />
-          <Ellipse cx={19} cy={24} rx={8} ry={5} stroke={color} strokeWidth={SW} fill="none" rotation={-14} origin="19,24" />
+          <Ellipse cx={19} cy={42} rx={8} ry={5} stroke={color} strokeWidth={SW} fill="none" transform="rotate(-14 19 42)" />
+          <Ellipse cx={19} cy={33} rx={8} ry={5} stroke={color} strokeWidth={SW} fill="none" transform="rotate(-14 19 33)" />
+          <Ellipse cx={19} cy={24} rx={8} ry={5} stroke={color} strokeWidth={SW} fill="none" transform="rotate(-14 19 24)" />
           <Line x1={26.5} y1={12} x2={26.5} y2={42} stroke={color} strokeWidth={SW} strokeLinecap="round" />
         </G>
       )}
       {name === 'rhythm' && (
-        <G rotation={-1} origin="24,24">
+        <G transform="rotate(-1 24 24)">
           <Line x1={8} y1={8} x2={18} y2={22} stroke={color} strokeWidth={SW} strokeLinecap="round" />
           <Line x1={18} y1={8} x2={8} y2={22} stroke={color} strokeWidth={SW} strokeLinecap="round" />
           <Line x1={30} y1={8} x2={40} y2={22} stroke={color} strokeWidth={SW} strokeLinecap="round" />
@@ -71,13 +71,13 @@ export function HandIcon({ name, size = 48, color = '#2e8b57' }: HandIconProps) 
         </G>
       )}
       {name === 'mixed' && (
-        <G rotation={-3} origin="24,24">
+        <G transform="rotate(-3 24 24)">
           <Rect x={14} y={6} width={20} height={34} rx={2.5} stroke={color} strokeWidth={SW} fill="none" />
           <Path d="M34 6 L34 12 L28 12" stroke={color} strokeWidth={SW} fill="none" strokeLinejoin="round" />
           <Line x1={19} y1={22} x2={29} y2={22} stroke={color} strokeWidth={1.1} strokeLinecap="round" opacity={0.55} />
           <Line x1={19} y1={29} x2={29} y2={29} stroke={color} strokeWidth={1.1} strokeLinecap="round" opacity={0.55} />
-          <Ellipse cx={21} cy={17.5} rx={1.6} ry={1.6} fill={color} rotation={-12} origin="21,17.5" />
-          <Ellipse cx={27} cy={24.5} rx={1.6} ry={1.6} fill={color} rotation={-12} origin="27,24.5" />
+          <Ellipse cx={21} cy={17.5} rx={1.6} ry={1.6} fill={color} transform="rotate(-12 21 17.5)" />
+          <Ellipse cx={27} cy={24.5} rx={1.6} ry={1.6} fill={color} transform="rotate(-12 27 24.5)" />
         </G>
       )}
       {name === 'target' && (
@@ -91,7 +91,7 @@ export function HandIcon({ name, size = 48, color = '#2e8b57' }: HandIconProps) 
         </G>
       )}
       {name === 'book' && (
-        <G rotation={-3} origin="24,24">
+        <G transform="rotate(-3 24 24)">
           <Rect x={12} y={8} width={24} height={32} rx={3} stroke={color} strokeWidth={SW} fill="none" />
           <Line x1={18} y1={19} x2={30} y2={19} stroke={color} strokeWidth={1.1} strokeLinecap="round" opacity={0.58} />
           <Line x1={18} y1={27} x2={30} y2={27} stroke={color} strokeWidth={1.1} strokeLinecap="round" opacity={0.58} />
@@ -103,9 +103,9 @@ export function HandIcon({ name, size = 48, color = '#2e8b57' }: HandIconProps) 
       {name === 'stats' && (
         <G>
           <Path d="M12 40 L12 8 M12 40 L38 40" stroke={color} strokeWidth={SW} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          <Rect x={17} y={28} width={6} height={12} rx={2} fill={color} opacity={0.52} rotation={-1} origin="20,34" />
-          <Rect x={26} y={21} width={6} height={19} rx={2} fill={color} opacity={0.75} rotation={-1} origin="29,30" />
-          <Rect x={35} y={13} width={6} height={27} rx={2} fill={color} rotation={-1} origin="38,26" />
+          <Rect x={17} y={28} width={6} height={12} rx={2} fill={color} opacity={0.52} transform="rotate(-1 20 34)" />
+          <Rect x={26} y={21} width={6} height={19} rx={2} fill={color} opacity={0.75} transform="rotate(-1 29 30)" />
+          <Rect x={35} y={13} width={6} height={27} rx={2} fill={color} transform="rotate(-1 38 26)" />
         </G>
       )}
       {name === 'info' && (

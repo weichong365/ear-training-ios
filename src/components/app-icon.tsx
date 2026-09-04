@@ -16,6 +16,7 @@ const ICONS = {
   adaptive: ['target', 'target'],
   wrongbook: ['checklist', 'fact_check'],
   stats: ['chart.bar', 'analytics'],
+  chevronLeft: ['chevron.left', 'chevron_left'],
   chevronRight: ['chevron.right', 'chevron_right'],
   chevronUp: ['chevron.up', 'keyboard_arrow_up'],
   chevronDown: ['chevron.down', 'keyboard_arrow_down'],
@@ -29,6 +30,7 @@ const ICONS = {
   plus: ['plus', 'add'],
   minus: ['minus', 'remove'],
   more: ['ellipsis', 'more_horiz'],
+  message: ['bubble.left.and.bubble.right.fill', 'forum'],
 } as const satisfies Record<string, readonly [SFSymbol, AndroidSymbol]>;
 
 type AppIconProps = {

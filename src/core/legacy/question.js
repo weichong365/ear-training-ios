@@ -449,8 +449,8 @@ function genRhythmQuestion(difficulty, barCount = 8) {
   };
 }
 
-function genRhythm(difficulty) {
-  const question = genExamRhythm(difficulty);
+function genRhythm(difficulty, options = {}) {
+  const question = genExamRhythm(difficulty, 4, '', options);
   return {
     ...question,
     typeName: '节奏听辨',
@@ -1589,8 +1589,8 @@ function generateExamJiangsu() {
   return { singles, groups, intervals, chords, rhythmQuestions, melodyQuestions };
 }
 
-function genPracticeMelody(difficulty) {
-  const question = genExamMelody(difficulty);
+function genPracticeMelody(difficulty, options = {}) {
+  const question = genExamMelody(difficulty, 8, '', '', options);
   return {
     ...question,
     typeName: '旋律听辨',
@@ -1599,18 +1599,76 @@ function genPracticeMelody(difficulty) {
   };
 }
 
+/** 专项·单音：把 tier（1/2/3）换算成「音域 + 变化音」分层后交给 genSingle。 */
+function genPracticeSingle(difficulty, options = {}) {
+  const opts = { ...options };
+  if (hasExamValue(opts.tier)) {
+    const tier = SINGLE_TIERS[opts.tier] || SINGLE_TIERS[1];
+    if (!hasExamValue(opts.range)) opts.range = { low: tier.low, high: tier.high };
+    if (!hasExamValue(opts.chromatic)) opts.chromatic = tier.chromatic;
+  }
+  return genSingle(difficulty, opts);
+}
+
+/** 专项·旋律音组：随机三/四/五音组，复用真题音组的键盘顺序作答。 */
+function genPracticeGroup(difficulty, options = {}) {
+  const sizes = [3, 4, 5];
+  const size = sizes[randInt(0, sizes.length - 1)];
+  const question = genNoteGroup(difficulty, size, options);
+  return { ...question, repeatCount: 3 };
+}
+
+/** 专项·音程：保持 forcedHarmonic 为空，允许 options.tier 分层。 */
+function genPracticeInterval(difficulty, options = {}) {
+  return genInterval(difficulty, null, options);
+}
+
+/** 专项·和声音程连接：五个和声音程连续出现（江西卷面）。 */
+function genPracticeConnection(difficulty, options = {}) {
+  const question = genIntervalConnection(difficulty, options);
+  return { ...question, repeatCount: 3 };
+}
+
+/** 专项·和弦性质：听和弦只写性质（qualityFill，无音高作答）。 */
+function genPracticeChordQuality(difficulty, options = {}) {
+  const question = genExamChord(difficulty, options);
+  question.chordTaskType = 'chordQuality';
+  question.qualityRequired = true;
+  question.answerMode = 'qualityFill';
+  question.typeName = '和弦性质听写';
+  question.hint = '听和弦，只写性质（大/小/增/减三和弦及转位）';
+  return question;
+}
+
+/** 专项·和弦音高：听和弦只写音高（staff，无性质作答）。 */
+function genPracticeChordPitch(difficulty, options = {}) {
+  const question = genExamChord(difficulty, options);
+  question.chordTaskType = 'chordPitch';
+  question.typeName = '和弦音高听写';
+  question.hint = '听和弦，只写音高';
+  return question;
+}
+
 const GENERATORS = {
-  single: genSingle,
-  interval: genInterval,
+  single: genPracticeSingle,
+  group: genPracticeGroup,
+  interval: genPracticeInterval,
+  connection: genPracticeConnection,
   chord: genChord,
+  chordQuality: genPracticeChordQuality,
+  chordPitch: genPracticeChordPitch,
   rhythm: genRhythm,
   melody: genPracticeMelody
 };
 
-/** 按真题统一标准生成一题。 */
-function generate(type) {
+// 智能强化只针对五大核心题型（单音/音程/和弦/节奏/旋律），
+// 新增的专项题型由省份专项练习入口直达，不进入智能强化的加权循环。
+const ADAPTIVE_TYPES = ['single', 'interval', 'chord', 'rhythm', 'melody'];
+
+/** 按真题统一标准生成一题；options 可带 tier 等分层参数。 */
+function generate(type, options = {}) {
   if (!GENERATORS[type]) throw new Error(`未知题型: ${type}`);
-  return GENERATORS[type](EXAM_STANDARD_LEVEL);
+  return GENERATORS[type](EXAM_STANDARD_LEVEL, options);
 }
 
 function weightedType(types, profile = {}) {
@@ -1636,8 +1694,14 @@ function weightedType(types, profile = {}) {
  * 和声音程/和弦按同时发声的音高集合比较，避免只是音符顺序不同却重复出现。
  */
 function practiceQuestionKey(question) {
-  const midis = (question.midis || []).slice();
-  if (question.harmonic || question.type === 'chord') midis.sort((a, b) => a - b);
+  let midis;
+  if (Array.isArray(question.chords)) {
+    // 和声音程连接：每组内排序、组间保序，避免只是组内顺序不同却重复。
+    midis = question.chords.map((chord) => chord.slice().sort((a, b) => a - b)).flat();
+  } else {
+    midis = (question.midis || []).slice();
+    if (question.harmonic || question.type === 'chord') midis.sort((a, b) => a - b);
+  }
   return JSON.stringify({
     type: question.type,
     harmonic: !!question.harmonic,
@@ -1651,8 +1715,7 @@ function practiceQuestionKey(question) {
 }
 
 /** 按真题统一标准生成一组题。 */
-function generateSet(type, count = 10, profile = {}) {
-  const allTypes = Object.keys(GENERATORS);
+function generateSet(type, count = 10, profile = {}, options = {}) {
   const questions = [];
   if (type === 'mixed') {
     return generateExamMixed();
@@ -1667,16 +1730,16 @@ function generateSet(type, count = 10, profile = {}) {
       questions.push(question);
       return true;
     };
-    allTypes.slice(0, Math.min(count, allTypes.length)).forEach((itemType) => append(generate(itemType)));
+    ADAPTIVE_TYPES.slice(0, Math.min(count, ADAPTIVE_TYPES.length)).forEach((itemType) => append(generate(itemType)));
     let attempts = 0;
     const maxAttempts = Math.max(300, count * 120);
     while (questions.length < count && attempts++ < maxAttempts) {
-      append(generate(weightedType(allTypes, profile)));
+      append(generate(weightedType(ADAPTIVE_TYPES, profile)));
     }
     // 极端随机碰撞时轮询所有题型继续找题，但绝不以重复题凑数。
     attempts = 0;
     while (questions.length < count && attempts++ < maxAttempts) {
-      append(generate(allTypes[attempts % allTypes.length]));
+      append(generate(ADAPTIVE_TYPES[attempts % ADAPTIVE_TYPES.length]));
     }
     if (questions.length < count) {
       throw new Error(`无法生成 ${count} 道互不重复的智能强化题`);
@@ -1689,7 +1752,7 @@ function generateSet(type, count = 10, profile = {}) {
   const maxAttempts = Math.max(100, count * 80);
   while (questions.length < count && attempts < maxAttempts) {
     attempts++;
-    const question = generate(type);
+    const question = generate(type, options);
     const key = practiceQuestionKey(question);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -1707,6 +1770,10 @@ module.exports = {
   generateExamFromSections,
   generateExamGuangxi,
   generateExamJiangsu,
+  genPracticeGroup,
+  genPracticeConnection,
+  genPracticeChordQuality,
+  genPracticeChordPitch,
   MIXED_EXAM_COUNT,
   EXAM_METERS,
   EXAM_STANDARD_LEVEL,

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { PracticeProfile, PracticeQuestion, PracticeType } from '@/core';
 import { DEFAULT_AUDIO_VOLUME, parseStoredVolume } from '@/core/audio-settings';
 import type { ExamAnswer } from '@/core/exam-answer';
-import type { ProvincePaper } from '@/core/provinces';
+import { PROVINCES, type ProvinceId, type ProvincePaper } from '@/core/provinces';
 
 type LocalDataNormalizer = {
   normalizePracticeRecords(value: unknown): PracticeRecord[];
@@ -21,6 +21,7 @@ const WRONGS_KEY = 'ios_wrong_questions_v1';
 const ACTIVE_EXAM_KEY = 'ios_active_exam_v1';
 const EXAM_RESULTS_KEY = 'ios_exam_results_v1';
 const AUDIO_VOLUME_KEY = 'audio_volume';
+const PROVINCE_KEY = 'ios_selected_province_v1';
 let examSaveQueue: Promise<void> = Promise.resolve();
 
 export type PracticeRecord = {
@@ -133,6 +134,20 @@ export async function saveAudioVolume(volume: number) {
   const normalized = parseStoredVolume(volume);
   await AsyncStorage.setItem(AUDIO_VOLUME_KEY, String(normalized));
   return normalized;
+}
+
+export async function getSelectedProvince(): Promise<ProvinceId | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PROVINCE_KEY);
+    if (!raw) return null;
+    return PROVINCES.some((province) => province.id === raw) ? raw as ProvinceId : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSelectedProvince(id: ProvinceId) {
+  await AsyncStorage.setItem(PROVINCE_KEY, id);
 }
 
 export async function getPracticeProfile(): Promise<PracticeProfile> {

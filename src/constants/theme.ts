@@ -5,7 +5,7 @@
 
 import '@/global.css';
 
-import { Platform } from 'react-native';
+import { Platform, type ViewStyle } from 'react-native';
 
 export const Colors = {
   light: {
@@ -106,3 +106,24 @@ export const Radius = {
 } as const;
 
 export const TouchTarget = 44;
+
+export const Shadows = {
+  card: Platform.select<ViewStyle>({
+    ios: { shadowColor: Brand.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 7 },
+    android: { elevation: 1 },
+    web: { boxShadow: '0 3px 7px rgba(20,34,26,0.07)' },
+    default: {},
+  }) || {},
+  raised: Platform.select<ViewStyle>({
+    ios: { shadowColor: Brand.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8 },
+    android: { elevation: 3 },
+    web: { boxShadow: '0 4px 8px rgba(20,34,26,0.12)' },
+    default: {},
+  }) || {},
+  floating: Platform.select<ViewStyle>({
+    ios: { shadowColor: Brand.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 7 },
+    android: { elevation: 5 },
+    web: { boxShadow: '0 3px 7px rgba(20,34,26,0.12)' },
+    default: {},
+  }) || {},
+} as const;

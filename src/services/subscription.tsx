@@ -8,6 +8,9 @@ import Purchases, {
   type PurchasesPackage,
 } from 'react-native-purchases';
 
+// 首版纯免费上线开关：false 时关闭内购订阅，所有功能直接开放，RevenueCat 不初始化。
+// 后续恢复订阅时改回 true，即可恢复订阅门槛与购买流程（无需改动 _layout / index 的门槛逻辑）。
+export const PREMIUM_ENABLED = false;
 export const PREMIUM_ENTITLEMENT_ID = 'pro';
 export const SUBSCRIPTION_PRODUCT_IDS = {
   monthly: 'com.lianerdazi.pro.monthly',
@@ -60,7 +63,7 @@ function messageFrom(error: unknown, fallback: string) {
 }
 
 export function SubscriptionProvider({ children }: PropsWithChildren) {
-  const configured = Platform.OS === 'ios' && revenueCatIOSApiKey.length > 0;
+  const configured = PREMIUM_ENABLED && Platform.OS === 'ios' && revenueCatIOSApiKey.length > 0;
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
@@ -187,7 +190,7 @@ export function SubscriptionProvider({ children }: PropsWithChildren) {
     ready,
     configured,
     busy,
-    isActive: Boolean(entitlement?.isActive),
+    isActive: PREMIUM_ENABLED ? Boolean(entitlement?.isActive) : true,
     isTrial: entitlement?.periodType?.toUpperCase() === 'TRIAL',
     willRenew: Boolean(entitlement?.willRenew),
     expiresAt: entitlement?.expirationDate || null,

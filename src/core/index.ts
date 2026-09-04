@@ -1,5 +1,18 @@
-export type PracticeType = 'single' | 'interval' | 'chord' | 'rhythm' | 'melody';
+export type PracticeType =
+  | 'single'
+  | 'group'
+  | 'interval'
+  | 'connection'
+  | 'chord'
+  | 'chordQuality'
+  | 'chordPitch'
+  | 'rhythm'
+  | 'melody';
 export type PracticeMode = PracticeType | 'adaptive';
+
+export type PracticeGenerateOptions = {
+  tier?: 1 | 2 | 3;
+};
 
 export type PracticeProfile = Partial<Record<PracticeType, {
   attempts?: number;
@@ -29,8 +42,8 @@ export type PracticeQuestion = {
 };
 
 type QuestionModule = {
-  generate(type: PracticeType): PracticeQuestion;
-  generateSet(type: PracticeType | 'mixed' | 'adaptive', count?: number, profile?: PracticeProfile): PracticeQuestion[];
+  generate(type: PracticeType, options?: { tier?: 1 | 2 | 3 }): PracticeQuestion;
+  generateSet(type: PracticeType | 'mixed' | 'adaptive', count?: number, profile?: PracticeProfile, options?: { tier?: 1 | 2 | 3 }): PracticeQuestion[];
 };
 
 type AnswerModule = {
@@ -47,8 +60,8 @@ export function generateQuestion(type: PracticeType): PracticeQuestion {
   return questionCore.generate(type);
 }
 
-export function generateQuestionSet(type: PracticeMode, count = 10, profile: PracticeProfile = {}): PracticeQuestion[] {
-  return questionCore.generateSet(type, count, profile);
+export function generateQuestionSet(type: PracticeMode, count = 10, profile: PracticeProfile = {}, options: PracticeGenerateOptions = {}): PracticeQuestion[] {
+  return questionCore.generateSet(type, count, profile, options);
 }
 
 export function generateMixedExam(): PracticeQuestion[] {

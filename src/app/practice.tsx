@@ -9,11 +9,10 @@ import { AnswerStaff } from '@/components/answer-staff';
 import { NotationEditor } from '@/components/notation-editor';
 import { PianoKeyboard } from '@/components/piano-keyboard';
 import { TeacherGradeMark } from '@/components/teacher-grade-mark';
-import { generateQuestionSet, type PracticeMode, type PracticeProfile } from '@/core';
-import { practiceAnswerCorrect } from '@/core/answer-sync';
-import { answerIsComplete, emptyExamAnswer, formatCorrectAnswer, formatExamAnswer, isTimedQuestion, type ExamAnswer } from '@/core/exam-answer';
+import { generateQuestionSet, type PracticeGenerateOptions, type PracticeMode, type PracticeProfile } from '@/core';
+import { answerIsComplete, CHORD_QUALITIES, emptyExamAnswer, formatCorrectAnswer, formatExamAnswer, isTimedQuestion, needsPitch, needsQuality, scoreQuestion, type ExamAnswer } from '@/core/exam-answer';
 import type { ExamQuestion } from '@/core/provinces';
-import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
+import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
 import { playPianoNote, playQuestionAudio, stopQuestionAudio } from '@/services/audio-engine';
 import { getAudioVolume, getPracticeProfile, getWrongRecords, removeWrongRecord, saveAudioVolume, savePracticeResult } from '@/services/local-data';
 
@@ -21,9 +20,11 @@ type Phase = 'ready' | 'answering' | 'feedback' | 'finished';
 type Highlight = 'correct' | 'wrong' | 'std';
 
 const MODE_NAMES: Record<PracticeMode, string> = {
-  single: '单音听辨', interval: '音程听辨', chord: '和弦听辨', rhythm: '节奏听辨', melody: '旋律听辨', adaptive: '智能强化',
+  single: '单音听辨', group: '旋律音组', interval: '音程听辨', connection: '和声音程连接', chord: '和弦听辨', chordQuality: '和弦性质', chordPitch: '和弦音高', rhythm: '节奏听辨', melody: '旋律听辨', adaptive: '智能强化',
 };
 const STANDARD_GAP_MS = 1780;
+
+const PRACTICE_MODES: PracticeMode[] = ['single', 'group', 'interval', 'connection', 'chord', 'chordQuality', 'chordPitch', 'rhythm', 'melody', 'adaptive'];
 
 function practiceSessionId() {
   return `practice_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -31,7 +32,47 @@ function practiceSessionId() {
 
 function safeMode(value: string | string[] | undefined): PracticeMode {
   const mode = Array.isArray(value) ? value[0] : value;
-  return ['single', 'interval', 'chord', 'rhythm', 'melody', 'adaptive'].includes(mode || '') ? mode as PracticeMode : 'single';
+  return (PRACTICE_MODES as string[]).includes(mode || '') ? mode as PracticeMode : 'single';
+}
+
+function safeTier(value: string | string[] | undefined): PracticeGenerateOptions {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const tier = Number(raw);
+  return tier === 1 || tier === 2 || tier === 3 ? { tier: tier as 1 | 2 | 3 } : {};
+}
+
+/** 和声音程连接：每组固定 2 个音槽位，answer.pitches 保持扁平定长，便于逐组比对与完成判定。 */
+function connectionOffsets(question: ExamQuestion): number[] {
+  const chords = (question.chords || []) as number[][];
+  const offsets = [0];
+  chords.forEach((chord) => offsets.push(offsets[offsets.length - 1] + chord.length));
+  return offsets;
+}
+
+function connectionGroupSlice(question: ExamQuestion, answer: ExamAnswer, groupIndex: number) {
+  const offsets = connectionOffsets(question);
+  const start = offsets[groupIndex];
+  const end = offsets[groupIndex + 1];
+  return {
+    pitches: answer.pitches.slice(start, end),
+    spellings: answer.spellings.slice(start, end),
+  };
+}
+
+function applyConnectionGroup(question: ExamQuestion, answer: ExamAnswer, groupIndex: number, pitches: number[], spellings: string[]) {
+  const offsets = connectionOffsets(question);
+  const start = offsets[groupIndex];
+  const end = offsets[groupIndex + 1];
+  const total = offsets[offsets.length - 1];
+  const nextPitches = answer.pitches.slice();
+  const nextSpellings = answer.spellings.slice();
+  while (nextPitches.length < total) nextPitches.push(undefined as unknown as number);
+  while (nextSpellings.length < total) nextSpellings.push('');
+  for (let index = start; index < end; index++) {
+    nextPitches[index] = pitches[index - start] ?? (undefined as unknown as number);
+    nextSpellings[index] = spellings[index - start] ?? '';
+  }
+  return { ...answer, pitches: nextPitches, spellings: nextSpellings };
 }
 
 function answerSlots(question: ExamQuestion) {
@@ -47,7 +88,9 @@ function maxStack(question: ExamQuestion) {
 
 function keyHighlights(question: ExamQuestion, answer: ExamAnswer, correct: boolean) {
   if (question.type === 'rhythm') return {};
-  const target = (question.midis || []).map(Number);
+  const target = question.type === 'intervalConnection'
+    ? ((question.chords as number[][]) || []).flat().map(Number)
+    : (question.midis || []).map(Number);
   const actual = question.type === 'melody' ? answer.events.filter((event) => !event.rest).map((event) => event.midi) : answer.pitches.filter(Number.isFinite);
   const values: Record<number, Highlight> = {};
   actual.forEach((midi) => { values[midi] = correct ? 'correct' : 'wrong'; });
@@ -57,14 +100,27 @@ function keyHighlights(question: ExamQuestion, answer: ExamAnswer, correct: bool
 
 function correctKeyHighlights(question: ExamQuestion) {
   const values: Record<number, Highlight> = {};
-  const midis = question.type === 'rhythm' ? [69] : (question.midis || []).map(Number);
+  const midis = question.type === 'rhythm' ? [69]
+    : question.type === 'intervalConnection' ? ((question.chords as number[][]) || []).flat()
+      : (question.midis || []).map(Number);
   midis.forEach((midi) => { if (Number.isFinite(midi)) values[midi] = 'correct'; });
   return values;
 }
 
+function answerTitleFor(question: ExamQuestion) {
+  if (question.type === 'intervalConnection') return '在谱面上叠写听到的和声音程连接';
+  if (needsQuality(question) && !needsPitch(question)) return '选择你听到的和弦性质与转位';
+  const noun = question.type === 'single' ? '单音'
+    : question.type === 'interval' ? (question.groupSize ? '音组' : '音程')
+      : question.type === 'chord' ? '和弦'
+        : question.type === 'rhythm' ? '节奏' : '旋律';
+  return `在谱面上写下听到的${noun}`;
+}
+
 export default function PracticeScreen() {
-  const params = useLocalSearchParams<{ type?: string; wrongId?: string }>();
+  const params = useLocalSearchParams<{ type?: string; wrongId?: string; tier?: string }>();
   const mode = safeMode(params.type);
+  const generateOptions = useMemo(() => safeTier(params.tier), [params.tier]);
   const wrongId = Array.isArray(params.wrongId) ? params.wrongId[0] : params.wrongId;
   const insets = useSafeAreaInsets();
   const [sessionKey, setSessionKey] = useState(0);
@@ -75,8 +131,8 @@ export default function PracticeScreen() {
     void sessionKey;
     if (wrongId) return reviewQuestion ? [reviewQuestion] : [];
     if (mode === 'adaptive' && !adaptiveProfile) return [];
-    return generateQuestionSet(mode, mode === 'adaptive' ? 15 : 10, adaptiveProfile || {});
-  }, [adaptiveProfile, mode, reviewQuestion, sessionKey, wrongId]);
+    return generateQuestionSet(mode, mode === 'adaptive' ? 15 : 10, adaptiveProfile || {}, generateOptions);
+  }, [adaptiveProfile, generateOptions, mode, reviewQuestion, sessionKey, wrongId]);
   const [index, setIndex] = useState(0);
   const [answer, setAnswer] = useState<ExamAnswer>(emptyExamAnswer);
   const [phase, setPhase] = useState<Phase>('ready');
@@ -89,6 +145,7 @@ export default function PracticeScreen() {
   const [highlights, setHighlights] = useState<Record<number, Highlight>>({});
   const [autoPlay, setAutoPlay] = useState(false);
   const [volume, setVolume] = useState(78);
+  const [dragging, setDragging] = useState(false);
   const replaying = useRef(false);
   const submitting = useRef(false);
   const standardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,7 +156,9 @@ export default function PracticeScreen() {
   const maxPlays = question ? Number(question.repeatCount) || (question.type === 'melody' ? 4 : 3) : 0;
   const complete = scoringQuestion ? answerIsComplete(scoringQuestion, answer) : false;
   const accuracy = questions.length ? Math.round(score / questions.length * 100) : 0;
-  const compactPitchMode = mode === 'single' || mode === 'interval' || mode === 'chord';
+  const compactPitchMode = mode === 'single' || mode === 'group' || mode === 'interval' || mode === 'connection' || mode === 'chord' || mode === 'chordQuality' || mode === 'chordPitch';
+  const qualityOnly = scoringQuestion ? needsQuality(scoringQuestion) && !needsPitch(scoringQuestion) : false;
+  const isConnection = question?.type === 'intervalConnection';
 
   useEffect(() => {
     if (!wrongId) return;
@@ -215,7 +274,7 @@ export default function PracticeScreen() {
   async function submit() {
     if (!question || !scoringQuestion || phase !== 'answering' || !complete || submitting.current) return;
     submitting.current = true;
-    const result = practiceAnswerCorrect(question, answer);
+    const result = scoreQuestion(scoringQuestion, answer).correct;
     setCorrect(result);
     setPhase('feedback');
     setHighlights(keyHighlights(scoringQuestion, answer, result));
@@ -279,6 +338,7 @@ export default function PracticeScreen() {
     <ScrollView
       contentContainerStyle={[styles.content, compactPitchMode && styles.compactContent, { paddingBottom: insets.bottom + (compactPitchMode ? 82 : 128) }]}
       alwaysBounceVertical={!compactPitchMode}
+      scrollEnabled={!dragging}
       showsVerticalScrollIndicator={false}>
       <View style={[styles.progressHead, compactPitchMode && styles.compactProgressHead]}><Text style={[styles.title, compactPitchMode && styles.compactTitle]}>{mode === 'adaptive' ? question.typeName : MODE_NAMES[mode]}</Text><Text style={styles.counter} accessibilityLabel={`第 ${index + 1} 题，共 ${questions.length} 题`}><Text style={[styles.counterMain, compactPitchMode && styles.compactCounterMain]}>{index + 1}</Text> / {questions.length}</Text></View>
       <View style={[styles.progressTrack, compactPitchMode && styles.compactProgressTrack]}><View style={[styles.progressFill, { width: `${(index + 1) / questions.length * 100}%` }]} /></View>
@@ -294,19 +354,35 @@ export default function PracticeScreen() {
           {(!compactPitchMode || phase !== 'feedback') && <View style={[styles.volumeRow, compactPitchMode && styles.compactVolumeRow]}><Text style={styles.volumeLabel}>音量</Text><Pressable accessibilityRole="button" accessibilityLabel="降低音量" onPress={() => changeVolume(volume - 10)} style={styles.volumeStep}><AppIcon name="minus" size={17} /></Pressable><View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: volume }} style={styles.volumeTrack}><View style={[styles.volumeFill, { width: `${volume}%` }]} /></View><Pressable accessibilityRole="button" accessibilityLabel="提高音量" onPress={() => changeVolume(volume + 10)} style={styles.volumeStep}><AppIcon name="plus" size={17} /></Pressable><Text style={styles.volumeValue}>{volume}%</Text></View>}
           {!!message && <Text accessibilityLiveRegion="polite" style={styles.error}>{message}</Text>}
           <View style={[styles.answerBlock, compactPitchMode && styles.compactAnswerBlock]}>
-            <Text style={styles.answerTitle}>在谱面上写下听到的{question.type === 'single' ? '单音' : question.type === 'interval' ? '音程' : question.type === 'chord' ? '和弦' : question.type === 'rhythm' ? '节奏' : '旋律'}</Text>
-            {!compactPitchMode && <Text style={styles.answerMethod}>点击五线谱写入音符，按住音符可上下移动，单击音符可选择临时记号，双击可擦除音符。</Text>}
-            {timed ? <NotationEditor question={scoringQuestion} answer={answer} unlocked={phase === 'answering'} disabled={phase === 'feedback'} reviewCorrect={correct} showCorrect={phase === 'feedback'} onChange={setAnswer} /> : <>
-              <AnswerStaff compact={compactPitchMode} pitches={answer.pitches} spellings={answer.spellings} slots={answerSlots(scoringQuestion)} stacked={question.type === 'chord' || Boolean(question.harmonic)} maxStack={maxStack(scoringQuestion)} disabled={phase !== 'answering'} tone={phase === 'feedback' ? correct ? 'green' : 'red' : ''} showCorrect={phase === 'feedback' && !correct} correctPitches={question.midis || []} correctSpellings={Array.isArray(question.spellings) ? question.spellings as string[] : []} emptyText={phase === 'ready' ? '播放题目后开始作答' : phase === 'answering' ? '点击五线谱写入答案' : ''} onChange={changeBasic} />
-              {phase === 'feedback' && <View style={[styles.reviewLine, compactPitchMode && styles.compactReviewLine]}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>正确答案：</Text>{formatCorrectAnswer(scoringQuestion)}</Text><View style={styles.reviewAnswerRow}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>你的答案：</Text>{formatExamAnswer(scoringQuestion, answer)}</Text><TeacherGradeMark correct={correct} size={compactPitchMode ? 30 : 36} /></View></View>}
-            </>}
-            {timed && phase === 'feedback' && <View style={styles.reviewLine}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>正确答案：</Text>见绿色谱面</Text><View style={styles.reviewAnswerRow}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>你的答案：</Text>见谱面</Text><TeacherGradeMark correct={correct} size={36} /></View></View>}
+            <Text style={styles.answerTitle}>{answerTitleFor(scoringQuestion)}</Text>
+            {!compactPitchMode && !qualityOnly && <Text style={styles.answerMethod}>点击五线谱写入音符，按住音符可上下移动，单击音符可选择临时记号，双击可擦除音符。</Text>}
+            {timed ? <NotationEditor question={scoringQuestion} answer={answer} unlocked={phase === 'answering'} disabled={phase === 'feedback'} reviewCorrect={correct} showCorrect={phase === 'feedback'} onChange={setAnswer} /> : isConnection ? <View style={styles.connectionList}>
+              {(scoringQuestion.chords as number[][]).map((chord, groupIndex) => {
+                const group = connectionGroupSlice(scoringQuestion, answer, groupIndex);
+                return (
+                  <View key={groupIndex} style={styles.connectionGroup}>
+                    <Text style={styles.connectionLabel}>第 {groupIndex + 1} 组 · 叠写两个音</Text>
+                    <AnswerStaff compact pitches={group.pitches} spellings={group.spellings} stacked maxStack={2} disabled={phase !== 'answering'} tone={phase === 'feedback' ? correct ? 'green' : 'red' : ''} showCorrect={phase === 'feedback' && !correct} correctPitches={chord} correctSpellings={[]} emptyText={phase === 'ready' ? '播放题目后开始作答' : phase === 'answering' ? '点击五线谱写入两个音' : ''} onChange={(pitches, spellings) => setAnswer((current) => applyConnectionGroup(scoringQuestion, current, groupIndex, pitches, spellings))} onDragChange={setDragging} />
+                  </View>
+                );
+              })}
+            </View> : qualityOnly ? <View style={styles.qualityBlock}>
+              <Text style={styles.qualityLabel}>先选性质，再选转位</Text>
+              <View style={styles.qualityGrid}>
+                {CHORD_QUALITIES.map((quality) => (
+                  <Pressable key={quality} accessibilityRole="radio" accessibilityState={{ selected: answer.quality === quality, disabled: phase !== 'answering' }} disabled={phase !== 'answering'} onPress={() => { if (phase !== 'answering') return; Haptics.selectionAsync(); setAnswer({ ...answer, quality }); }} style={({ pressed }) => [styles.qualityOption, answer.quality === quality && styles.qualityActive, pressed && styles.pressed]}>
+                    <Text style={[styles.qualityText, answer.quality === quality && styles.qualityTextActive]}>{quality}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View> : <AnswerStaff compact={compactPitchMode} pitches={answer.pitches} spellings={answer.spellings} slots={answerSlots(scoringQuestion)} stacked={question.type === 'chord' || Boolean(question.harmonic)} maxStack={maxStack(scoringQuestion)} disabled={phase !== 'answering'} tone={phase === 'feedback' ? correct ? 'green' : 'red' : ''} showCorrect={phase === 'feedback' && !correct} correctPitches={question.midis || []} correctSpellings={Array.isArray(question.spellings) ? question.spellings as string[] : []} emptyText={phase === 'ready' ? '播放题目后开始作答' : phase === 'answering' ? '点击五线谱写入答案' : ''} onChange={changeBasic} onDragChange={setDragging} />}
+            {phase === 'feedback' && (timed ? <View style={styles.reviewLine}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>正确答案：</Text>见绿色谱面</Text><View style={styles.reviewAnswerRow}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>你的答案：</Text>见谱面</Text><TeacherGradeMark correct={correct} size={36} /></View></View> : <View style={[styles.reviewLine, compactPitchMode && styles.compactReviewLine]}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>正确答案：</Text>{formatCorrectAnswer(scoringQuestion)}</Text><View style={styles.reviewAnswerRow}><Text style={styles.reviewText}><Text style={styles.reviewLabel}>你的答案：</Text>{formatExamAnswer(scoringQuestion, answer)}</Text><TeacherGradeMark correct={correct} size={compactPitchMode ? 30 : 36} /></View></View>)}
           </View>
         </View>
 
-        <View style={[styles.keyboardCard, compactPitchMode && styles.compactKeyboardCard, phase === 'feedback' && styles.keyboardOpen]}>
-          <View style={[styles.keyboardHead, compactPitchMode && styles.compactKeyboardHead]}><View><Text style={styles.keyboardTitle}>复盘钢琴</Text>{!compactPitchMode && <Text style={styles.keyboardSub}>{phase === 'feedback' ? '键盘已解锁，可自由弹奏核对音高' : '提交谱面答案后自动解锁'}</Text>}</View><Text style={[styles.keyboardState, phase === 'feedback' && styles.keyboardStateOpen]}>{phase === 'feedback' ? '已解锁' : '待解锁'}</Text></View>
-          <View><View aria-hidden={phase !== 'feedback'} accessibilityElementsHidden={phase !== 'feedback'} importantForAccessibility={phase !== 'feedback' ? 'no-hide-descendants' : 'auto'}><PianoKeyboard compact={compactPitchMode} disabled={phase !== 'feedback' || playing} highlights={highlights} onKeyPress={(midi) => { if (!replaying.current) void playPianoNote(midi, volume / 100); }} /></View>{phase !== 'feedback' && <View accessibilityRole="text" accessibilityLabel="复盘钢琴待解锁，提交答案后解锁" style={styles.keyboardLock}><View style={styles.lockIcon}><AppIcon name="lock" size={21} color={Brand.textOnAccent} /></View><Text style={styles.lockText}>提交答案后解锁</Text></View>}</View>
+        <View style={[styles.keyboardCard, phase === 'feedback' && styles.keyboardOpen]}>
+          <View style={styles.keyboardHead}><View><Text style={styles.keyboardTitle}>复盘钢琴</Text>{!compactPitchMode && <Text style={styles.keyboardSub}>{phase === 'feedback' ? '键盘已解锁，可自由弹奏核对音高' : '提交谱面答案后自动解锁'}</Text>}</View><Text style={[styles.keyboardState, phase === 'feedback' && styles.keyboardStateOpen]}>{phase === 'feedback' ? '已解锁' : '待解锁'}</Text></View>
+          <View><View aria-hidden={phase !== 'feedback'} accessibilityElementsHidden={phase !== 'feedback'} importantForAccessibility={phase !== 'feedback' ? 'no-hide-descendants' : 'auto'}><PianoKeyboard disabled={phase !== 'feedback' || playing} highlights={highlights} onKeyPress={phase === 'feedback' ? (midi) => { if (!replaying.current) void playPianoNote(midi, volume / 100); } : undefined} /></View>{phase !== 'feedback' && <View accessibilityRole="text" accessibilityLabel="复盘钢琴待解锁，提交答案后解锁" style={styles.keyboardLock}><View style={styles.lockIcon}><AppIcon name="lock" size={21} color={Brand.textOnAccent} /></View><Text style={styles.lockText}>提交答案后解锁</Text></View>}</View>
         </View>
       </>}
     </ScrollView>
@@ -326,8 +402,9 @@ const styles = StyleSheet.create({
   compactCard: { padding: 8 }, compactPlayButton: { minHeight: 58, paddingVertical: 7, paddingHorizontal: 10 }, compactVolumeRow: { marginTop: 4 },
   answerBlock: { gap: 10, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Brand.divider }, answerTitle: { color: Brand.ink, fontSize: TypeScale.headline, fontWeight: '900' }, answerMethod: { color: Brand.muted, fontSize: TypeScale.footnote, lineHeight: 19 }, reviewLine: { minHeight: 56, justifyContent: 'center', gap: 3 }, reviewAnswerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 }, reviewText: { color: Brand.muted, fontSize: TypeScale.footnote, lineHeight: 19, flexShrink: 1 }, reviewLabel: { color: Brand.ink, fontWeight: '900' },
   compactAnswerBlock: { gap: 6, marginTop: 8, paddingTop: 8 }, compactReviewLine: { minHeight: 42 },
+  connectionList: { gap: 8 }, connectionGroup: { gap: 5 }, connectionLabel: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' },
+  qualityBlock: { gap: 8 }, qualityLabel: { color: Brand.muted, fontSize: TypeScale.footnote, fontWeight: '700' }, qualityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 }, qualityOption: { minHeight: TouchTarget, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.border, backgroundColor: Brand.ivory }, qualityActive: { borderColor: Brand.forest, backgroundColor: Brand.forest }, qualityText: { color: Brand.ink, fontSize: TypeScale.caption, fontWeight: '700' }, qualityTextActive: { color: Brand.textOnAccent },
   keyboardCard: { padding: 13, borderRadius: Radius.card, borderWidth: 1, borderColor: Brand.border, backgroundColor: Brand.successSoft }, keyboardOpen: { borderColor: '#9FC9AE' }, keyboardHead: { marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, keyboardTitle: { color: Brand.ink, fontSize: TypeScale.subheadline, fontWeight: '900' }, keyboardSub: { marginTop: 3, color: Brand.muted, fontSize: TypeScale.caption }, keyboardState: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8, color: Brand.warning, backgroundColor: Brand.warningSoft, fontSize: 11, fontWeight: '700' }, keyboardStateOpen: { color: Brand.forest, backgroundColor: Brand.forestSoft }, keyboardLock: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.overlay }, lockIcon: { width: TouchTarget, height: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: 'rgba(255,255,255,.14)' }, lockText: { marginTop: 8, color: Brand.textOnAccent, fontSize: TypeScale.caption, fontWeight: '700' },
-  compactKeyboardCard: { padding: 8 }, compactKeyboardHead: { marginBottom: 6 },
-  bottomBar: { position: 'absolute', left: 10, right: 10, bottom: 0, padding: 10, alignItems: 'center', borderRadius: Radius.card, borderWidth: 1, borderColor: Brand.border, backgroundColor: 'rgba(255,253,247,.98)', shadowColor: Brand.shadow, shadowOpacity: 0.14, shadowRadius: 15, shadowOffset: { width: 0, height: 7 }, elevation: 8 }, submit: { width: '100%', minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest }, submitDisabled: { backgroundColor: Brand.disabled }, submitTip: { marginTop: 7, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 16 }, bottomActions: { position: 'absolute', left: 10, right: 10, bottom: 0, padding: 10, flexDirection: 'row', gap: 8 }, primarySmall: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest, shadowColor: Brand.shadow, shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 }, secondarySmall: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.forest, backgroundColor: Brand.ivory }, primaryText: { color: Brand.textOnAccent, fontSize: TypeScale.subheadline, fontWeight: '900' }, secondaryText: { color: Brand.forest, fontSize: TypeScale.subheadline, fontWeight: '900' },
+  bottomBar: { position: 'absolute', left: 10, right: 10, bottom: 0, padding: 10, alignItems: 'center' }, submit: { width: '100%', minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest }, submitDisabled: { backgroundColor: Brand.disabled }, submitTip: { marginTop: 7, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 16 }, bottomActions: { position: 'absolute', left: 10, right: 10, bottom: 0, padding: 10, flexDirection: 'row', gap: 8 }, primarySmall: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest, ...Shadows.raised }, secondarySmall: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.forest, backgroundColor: Brand.ivory }, primaryText: { color: Brand.textOnAccent, fontSize: TypeScale.subheadline, fontWeight: '900' }, secondaryText: { color: Brand.forest, fontSize: TypeScale.subheadline, fontWeight: '900' },
   resultCard: { marginTop: 24, padding: 28, alignItems: 'center', borderRadius: Radius.hero, backgroundColor: Brand.ivory, borderWidth: 1, borderColor: Brand.border }, resultTitle: { marginTop: 14, color: Brand.ink, fontSize: TypeScale.title3, fontWeight: '900' }, resultScore: { marginTop: 6, color: Brand.forest, fontSize: 58, fontWeight: '900', fontVariant: ['tabular-nums'] }, resultDesc: { color: Brand.ink, fontSize: TypeScale.subheadline, fontWeight: '800' }, resultSub: { marginTop: 8, color: Brand.muted, fontSize: TypeScale.footnote }, primary: { width: '100%', minHeight: 50, marginTop: 24, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest }, secondary: { width: '100%', minHeight: 50, marginTop: 10, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.forest, backgroundColor: Brand.ivory },
 });

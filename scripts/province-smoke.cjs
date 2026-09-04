@@ -5,10 +5,7 @@ const { buildChoicePaper } = require('../src/core/legacy/choice-paper.js');
 const questionCore = require('../src/core/legacy/question.js');
 const pcm = require('../src/core/legacy/pcm-renderer.js');
 
-const provinceIds = [
-  'guangxi', 'jiangsu', 'chongqing', 'gansu', 'hebei', 'henan', 'heilongjiang',
-  'hubei', 'hunan', 'jiangxi', 'shandong', 'shanxi', 'shaanxi', 'zhejiang'
-];
+const provinceIds = Object.keys(PROVINCE_FRAMEWORKS).filter((id) => id !== 'national');
 
 function expandedSections(sections) {
   return sections.flatMap((section) => {
@@ -79,4 +76,4 @@ provinceIds.forEach((id) => {
   });
 });
 
-console.log('14 省试卷测试通过：逐年份 10 次抽样的题量、四选一去重、答案、时间轴和和弦同步均正常。');
+console.log(`${provinceIds.length} 省专属试卷测试通过：逐年份 10 次抽样的题量、四选一去重、答案、时间轴和和弦同步均正常。`);

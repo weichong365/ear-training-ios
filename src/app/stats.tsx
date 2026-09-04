@@ -7,7 +7,7 @@ import { Brand, Radius, TypeScale } from '@/constants/theme';
 import { getExamResults, getPracticeRecords, type ExamResultRecord, type PracticeRecord } from '@/services/local-data';
 
 const TYPE_NAMES: Record<PracticeType, string> = {
-  single: '单音', interval: '音程', chord: '和弦', rhythm: '节奏', melody: '旋律',
+  single: '单音', group: '旋律音组', interval: '音程', connection: '和声音程连接', chord: '和弦', chordQuality: '和弦性质', chordPitch: '和弦音高', rhythm: '节奏', melody: '旋律',
 };
 
 export default function StatsScreen() {

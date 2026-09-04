@@ -1,5 +1,5 @@
-import { memo, useMemo, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
+import { memo, useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 
 type Highlight = 'correct' | 'wrong' | 'play' | 'std' | undefined;
 
@@ -8,37 +8,22 @@ function pitchName(midi: number) {
   return `${names[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
 }
 
-// 按压/回弹动效：按下时快速收缩，松开时带弹性地弹回原状。
-function useKeyPress() {
-  const scale = useRef(new Animated.Value(1)).current;
-  const onPressIn = () => {
-    scale.stopAnimation();
-    Animated.spring(scale, { toValue: 0.92, useNativeDriver: true, speed: 42, bounciness: 0 }).start();
-  };
-  const onPressOut = () => {
-    scale.stopAnimation();
-    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 16, bounciness: 14 }).start();
-  };
-  return { scale, onPressIn, onPressOut };
-}
-
 function WhiteKey({ midi, disabled, highlight, label, onKeyPress }: {
   midi: number; disabled?: boolean; highlight: Highlight; label: string; onKeyPress?: (midi: number) => void;
 }) {
-  const { scale, onPressIn, onPressOut } = useKeyPress();
+  const face = <View style={styles.whiteFace}><Text style={styles.keyLabel}>{label}</Text></View>;
+  if (!onKeyPress) {
+    return <View accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.whiteKey, keyColor(highlight, false)]}>{face}</View>;
+  }
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`钢琴键 ${label}`}
       accessibilityState={{ disabled }}
       disabled={disabled}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      onPress={() => onKeyPress?.(midi)}
-      style={[styles.whiteKey, keyColor(highlight, false)]}>
-      <Animated.View style={[styles.whiteFace, { transform: [{ scale }] }]}>
-        <Text style={styles.keyLabel}>{label}</Text>
-      </Animated.View>
+      onPress={() => onKeyPress(midi)}
+      style={({ pressed }) => [styles.whiteKey, keyColor(highlight, false), pressed && styles.keyPressed]}>
+      {face}
     </Pressable>
   );
 }
@@ -46,18 +31,20 @@ function WhiteKey({ midi, disabled, highlight, label, onKeyPress }: {
 function BlackKey({ midi, disabled, highlight, label, left, width, onKeyPress }: {
   midi: number; disabled?: boolean; highlight: Highlight; label: string; left: DimensionValue; width: DimensionValue; onKeyPress?: (midi: number) => void;
 }) {
-  const { scale, onPressIn, onPressOut } = useKeyPress();
+  const face = <View style={styles.blackFace} />;
+  const style = [styles.blackKey, { left, width }, keyColor(highlight, true)];
+  if (!onKeyPress) {
+    return <View accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={style}>{face}</View>;
+  }
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`钢琴键 ${label}`}
       accessibilityState={{ disabled }}
       disabled={disabled}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      onPress={() => onKeyPress?.(midi)}
-      style={[styles.blackKey, { left, width }, keyColor(highlight, true)]}>
-      <Animated.View style={[styles.blackFace, { transform: [{ scale }] }]} />
+      onPress={() => onKeyPress(midi)}
+      style={({ pressed }) => [...style, pressed && styles.keyPressed]}>
+      {face}
     </Pressable>
   );
 }
@@ -117,4 +104,5 @@ const styles = StyleSheet.create({
   blackKey: { position: 'absolute', zIndex: 2, top: 0, height: '59%', borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: '#121313', borderWidth: 0.5, borderColor: '#050506', overflow: 'hidden' },
   blackFace: { flex: 1 },
   keyLabel: { color: '#9AA0AD', fontSize: 7 },
+  keyPressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
 });

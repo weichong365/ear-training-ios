@@ -6,17 +6,20 @@ import { StatusBar } from 'expo-status-bar';
 
 import { configureIOSAudio } from '@/services/audio-engine';
 import { Brand } from '@/constants/theme';
+import { ProvinceProvider, useProvince } from '@/services/province-context';
 import { SubscriptionProvider, useSubscription } from '@/services/subscription';
 
 SplashScreen.preventAutoHideAsync();
 
 const PROTECTED_ROUTES = new Set(['practice', 'exam', 'exam-paper', 'wrongbook', 'stats']);
 const SUBSCRIBE_ROUTE = '/subscribe' as Href;
+const PROVINCE_ROUTE = '/province-select' as Href;
 const DEV_WEB_PREVIEW = __DEV__ && Platform.OS === 'web';
 
 function AppStack() {
   const segments = useSegments();
   const { ready, isActive } = useSubscription();
+  const { ready: provinceReady, provinceId } = useProvince();
 
   useEffect(() => {
     const route = segments[0];
@@ -24,6 +27,13 @@ function AppStack() {
       router.replace({ pathname: SUBSCRIBE_ROUTE, params: { reason: 'required' } } as Href);
     }
   }, [isActive, ready, segments]);
+
+  useEffect(() => {
+    const route = segments[0];
+    if (!DEV_WEB_PREVIEW && provinceReady && !provinceId && route !== 'province-select') {
+      router.replace(PROVINCE_ROUTE);
+    }
+  }, [provinceReady, provinceId, segments]);
 
   return (
     <>
@@ -38,6 +48,7 @@ function AppStack() {
           headerBackButtonDisplayMode: 'minimal',
         }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="province-select" options={{ headerShown: false }} />
         <Stack.Screen name="subscribe" options={{ title: '解锁练耳搭子', presentation: 'modal' }} />
         <Stack.Screen name="practice" options={{ title: '专项训练' }} />
         <Stack.Screen name="exam" options={{ title: '模拟考试' }} />
@@ -61,6 +72,6 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <SubscriptionProvider><AppStack /></SubscriptionProvider>
+    <ProvinceProvider><SubscriptionProvider><AppStack /></SubscriptionProvider></ProvinceProvider>
   );
 }

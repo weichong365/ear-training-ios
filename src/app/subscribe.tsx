@@ -9,13 +9,15 @@ import type { PracticeMode } from '@/core';
 import { useSubscription } from '@/services/subscription';
 
 const BENEFITS: [AppIconName, string, string][] = [
-  ['melody', '全部专项训练', '单音、音程、和弦、节奏与四句式旋律'],
+  ['melody', '全部专项训练', '覆盖所在省份的音高、和声、节奏与旋律题型'],
   ['exam', '全国各省真题', '按真实出题框架生成完整模拟试卷'],
   ['adaptive', '智能强化', '根据错题和正确率动态调整训练重点'],
   ['stats', '错题与统计', '持续记录薄弱点和阶段进步'],
 ];
 
-const PRACTICE_TARGETS = new Set<PracticeMode>(['single', 'interval', 'chord', 'melody', 'rhythm', 'adaptive']);
+const PRACTICE_TARGETS = new Set<PracticeMode>([
+  'single', 'group', 'interval', 'connection', 'chord', 'chordQuality', 'chordPitch', 'rhythm', 'melody', 'adaptive',
+]);
 const TERMS_ROUTE = '/terms' as Href;
 
 function packageLabel(item: PurchasesPackage) {
@@ -48,7 +50,7 @@ function formatDate(value: string | null) {
 }
 
 export default function SubscribeScreen() {
-  const params = useLocalSearchParams<{ target?: string; reason?: string }>();
+  const params = useLocalSearchParams<{ target?: string; tier?: string; reason?: string }>();
   const {
     ready,
     configured,
@@ -83,7 +85,8 @@ export default function SubscribeScreen() {
       return;
     }
     if (PRACTICE_TARGETS.has(target as PracticeMode)) {
-      router.replace({ pathname: '/practice', params: { type: target } });
+      const tier = typeof params.tier === 'string' && ['1', '2', '3'].includes(params.tier) ? params.tier : undefined;
+      router.replace({ pathname: '/practice', params: { type: target, ...(tier ? { tier } : {}) } });
       return;
     }
     router.replace('/');
