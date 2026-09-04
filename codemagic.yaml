@@ -1,6 +1,5 @@
 # Codemagic 构建配置（免费计划，macOS M2 每月 500 分钟）
 # 用途：在无 Mac / 无国际信用卡的情况下，用 Codemagic 免费 CI 构建 iOS 并上传 App Store Connect。
-# 前置：见 app-store-pages/codemagic-部署指南.md（GitHub 推送 + App Store Connect API Key + Codemagic 集成）
 workflows:
   ios-build:
     name: 练耳搭子 iOS 生产构建
@@ -16,13 +15,16 @@ workflows:
       vars:
         BUNDLE_ID: com.lianerdazi.app
       node: v22.11.0
-      xcode: latest
+      # 固定版本，避免 Codemagic 的 latest 别名更新后改变构建环境。
+      xcode: 26.4
       cocoapods: default
     scripts:
       - name: 安装 npm 依赖
         script: npm ci
       - name: 生成 iOS 原生工程（Expo prebuild）
-        script: npx expo prebuild --platform ios --non-interactive
+        script: CI=1 npx expo prebuild --platform ios --no-install
+      - name: 安装 CocoaPods 依赖
+        script: cd ios && pod install
       - name: 检测 Xcode workspace 与 scheme
         script: |
           WORKSPACE_FILE=$(ls ios/*.xcworkspace | head -1)
@@ -46,3 +48,6 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_app_store: false
+        submit_to_testflight: true
+        beta_groups:
+          - Team (Expo)
