@@ -41,7 +41,8 @@ workflows:
         script: keychain add-certificates
       - name: 检测 Xcode workspace 与 scheme
         script: |
-          WORKSPACE_FILE=$(ls ios/*.xcworkspace | head -1)
+          WORKSPACE_FILE=$(find "$CM_BUILD_DIR/ios" -maxdepth 1 -type d -name '*.xcworkspace' -print -quit)
+          test -n "$WORKSPACE_FILE"
           SCHEME_NAME=$(basename "$WORKSPACE_FILE" .xcworkspace)
           echo "workspace=$WORKSPACE_FILE"
           echo "scheme=$SCHEME_NAME"
@@ -52,7 +53,7 @@ workflows:
       - name: 构建 ipa
         script: |
           xcode-project build-ipa \
-            --workspace "$CM_BUILD_DIR/$XCODE_WORKSPACE" \
+            --workspace "$XCODE_WORKSPACE" \
             --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
