@@ -9,6 +9,8 @@ workflows:
       # 这个名字必须与 Codemagic 后台 Team integrations > Developer Portal 里填的 key 名称一致
       app_store_connect: eartraining-codemagic
     environment:
+      groups:
+        - ios_signing_credentials
       vars:
         BUNDLE_ID: com.lianerdazi.app
       node: v22.11.0
