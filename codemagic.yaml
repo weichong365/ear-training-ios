@@ -28,8 +28,13 @@ workflows:
         script: keychain initialize
       - name: 获取或创建 App Store 签名文件
         script: |
+          CERTIFICATE_KEY_FILE="$CM_BUILD_DIR/codemagic_ios_distribution.key"
+          printf '%s' "$CERTIFICATE_PRIVATE_KEY" | tr -d '\r' > "$CERTIFICATE_KEY_FILE"
+          chmod 600 "$CERTIFICATE_KEY_FILE"
+          openssl rsa -in "$CERTIFICATE_KEY_FILE" -check -noout
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
+            --certificate-key "@file:$CERTIFICATE_KEY_FILE" \
             --create
       - name: 安装 iOS 签名证书
         script: keychain add-certificates
