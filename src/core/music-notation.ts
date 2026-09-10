@@ -20,6 +20,24 @@ export const STAFF_BOTTOM_LINE_Y = 68;
 export const STAFF_LINE_GAP = 10;
 export const STAFF_STEP_GAP = STAFF_LINE_GAP / 2;
 export const STAFF_LINE_YS = [28, 38, 48, 58, 68] as const;
+export const STAFF_STROKE_WIDTH = 1;
+
+export function noteheadStemX(noteX: number, halfWidth: number, direction: StemDirection, lineGap = STAFF_LINE_GAP) {
+  const inset = lineGap * 0.2;
+  return noteX + (direction === 'up' ? halfWidth - inset : -halfWidth + inset);
+}
+
+export function barlineBounds() {
+  return { top: STAFF_LINE_YS[0], bottom: STAFF_LINE_YS[STAFF_LINE_YS.length - 1] };
+}
+
+export function noteheadStemStart(noteX: number, noteY: number, halfWidth: number, direction: StemDirection, lineGap = STAFF_LINE_GAP) {
+  return { x: noteheadStemX(noteX, halfWidth, direction, lineGap), y: noteY + (direction === 'up' ? 1 : -1) };
+}
+
+export function accidentalScale(kind: 'sharp' | 'flat' | 'natural') {
+  return kind === 'sharp' ? 0.9 : 1;
+}
 
 const DURATION_TABLE: DurationNotation[] = [
   { value: 4, headKind: 'whole', restKind: 'whole', beamCount: 0, dotCount: 0, hasStem: false },

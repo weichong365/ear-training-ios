@@ -24,6 +24,7 @@ const {
   STAFF_LINE_GAP,
   STAFF_LINE_YS,
   stemDirectionForWrittenMidis,
+  STAFF_STROKE_WIDTH,
 } = await import('../src/core/music-notation.ts');
 const {
   accidentalGlyphForPitch,
@@ -324,10 +325,13 @@ assert.deepEqual(ledgerLineYs(60), [78], '中央 C 必须显示第一条下加�
 assert.equal(ledgerLineYs(57)[1] - ledgerLineYs(57)[0], STAFF_LINE_GAP, '相邻下加线间距必须等于共享谱线距');
 assert.equal(barlineBounds().top, STAFF_LINE_YS[0], '小节线必须从第一线中心开始');
 assert.equal(barlineBounds().bottom, STAFF_LINE_YS[4], '小节线必须在第五线中心结束');
-assert.deepEqual(noteheadStemStart(40, 6, 'up'), { x: 44, y: 40 }, '向上符干起点必须与符头几何重叠');
-assert.deepEqual(noteheadStemStart(40, 6, 'down'), { x: 36, y: 40 }, '向下符干起点必须与符头几何重叠');
+assert.deepEqual(noteheadStemStart(40, 40, 6, 'up'), { x: 44, y: 41 }, '向上符干起点必须与符头几何重叠');
+assert.deepEqual(noteheadStemStart(40, 40, 6, 'down'), { x: 36, y: 39 }, '向下符干起点必须与符头几何重叠');
 assert.equal(accidentalScale('sharp'), 0.9, '升号必须缩小 10%');
 assert.deepEqual(ledgerLineYs(81), [18], 'A5 必须显示第一条上加线');
+assert.equal(STAFF_STROKE_WIDTH, 1, '五线谱主线与加线必须使用统一线宽');
+assert.equal(accidentalScale('flat'), 1, '降号必须保持原始缩放');
+assert.equal(accidentalScale('natural'), 1, '还原号必须保持原始缩放');
 assert.deepEqual(ledgerLineYs(79), [], 'G5 位于第五线上方的间，不应误加线');
 assert.equal(durationNotation(4).headKind, 'whole', '四拍时值必须使用全音符头');
 assert.equal(durationNotation(4).hasStem, false, '全音符不能显示符干');
