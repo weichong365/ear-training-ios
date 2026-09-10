@@ -15,9 +15,14 @@ const {
 } = await import('../src/core/staff-coordinate.ts');
 const {
   augmentationDotY,
+  accidentalScale,
+  barlineBounds,
   chordHeadOffsets,
   durationNotation,
   ledgerLineYs,
+  noteheadStemStart,
+  STAFF_LINE_GAP,
+  STAFF_LINE_YS,
   stemDirectionForWrittenMidis,
 } = await import('../src/core/music-notation.ts');
 const {
@@ -314,7 +319,14 @@ assert.equal(accidentalGlyphForKeySignature(66, 'F#4', 'G'), '', 'G 大调中 F�
 assert.equal(accidentalGlyphForKeySignature(65, 'Fn4', 'G'), '♮', 'G 大调中 F♮ 必须显示还原号');
 assert.equal(accidentalGlyphForKeySignature(70, 'Bb4', 'F'), '', 'F 大调中 B♭ 不应重复标临时降号');
 assert.equal(formatPitchSpelling(80), 'G♯5', '谱面与答案文本必须使用同一音名');
+assert.deepEqual(STAFF_LINE_YS, [28, 38, 48, 58, 68], '五线谱必须固定使用五个共享 SVG 线中心');
 assert.deepEqual(ledgerLineYs(60), [78], '中央 C 必须显示第一条下加线');
+assert.equal(ledgerLineYs(57)[1] - ledgerLineYs(57)[0], STAFF_LINE_GAP, '相邻下加线间距必须等于共享谱线距');
+assert.equal(barlineBounds().top, STAFF_LINE_YS[0], '小节线必须从第一线中心开始');
+assert.equal(barlineBounds().bottom, STAFF_LINE_YS[4], '小节线必须在第五线中心结束');
+assert.deepEqual(noteheadStemStart(40, 6, 'up'), { x: 44, y: 40 }, '向上符干起点必须与符头几何重叠');
+assert.deepEqual(noteheadStemStart(40, 6, 'down'), { x: 36, y: 40 }, '向下符干起点必须与符头几何重叠');
+assert.equal(accidentalScale('sharp'), 0.9, '升号必须缩小 10%');
 assert.deepEqual(ledgerLineYs(81), [18], 'A5 必须显示第一条上加线');
 assert.deepEqual(ledgerLineYs(79), [], 'G5 位于第五线上方的间，不应误加线');
 assert.equal(durationNotation(4).headKind, 'whole', '四拍时值必须使用全音符头');
