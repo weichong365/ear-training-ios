@@ -35,6 +35,17 @@ const questionCore = require('../src/core/legacy/question.js');
 const pcmRenderer = require('../src/core/legacy/pcm-renderer.js');
 const { midiToName } = require('../src/core/legacy/theory.js');
 
+const homeSource = readFileSync(new URL('../src/app/index.tsx', import.meta.url), 'utf8');
+const handIconSource = readFileSync(new URL('../src/components/hand-icon.tsx', import.meta.url), 'utf8');
+assert.match(homeSource, /<View\b[^>]*style=\{styles\.heroDivider\}[^>]*\/?>(?:[\s\S]*?)?/, '首页数据区必须渲染渐隐分割线样式');
+assert.match(homeSource, /heroDivider\s*:\s*\{/, '首页必须定义渐隐分割线样式');
+assert.match(homeSource, /<View\b[^>]*style=\{styles\.heroWave\}[^>]*\/?>(?:[\s\S]*?)?/, '首页英雄卡必须渲染受限波形样式');
+assert.match(homeSource, /heroWave\s*:\s*\{/, '首页必须定义受限波形样式');
+assert.match(homeSource, /<Pressable\b[^>]*style=\{[^\r\n]*styles\.memberStatusButton[^\r\n]*\}/, '会员按钮必须应用独立样式');
+assert.match(homeSource, /memberStatusButton\s*:\s*\{/, '会员按钮必须定义受约束的独立样式');
+assert.doesNotMatch(handIconSource, /melody-clef-reference\.png/, '首页旋律图标必须使用独立 SVG，不能复用谱面素材');
+assert.match(handIconSource, /if\s*\(name === ['"]treble['"]\)[\s\S]*?<Svg\b/, '首页旋律图标必须在 treble 分支渲染 SVG');
+
 const base = {
   id: 'smoke',
   typeName: '测试题',
