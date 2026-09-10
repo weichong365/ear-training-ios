@@ -122,12 +122,20 @@ assert.match(appIconSource, /\{name === 'hand' && \([\s\S]*?<Path\b/, '举手图
 assert.match(appIconSource, /wrongbook: \['checklist', 'fact_check'\]/, '非导航错题图标必须继续使用原生符号');
 assert.doesNotMatch(appIconSource, /name === 'wrongbook'(?:\s*\|\||\s*&&)/, '导航分支不能截获非导航 wrongbook 图标');
 assert.match(provinceSource, /group:\s*\{[^\r\n]*icon:\s*['"]triplet['"]/, '旋律音组必须使用独立三音图标');
-assert.match(homeSource, /<View\b[^>]*style=\{styles\.heroDivider\}[^>]*\/?>(?:[\s\S]*?)?/, '首页数据区必须渲染渐隐分割线样式');
+assert.match(homeSource, /<LinearGradient\b[^>]*style=\{styles\.heroDivider\}[^>]*\/?>(?:[\s\S]*?)?/, '首页数据区必须渲染渐隐分割线样式');
 assert.match(homeSource, /heroDivider\s*:\s*\{/, '首页必须定义渐隐分割线样式');
 assert.match(homeSource, /<View\b[^>]*style=\{styles\.heroWave\}[^>]*\/?>(?:[\s\S]*?)?/, '首页英雄卡必须渲染受限波形样式');
 assert.match(homeSource, /heroWave\s*:\s*\{/, '首页必须定义受限波形样式');
 assert.match(homeSource, /<Pressable\b[^>]*style=\{[^\r\n]*styles\.memberStatusButton[^\r\n]*\}/, '会员按钮必须应用独立样式');
 assert.match(homeSource, /memberStatusButton\s*:\s*\{/, '会员按钮必须定义受约束的独立样式');
+assert.match(homeSource, /<View\b[^>]*pointerEvents="none"[^>]*style=\{styles\.heroWave\}/, '首页波形必须是不可交互的装饰层');
+assert.match(homeSource, /hero\s*:\s*\{[^\r\n]*overflow:\s*['"]hidden['"]/, '首页英雄卡必须裁切底部波形');
+assert.match(homeSource, /heroWave\s*:\s*\{[^\r\n]*position:\s*['"]absolute['"][^\r\n]*bottom:\s*0[^\r\n]*height:\s*28/, '首页波形必须固定在英雄卡底部 28 点区域');
+assert.match(homeSource, /heroData\s*:\s*\{[^\r\n]*zIndex:\s*1/, '首页数据文字必须位于波形之上');
+assert.match(homeSource, /<LinearGradient\b[^>]*colors=\{\[[^\]]*rgba\(255,255,255,0\)[^\]]*rgba\(255,255,255,\.28\)[^\]]*rgba\(255,255,255,0\)[^\]]*\]\}[^>]*style=\{styles\.heroDivider\}/, '首页数据分割线必须向两端渐隐');
+assert.match(homeSource, /heroDivider\s*:\s*\{[^\r\n]*width:\s*1\.2/, '首页数据分割线中心宽度必须为 1.2 点');
+assert.match(homeSource, /memberStatusBar\s*:\s*\{[^\r\n]*paddingHorizontal:\s*10[^\r\n]*backgroundColor:\s*Brand\.ivory/, '会员状态条必须保留 10 点白色内边距');
+assert.match(homeSource, /memberStatusButton\s*:\s*\{[^\r\n]*flex:\s*0[^\r\n]*width:\s*['"]44%['"][^\r\n]*maxWidth:\s*210[^\r\n]*minWidth:\s*132[^\r\n]*marginRight:\s*10/, '会员按钮必须在紧凑屏幕内保持确认的宽度和右边距');
 assert.doesNotMatch(handIconSource, /melody-clef-reference\.png/, '首页旋律图标必须使用独立 SVG，不能复用谱面素材');
 assert.match(handIconSource, /if\s*\(name === ['"]treble['"]\)[\s\S]*?<Svg\b/, '首页旋律图标必须在 treble 分支渲染 SVG');
 

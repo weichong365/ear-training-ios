@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, type Href, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -22,6 +23,7 @@ type GridItem = {
 };
 
 const SUBSCRIBE_ROUTE = '/subscribe' as Href;
+const HERO_WAVE_HEIGHTS = [8, 16, 11, 20, 14, 24, 10, 18, 12];
 
 const QUICK_ITEMS: Omit<GridItem, 'onPress'>[] = [
   { key: 'wrongbook', name: '错题复盘', desc: '强化薄弱点', icon: 'book', tone: 'coral' },
@@ -29,7 +31,7 @@ const QUICK_ITEMS: Omit<GridItem, 'onPress'>[] = [
 ];
 
 export default function HomeScreen() {
-  const { ready, isActive } = useSubscription();
+  const { ready, configured, isActive } = useSubscription();
   const { provinceId } = useProvince();
   const [practiceStats, setPracticeStats] = useState({ total: 0, accuracy: 0 });
 
@@ -102,6 +104,15 @@ export default function HomeScreen() {
     return { tile: styles.iconAccent, icon: '#2E8B57' };
   }
 
+  const memberSummary = !ready
+    ? '正在同步订阅状态'
+    : !configured
+      ? '当前版本全部功能免费开放'
+      : isActive
+        ? '全部训练已解锁'
+        : '开通后解锁全部训练';
+  const memberAction = !ready ? '同步中' : !configured ? '免费开放' : isActive ? '会员有效' : '开通会员';
+
   return (
     <View style={styles.page}>
       <StatusBar style="light" />
@@ -117,6 +128,9 @@ export default function HomeScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <ImageBackground source={require('../../assets/images/hero-piano-keys.jpg')} resizeMode="cover" style={styles.hero} imageStyle={styles.heroImage}>
+          <View pointerEvents="none" style={styles.heroWave}>
+            {HERO_WAVE_HEIGHTS.map((height, index) => <View key={index} style={[styles.heroWaveBar, { height }]} />)}
+          </View>
           <View style={styles.heroContent}>
             <View style={styles.heroBrand}>
               <Text style={styles.heroTitle}>练耳搭子</Text>
@@ -124,11 +138,21 @@ export default function HomeScreen() {
             </View>
             <View style={styles.heroData}>
               <View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.total}</Text><Text style={styles.metricLabel}>累计练习</Text></View>
-              <View style={styles.metricDivider} />
+              <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,.28)', 'rgba(255,255,255,0)']} style={styles.heroDivider} />
               <View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.accuracy}%</Text><Text style={styles.metricLabel}>正确率</Text></View>
             </View>
           </View>
         </ImageBackground>
+
+        <View style={styles.memberStatusBar}>
+          <View style={styles.memberStatusCopy}>
+            <Text style={styles.memberStatusTitle}>会员权益</Text>
+            <Text numberOfLines={1} style={styles.memberStatusMeta}>{memberSummary}</Text>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={memberAction} style={({ pressed }) => [styles.memberStatusButton, pressed && styles.pressed]} disabled={!ready || !configured} onPress={() => router.push(SUBSCRIBE_ROUTE)}>
+            <Text numberOfLines={1} style={styles.memberStatusButtonText}>{memberAction}</Text>
+          </Pressable>
+        </View>
 
         <View style={styles.grid}>
           {gridItems.map((item) => {
@@ -188,15 +212,23 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 10, paddingTop: 7, paddingBottom: 36, gap: 8 },
   hero: { height: 110, overflow: 'hidden', borderRadius: 30, backgroundColor: '#0c0d0e' },
   heroImage: { opacity: 1, borderRadius: 0 },
+  heroWave: { position: 'absolute', left: '42%', right: '4%', bottom: 0, height: 28, overflow: 'hidden', flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', opacity: 0.16, transform: [{ skewX: '-8deg' }] },
+  heroWaveBar: { width: 4, borderTopLeftRadius: 4, borderTopRightRadius: 4, backgroundColor: Brand.textOnAccent },
   heroContent: { flex: 1, paddingHorizontal: 18, paddingBottom: 10, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   heroBrand: { flex: 1, minWidth: 0, paddingRight: 8 },
   heroTitle: { color: '#1f6f50', fontSize: 17, lineHeight: 22, fontWeight: '900', letterSpacing: -0.5, textShadowColor: 'transparent' },
   heroSub: { marginTop: 3, color: '#1f6f50', fontSize: 11, lineHeight: 15, fontWeight: '700' },
-  heroData: { width: 86, height: 42, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', borderRadius: 11, backgroundColor: 'rgba(20,22,20,.62)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(244,234,213,.34)' },
+  heroData: { zIndex: 1, width: 86, height: 42, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', borderRadius: 11, backgroundColor: 'rgba(20,22,20,.62)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(244,234,213,.34)' },
   heroMetric: { flex: 1, alignItems: 'center' },
   metricNumber: { color: '#FFFFFF', fontSize: TypeScale.subheadline, lineHeight: 18, fontWeight: '900', fontVariant: ['tabular-nums'] },
   metricLabel: { marginTop: 2, color: 'rgba(255,255,255,.74)', fontSize: 11, lineHeight: 14, fontWeight: '600' },
-  metricDivider: { width: StyleSheet.hairlineWidth, height: 26, marginHorizontal: 4, backgroundColor: 'rgba(255,255,255,.30)' },
+  heroDivider: { width: 1.2, height: 34, marginHorizontal: 4 },
+  memberStatusBar: { minHeight: 64, paddingHorizontal: 10, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.control, backgroundColor: Brand.ivory, borderWidth: StyleSheet.hairlineWidth, borderColor: Brand.border },
+  memberStatusCopy: { flex: 1, minWidth: 0, paddingLeft: 10 },
+  memberStatusTitle: { color: Brand.forest, fontSize: TypeScale.footnote, lineHeight: 17, fontWeight: '800' },
+  memberStatusMeta: { marginTop: 2, color: Brand.muted, fontSize: 11, lineHeight: 15 },
+  memberStatusButton: { flex: 0, width: '44%', maxWidth: 210, minWidth: 132, marginRight: 10, minHeight: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest },
+  memberStatusButtonText: { color: Brand.textOnAccent, fontSize: TypeScale.footnote, fontWeight: '800' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
   gridCard: { width: '48.6%', minHeight: 112, padding: 12, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, backgroundColor: '#FFFCF5', ...Shadows.card },
   modeIcon: { width: 48, height: 48, flexShrink: 0, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
