@@ -100,8 +100,8 @@ export default function HomeScreen() {
   function itemColors(tone: GridItem['tone']) {
     if (tone === 'coral') return { tile: styles.iconCoral, icon: '#B98232' };
     if (tone === 'amber') return { tile: styles.iconAmber, icon: '#C28B24' };
-    if (tone === 'mint') return { tile: styles.iconMint, icon: '#2E8B57' };
-    return { tile: styles.iconAccent, icon: '#2E8B57' };
+    if (tone === 'mint') return { tile: styles.iconMint, icon: '#2e8b6f' };
+    return { tile: styles.iconAccent, icon: '#2e8b6f' };
   }
 
   const memberSummary = !ready
@@ -127,7 +127,7 @@ export default function HomeScreen() {
       </SafeAreaView>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <ImageBackground source={require('../../assets/images/hero-piano-keys.jpg')} resizeMode="cover" style={styles.hero} imageStyle={styles.heroImage}>
+        <ImageBackground source={require('../../../assets/images/hero-piano-keys.jpg')} resizeMode="cover" style={styles.hero} imageStyle={styles.heroImage}>
           <View pointerEvents="none" style={styles.heroWave}>
             {HERO_WAVE_HEIGHTS.map((height, index) => <View key={index} style={[styles.heroWaveBar, { height }]} />)}
           </View>
@@ -161,19 +161,19 @@ export default function HomeScreen() {
               <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.name} accessibilityHint={item.desc} onPress={item.onPress} style={({ pressed }) => [styles.gridCard, pressed && styles.pressed]}>
                 <View style={[styles.modeIcon, colors.tile]}><HandIcon name={item.icon} size={30} color={colors.icon} /></View>
                 <View style={styles.modeCopy}><Text numberOfLines={2} style={styles.modeName}>{item.name}</Text><Text numberOfLines={2} style={styles.modeDesc}>{item.desc}</Text></View>
-                <AppIcon name="chevronRight" size={15} color="#68A07E" />
+                <AppIcon name="chevronRight" size={15} color="#75827e" />
               </Pressable>
             );
           })}
         </View>
 
         <Pressable accessibilityRole="button" accessibilityLabel="智能强化" accessibilityHint="根据历史错题开始个性化训练" onPress={openAdaptive} style={({ pressed }) => [styles.adaptiveCard, pressed && styles.pressed]}>
-          <View style={styles.targetIcon}><HandIcon name="target" size={30} color="#2E8B57" /></View>
+          <View style={styles.targetIcon}><HandIcon name="target" size={30} color="#2e8b6f" /></View>
           <View style={styles.adaptiveCopy}>
             <View style={styles.adaptiveLine}><Text style={styles.adaptiveTitle}>智能强化</Text><Text style={styles.adaptiveTag}>个性推荐</Text></View>
             <Text numberOfLines={1} style={styles.adaptiveDesc}>按薄弱题型生成专项试题训练</Text>
           </View>
-          <AppIcon name="chevronRight" size={17} color="#68A07E" />
+          <AppIcon name="chevronRight" size={17} color="#75827e" />
         </Pressable>
 
         <View style={styles.quickRow}>
@@ -216,8 +216,8 @@ const styles = StyleSheet.create({
   heroWaveBar: { width: 4, borderTopLeftRadius: 4, borderTopRightRadius: 4, backgroundColor: Brand.textOnAccent },
   heroContent: { flex: 1, paddingHorizontal: 18, paddingBottom: 10, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   heroBrand: { flex: 1, minWidth: 0, paddingRight: 8 },
-  heroTitle: { color: '#1f6f50', fontSize: 17, lineHeight: 22, fontWeight: '900', letterSpacing: -0.5, textShadowColor: 'transparent' },
-  heroSub: { marginTop: 3, color: '#1f6f50', fontSize: 11, lineHeight: 15, fontWeight: '700' },
+  heroTitle: { color: '#1f6f5b', fontSize: 17, lineHeight: 22, fontWeight: '900', letterSpacing: -0.5, textShadowColor: 'transparent' },
+  heroSub: { marginTop: 3, color: '#1f6f5b', fontSize: 11, lineHeight: 15, fontWeight: '700' },
   heroData: { zIndex: 1, width: 86, height: 42, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', borderRadius: 11, backgroundColor: 'rgba(20,22,20,.62)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(244,234,213,.34)' },
   heroMetric: { flex: 1, alignItems: 'center' },
   metricNumber: { color: '#FFFFFF', fontSize: TypeScale.subheadline, lineHeight: 18, fontWeight: '900', fontVariant: ['tabular-nums'] },
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   memberStatusButton: { flex: 0, width: '44%', maxWidth: 210, minWidth: 132, marginRight: 10, minHeight: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest },
   memberStatusButtonText: { color: Brand.textOnAccent, fontSize: TypeScale.footnote, fontWeight: '800' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
-  gridCard: { width: '48.6%', minHeight: 112, padding: 12, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, backgroundColor: '#FFFCF5', ...Shadows.card },
+  gridCard: { width: '48.6%', minHeight: 112, padding: 12, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, backgroundColor: '#ffffff', ...Shadows.card },
   modeIcon: { width: 48, height: 48, flexShrink: 0, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   iconMint: { backgroundColor: '#DCEFE3' },
   iconAccent: { backgroundColor: '#E4F0E8' },
@@ -238,22 +238,22 @@ const styles = StyleSheet.create({
   iconAmber: { backgroundColor: '#F8E7A9' },
   modeCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
   modeName: { color: '#191C19', fontSize: TypeScale.footnote, lineHeight: 17, fontWeight: '900' },
-  modeDesc: { marginTop: 3, color: '#66776C', fontSize: 11, lineHeight: 15 },
+  modeDesc: { marginTop: 3, color: '#75827e', fontSize: 11, lineHeight: 15 },
   adaptiveCard: { minHeight: 75, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, borderWidth: 1, borderColor: '#B9DCCA', backgroundColor: '#E3F2E8' },
   targetIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
   adaptiveCopy: { flex: 1, minWidth: 0, marginLeft: 10 },
   adaptiveLine: { flexDirection: 'row', alignItems: 'center' },
-  adaptiveTitle: { color: '#167653', fontSize: TypeScale.footnote, fontWeight: '900' },
-  adaptiveTag: { marginLeft: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden', color: '#237A57', backgroundColor: '#CFE8D8', fontSize: 11, fontWeight: '700' },
-  adaptiveDesc: { marginTop: 3, color: '#587567', fontSize: 11, lineHeight: 15 },
+  adaptiveTitle: { color: '#1f6f5b', fontSize: TypeScale.footnote, fontWeight: '900' },
+  adaptiveTag: { marginLeft: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden', color: '#2e8b6f', backgroundColor: '#e2f2ec', fontSize: 11, fontWeight: '700' },
+  adaptiveDesc: { marginTop: 3, color: '#75827e', fontSize: 11, lineHeight: 15 },
   quickRow: { flexDirection: 'row', gap: 8 },
-  quickItem: { flex: 1, minHeight: 72, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, backgroundColor: '#FFFCF5', ...Shadows.card },
+  quickItem: { flex: 1, minHeight: 72, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, backgroundColor: '#ffffff', ...Shadows.card },
   quickIcon: { width: 48, height: 48, flexShrink: 0, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   quickCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
   quickTitle: { color: '#191C19', fontSize: TypeScale.footnote, lineHeight: 17, fontWeight: '900' },
-  quickDesc: { marginTop: 3, color: '#66776C', fontSize: 11, lineHeight: 15 },
-  suggestionButton: { minHeight: 48, flexDirection: 'row', gap: 7, alignSelf: 'center', marginTop: 1, paddingHorizontal: 24, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1.5, borderColor: '#187958', backgroundColor: '#FFFCF5' },
-  suggestionText: { color: '#187958', fontSize: TypeScale.footnote, fontWeight: '800' },
+  quickDesc: { marginTop: 3, color: '#75827e', fontSize: 11, lineHeight: 15 },
+  suggestionButton: { minHeight: 48, flexDirection: 'row', gap: 7, alignSelf: 'center', marginTop: 1, paddingHorizontal: 24, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1.5, borderColor: '#1f6f5b', backgroundColor: '#ffffff' },
+  suggestionText: { color: '#1f6f5b', fontSize: TypeScale.footnote, fontWeight: '800' },
   aboutButton: { minHeight: TouchTarget, flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 7, paddingHorizontal: 14 },
   aboutText: { color: '#66756C', fontSize: TypeScale.caption },
   pressed: { opacity: 0.72 },

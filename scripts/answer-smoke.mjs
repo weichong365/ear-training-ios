@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 const {
@@ -35,7 +35,52 @@ const questionCore = require('../src/core/legacy/question.js');
 const pcmRenderer = require('../src/core/legacy/pcm-renderer.js');
 const { midiToName } = require('../src/core/legacy/theory.js');
 
-const homeSource = readFileSync(new URL('../src/app/index.tsx', import.meta.url), 'utf8');
+const tabsLayoutUrl = new URL('../src/app/(tabs)/_layout.tsx', import.meta.url);
+assert.ok(existsSync(tabsLayoutUrl), '首页、错题、我的、举手必须接入同一个原生 Tabs 路由组');
+const tabsSource = readFileSync(tabsLayoutUrl, 'utf8');
+const rootLayoutSource = readFileSync(new URL('../src/app/_layout.tsx', import.meta.url), 'utf8');
+const tabScreens = [...tabsSource.matchAll(/<Tabs\.Screen\b[\s\S]*?\/>/g)].map(([screen]) => ({
+  name: screen.match(/name="([^"]+)"/)?.[1],
+  title: screen.match(/title:\s*'([^']+)'/)?.[1],
+  icon: screen.match(/<AppIcon name="([^"]+)"/)?.[1],
+}));
+assert.deepEqual(tabScreens, [
+  { name: 'index', title: '首页', icon: 'headphones' },
+  { name: 'wrongbook', title: '错题', icon: 'wrongbookTab' },
+  { name: 'stats', title: '我的', icon: 'profile' },
+  { name: 'about', title: '举手', icon: 'hand' },
+], '四个原生标签必须保持公开路由、顺序、可读标签和图标对应关系');
+assert.match(tabsSource, /import\s*\{\s*Tabs\s*\}\s*from 'expo-router'/);
+assert.match(tabsSource, /headerShown:\s*false/);
+assert.match(tabsSource, /tabBarActiveTintColor:\s*Brand\.forest/);
+assert.match(tabsSource, /tabBarInactiveTintColor:\s*Brand\.disabled/);
+assert.equal((tabsSource.match(/<AppIcon name="[^"]+" size=\{24\} color=\{color\}/g) || []).length, 4, '标签图标必须遵循选中颜色且统一为 24 点');
+assert.doesNotMatch(tabsSource, /tabBar\s*=|tabBarStyle|safeAreaInsets/, '标签栏必须保留框架默认布局及底部安全区');
+for (const name of ['index', 'wrongbook', 'stats', 'about']) {
+  assert.ok(existsSync(new URL(`../src/app/(tabs)/${name}.tsx`, import.meta.url)), `${name} 页面必须位于 Tabs 组内`);
+  assert.equal(existsSync(new URL(`../src/app/${name}.tsx`, import.meta.url)), false, `${name} 不能重复注册根路由`);
+}
+assert.equal((rootLayoutSource.match(/<Stack\.Screen name="\(tabs\)" options=\{\{ headerShown: false \}\}/g) || []).length, 1);
+assert.doesNotMatch(rootLayoutSource, /<Stack\.Screen name="(?:index|wrongbook|stats|about)"/);
+for (const name of ['practice', 'exam', 'exam-paper', 'province-select', 'subscribe', 'terms', 'support']) {
+  assert.ok(existsSync(new URL(`../src/app/${name}.tsx`, import.meta.url)), `${name} 详情流程必须留在根 Stack`);
+}
+const resolverSource = rootLayoutSource.match(/function publicRouteFromSegments\(segments: string\[\]\)\s*\{[\s\S]*?\n\}/)?.[0];
+assert.ok(resolverSource, '根布局必须提供可验证的纯公开路由解析函数');
+const { transpile } = require('typescript');
+const publicRouteFromSegments = new Function(`${transpile(resolverSource)}; return publicRouteFromSegments;`)();
+for (const [segments, expected] of [
+  [[], undefined], [['(tabs)'], undefined], [['(tabs)', 'index'], 'index'],
+  [['(tabs)', 'wrongbook'], 'wrongbook'], [['(tabs)', 'stats'], 'stats'],
+  [['(outer)', '(tabs)', 'about'], 'about'], [['practice'], 'practice'],
+  [['province-select'], 'province-select'],
+]) {
+  assert.equal(publicRouteFromSegments(segments), expected, `分组路由 ${segments.join('/')} 解析错误`);
+}
+assert.equal((rootLayoutSource.match(/const route = publicRouteFromSegments\(segments\);/g) || []).length, 2, '订阅和省份守卫都必须使用公开路由');
+assert.doesNotMatch(rootLayoutSource, /segments\[0\]/, '权限守卫不能把路由组当作公开页面');
+
+const homeSource = readFileSync(new URL('../src/app/(tabs)/index.tsx', import.meta.url), 'utf8');
 const themeSource = readFileSync(new URL('../src/constants/theme.ts', import.meta.url), 'utf8');
 const handIconSource = readFileSync(new URL('../src/components/hand-icon.tsx', import.meta.url), 'utf8');
 const appIconSource = readFileSync(new URL('../src/components/app-icon.tsx', import.meta.url), 'utf8');

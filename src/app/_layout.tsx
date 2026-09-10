@@ -16,20 +16,24 @@ const SUBSCRIBE_ROUTE = '/subscribe' as Href;
 const PROVINCE_ROUTE = '/province-select' as Href;
 const DEV_WEB_PREVIEW = __DEV__ && Platform.OS === 'web';
 
+function publicRouteFromSegments(segments: string[]) {
+  return segments.find((segment) => !segment.startsWith('('));
+}
+
 function AppStack() {
   const segments = useSegments();
   const { ready, isActive } = useSubscription();
   const { ready: provinceReady, provinceId } = useProvince();
 
   useEffect(() => {
-    const route = segments[0];
+    const route = publicRouteFromSegments(segments);
     if (!DEV_WEB_PREVIEW && ready && !isActive && route && PROTECTED_ROUTES.has(route)) {
       router.replace({ pathname: SUBSCRIBE_ROUTE, params: { reason: 'required' } } as Href);
     }
   }, [isActive, ready, segments]);
 
   useEffect(() => {
-    const route = segments[0];
+    const route = publicRouteFromSegments(segments);
     if (!DEV_WEB_PREVIEW && provinceReady && !provinceId && route !== 'province-select') {
       router.replace(PROVINCE_ROUTE);
     }
@@ -47,15 +51,12 @@ function AppStack() {
           contentStyle: { backgroundColor: Brand.cream },
           headerBackButtonDisplayMode: 'minimal',
         }}>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="province-select" options={{ headerShown: false }} />
         <Stack.Screen name="subscribe" options={{ title: '解锁练耳搭子', presentation: 'modal' }} />
         <Stack.Screen name="practice" options={{ title: '专项训练' }} />
         <Stack.Screen name="exam" options={{ title: '模拟考试' }} />
         <Stack.Screen name="exam-paper" options={{ title: '模拟试卷', gestureEnabled: false }} />
-        <Stack.Screen name="wrongbook" options={{ title: '错题复盘' }} />
-        <Stack.Screen name="stats" options={{ title: '练习统计' }} />
-        <Stack.Screen name="about" options={{ title: '关于练耳搭子' }} />
         <Stack.Screen name="privacy" options={{ title: '隐私政策' }} />
         <Stack.Screen name="terms" options={{ title: '订阅与使用条款' }} />
         <Stack.Screen name="support" options={{ title: '使用帮助' }} />

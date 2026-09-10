@@ -10,7 +10,7 @@ const PRIVACY_ROUTE = '/privacy' as Href;
 const SUPPORT_ROUTE = '/support' as Href;
 
 const ITEMS = [
-  { title: '专业听辨流程', body: '标准音、预备拍与正题音频连续播放；完整播放结束后才可重听。' },
+  { title: '专业听记流程', body: '标准音、预备拍与正题音频连续播放；完整播放结束后才可重听。' },
   { title: '离线钢琴音色', body: '题目使用 C4–A5 共 22 个独立定音采样，复盘钢琴扩展至 G3–A5。' },
   { title: '本地优先', body: '首版不要求登录，练习记录和错题优先保存在当前设备。' },
 ];
