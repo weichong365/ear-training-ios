@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
   memberStatusBar: { minHeight: 64, paddingHorizontal: 10, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.control, backgroundColor: Brand.ivory, borderWidth: StyleSheet.hairlineWidth, borderColor: Brand.border },
   memberStatusCopy: { flex: 1, minWidth: 0, paddingLeft: 10 },
   memberStatusTitle: { color: Brand.forest, fontSize: TypeScale.footnote, lineHeight: 17, fontWeight: '800' },
-  memberStatusMeta: { marginTop: 2, color: Brand.muted, fontSize: 11, lineHeight: 15 },
+  memberStatusMeta: { marginTop: 2, color: '#5F6F65', fontSize: 11, lineHeight: 15 },
   memberStatusButton: { flex: 0, width: '44%', maxWidth: 210, minWidth: 132, marginRight: 10, minHeight: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest },
   memberStatusButtonText: { color: Brand.textOnAccent, fontSize: TypeScale.footnote, fontWeight: '800' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },

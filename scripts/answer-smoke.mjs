@@ -36,6 +36,7 @@ const pcmRenderer = require('../src/core/legacy/pcm-renderer.js');
 const { midiToName } = require('../src/core/legacy/theory.js');
 
 const homeSource = readFileSync(new URL('../src/app/index.tsx', import.meta.url), 'utf8');
+const themeSource = readFileSync(new URL('../src/constants/theme.ts', import.meta.url), 'utf8');
 const handIconSource = readFileSync(new URL('../src/components/hand-icon.tsx', import.meta.url), 'utf8');
 const appIconSource = readFileSync(new URL('../src/components/app-icon.tsx', import.meta.url), 'utf8');
 const provinceSource = readFileSync(new URL('../src/core/provinces.ts', import.meta.url), 'utf8');
@@ -52,6 +53,16 @@ const propNumber = (source, prop) => {
   const match = source.match(new RegExp(`${prop}=\\{(-?\\d+(?:\\.\\d+)?)\\}`));
   assert.ok(match, `${prop} 必须使用可验证的数值坐标`);
   return Number(match[1]);
+};
+const relativeLuminance = (hex) => {
+  const channels = hex.slice(1).match(/../g).map((channel) => Number.parseInt(channel, 16) / 255);
+  const linear = channels.map((channel) => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+};
+const contrastRatio = (foreground, background) => {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  return (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
 };
 
 const singleIconBranch = iconBranch(handIconSource, 'single-note', 'triplet');
@@ -136,6 +147,12 @@ assert.match(homeSource, /<LinearGradient\b[^>]*colors=\{\[[^\]]*rgba\(255,255,2
 assert.match(homeSource, /heroDivider\s*:\s*\{[^\r\n]*width:\s*1\.2/, '首页数据分割线中心宽度必须为 1.2 点');
 assert.match(homeSource, /memberStatusBar\s*:\s*\{[^\r\n]*paddingHorizontal:\s*10[^\r\n]*backgroundColor:\s*Brand\.ivory/, '会员状态条必须保留 10 点白色内边距');
 assert.match(homeSource, /memberStatusButton\s*:\s*\{[^\r\n]*flex:\s*0[^\r\n]*width:\s*['"]44%['"][^\r\n]*maxWidth:\s*210[^\r\n]*minWidth:\s*132[^\r\n]*marginRight:\s*10/, '会员按钮必须在紧凑屏幕内保持确认的宽度和右边距');
+const memberMetaStyle = homeSource.match(/memberStatusMeta\s*:\s*\{([^\r\n]*)\}/)?.[1] || '';
+const memberMetaColor = memberMetaStyle.match(/color:\s*['"](#[0-9a-fA-F]{6})['"]/)?.[1];
+assert.ok(memberMetaColor, '会员元数据必须使用局部十六进制颜色');
+const memberBarBackground = themeSource.match(/\bivory:\s*['"](#[0-9a-fA-F]{6})['"]/)?.[1];
+assert.ok(memberBarBackground, '会员状态条背景必须使用可验证的 Brand.ivory 颜色');
+assert.ok(contrastRatio(memberMetaColor, memberBarBackground) >= 4.5, `会员元数据与状态条背景对比度必须至少为 4.5:1（实际为 ${contrastRatio(memberMetaColor, memberBarBackground).toFixed(2)}:1）`);
 assert.doesNotMatch(handIconSource, /melody-clef-reference\.png/, '首页旋律图标必须使用独立 SVG，不能复用谱面素材');
 assert.match(handIconSource, /if\s*\(name === ['"]treble['"]\)[\s\S]*?<Svg\b/, '首页旋律图标必须在 treble 分支渲染 SVG');
 
