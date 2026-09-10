@@ -37,6 +37,20 @@ const { midiToName } = require('../src/core/legacy/theory.js');
 
 const homeSource = readFileSync(new URL('../src/app/index.tsx', import.meta.url), 'utf8');
 const handIconSource = readFileSync(new URL('../src/components/hand-icon.tsx', import.meta.url), 'utf8');
+const appIconSource = readFileSync(new URL('../src/components/app-icon.tsx', import.meta.url), 'utf8');
+const provinceSource = readFileSync(new URL('../src/core/provinces.ts', import.meta.url), 'utf8');
+for (const icon of ['single-note', 'triplet', 'interval', 'chord', 'rhythm', 'treble', 'mixed', 'target']) {
+  assert.match(handIconSource, new RegExp(`name === ['"]${icon}['"]`), `首页缺少 ${icon} SVG 图标分支`);
+}
+assert.match(handIconSource, /M27 43c-7 0-10-5-8-10 2-5 10-6 14-2 4 4 1 11-5 11-7 0-11-8-8-16 3-10 13-15 12-21-1-4-5-2-6 2-2 7 4 14 7 21/, '首页高音谱号没有使用确认的矢量轮廓');
+assert.match(handIconSource, /<Line x1=\{21\} y1=\{24\} x2=\{27\} y2=\{24\}/, '智能强化靶心横线必须留在最内圈内');
+assert.match(handIconSource, /<Line x1=\{24\} y1=\{21\} x2=\{24\} y2=\{27\}/, '智能强化靶心竖线必须留在最内圈内');
+assert.match(appIconSource, /const NAV_VIEW_BOX = 48;/, '底部导航图标必须共享同一画布尺寸');
+assert.match(appIconSource, /const NAV_STROKE_WIDTH = 2\.6;/, '底部导航图标必须共享同一笔画宽度');
+for (const icon of ['headphones', 'wrongbook', 'profile', 'hand']) {
+  assert.match(appIconSource, new RegExp(`name === ['"]${icon}['"]`), `底部导航缺少 ${icon} 矢量图标分支`);
+}
+assert.match(provinceSource, /group:\s*\{[^\r\n]*icon:\s*['"]triplet['"]/, '旋律音组必须使用独立三音图标');
 assert.match(homeSource, /<View\b[^>]*style=\{styles\.heroDivider\}[^>]*\/?>(?:[\s\S]*?)?/, '首页数据区必须渲染渐隐分割线样式');
 assert.match(homeSource, /heroDivider\s*:\s*\{/, '首页必须定义渐隐分割线样式');
 assert.match(homeSource, /<View\b[^>]*style=\{styles\.heroWave\}[^>]*\/?>(?:[\s\S]*?)?/, '首页英雄卡必须渲染受限波形样式');
