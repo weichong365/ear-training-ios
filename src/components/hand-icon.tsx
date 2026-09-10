@@ -40,9 +40,9 @@ export function HandIcon({ name, size = 48, color = '#2e8b6f' }: HandIconProps) 
   return (
     <Svg width={size} height={size} viewBox="0 0 48 48">
       {name === 'single-note' && (
-        <G transform="rotate(-2 24 24)">
-          <Ellipse cx={20} cy={36} rx={8} ry={5} stroke={color} strokeWidth={SW} fill="none" transform="rotate(-14 20 36)" />
-          <Line x1={27.5} y1={12} x2={27.5} y2={36} stroke={color} strokeWidth={SW} strokeLinecap="round" />
+        <G>
+          <Ellipse cx={24.2} cy={34} rx={8} ry={5} stroke={color} strokeWidth={SW} fill="none" transform="rotate(-14 24.2 34)" />
+          <Line x1={31.7} y1={10} x2={31.7} y2={34} stroke={color} strokeWidth={SW} strokeLinecap="round" />
         </G>
       )}
       {name === 'triplet' && (

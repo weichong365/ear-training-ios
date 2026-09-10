@@ -4,7 +4,7 @@ import Svg, { Circle, G, Line, Path, Rect } from 'react-native-svg';
 
 import { Brand } from '@/constants/theme';
 
-type NavigationIconName = 'headphones' | 'wrongbook' | 'profile' | 'hand';
+type NavigationIconName = 'headphones' | 'wrongbookTab' | 'profile' | 'hand';
 
 export type AppIconName = keyof typeof ICONS | NavigationIconName;
 
@@ -47,7 +47,7 @@ type AppIconProps = {
 };
 
 export function AppIcon({ name, size = 22, color = Brand.forest, style }: AppIconProps) {
-  if (name === 'headphones' || name === 'wrongbook' || name === 'profile' || name === 'hand') {
+  if (name === 'headphones' || name === 'wrongbookTab' || name === 'profile' || name === 'hand') {
     return (
       <Svg
         accessibilityElementsHidden
@@ -64,7 +64,7 @@ export function AppIcon({ name, size = 22, color = Brand.forest, style }: AppIco
               <Rect x={32} y={25} width={8} height={16} rx={3} fill={color} stroke="none" />
             </>
           )}
-          {name === 'wrongbook' && (
+          {name === 'wrongbookTab' && (
             <>
               <Rect x={8} y={10} width={32} height={28} rx={4} />
               <Line x1={24} y1={14} x2={24} y2={34} />

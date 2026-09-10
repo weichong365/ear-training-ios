@@ -39,17 +39,88 @@ const homeSource = readFileSync(new URL('../src/app/index.tsx', import.meta.url)
 const handIconSource = readFileSync(new URL('../src/components/hand-icon.tsx', import.meta.url), 'utf8');
 const appIconSource = readFileSync(new URL('../src/components/app-icon.tsx', import.meta.url), 'utf8');
 const provinceSource = readFileSync(new URL('../src/core/provinces.ts', import.meta.url), 'utf8');
-for (const icon of ['single-note', 'triplet', 'interval', 'chord', 'rhythm', 'treble', 'mixed', 'target']) {
-  assert.match(handIconSource, new RegExp(`name === ['"]${icon}['"]`), `首页缺少 ${icon} SVG 图标分支`);
-}
+
+const iconBranch = (source, name, nextName) => {
+  const start = source.indexOf(`{name === '${name}' && (`);
+  const end = source.indexOf(`{name === '${nextName}' && (`, start + 1);
+  assert.notEqual(start, -1, `缺少 ${name} SVG 图标分支`);
+  assert.notEqual(end, -1, `无法确定 ${name} SVG 图标分支边界`);
+  return source.slice(start, end);
+};
+const tagCount = (source, tag) => (source.match(new RegExp(`<${tag}\\b`, 'g')) || []).length;
+const propNumber = (source, prop) => {
+  const match = source.match(new RegExp(`${prop}=\\{(-?\\d+(?:\\.\\d+)?)\\}`));
+  assert.ok(match, `${prop} 必须使用可验证的数值坐标`);
+  return Number(match[1]);
+};
+
+const singleIconBranch = iconBranch(handIconSource, 'single-note', 'triplet');
+const tripletIconBranch = iconBranch(handIconSource, 'triplet', 'interval');
+const intervalIconBranch = iconBranch(handIconSource, 'interval', 'chord');
+const chordIconBranch = iconBranch(handIconSource, 'chord', 'rhythm');
+const rhythmIconBranch = iconBranch(handIconSource, 'rhythm', 'mixed');
+const mixedIconBranch = iconBranch(handIconSource, 'mixed', 'target');
+const targetIconBranch = iconBranch(handIconSource, 'target', 'book');
+
+assert.match(handIconSource, /const SW = 1\.7;/, '训练图标必须保留统一 1.7 笔画');
+assert.match(singleIconBranch, /\(\s*<G>\s*<Ellipse\b/, '单音边界计算要求符头与符干不再叠加外层旋转');
+assert.equal(tagCount(singleIconBranch, 'Ellipse'), 1, '单音图标必须只有一个空心符头');
+assert.equal(tagCount(singleIconBranch, 'Line'), 1, '单音图标必须只有一根符干');
+assert.match(singleIconBranch, /<Ellipse\b[^>]*stroke=\{color\}[^>]*strokeWidth=\{SW\}[^>]*fill="none"/, '单音符头必须空心并使用统一笔画');
+assert.equal(tagCount(tripletIconBranch, 'Ellipse'), 3, '音组图标必须包含三个符头');
+assert.equal(tagCount(tripletIconBranch, 'Line'), 3, '音组图标必须包含三根符干');
+assert.match(tripletIconBranch, /<G fill=\{color\} stroke=\{color\} strokeWidth=\{SW\} strokeLinecap="round">/, '音组三音必须使用统一实心圆角笔画');
+assert.equal(tagCount(intervalIconBranch, 'Ellipse'), 2, '音程图标必须包含两个符头');
+assert.equal((intervalIconBranch.match(/<Ellipse\b[^>]*fill=\{color\}/g) || []).length, 2, '音程的两个符头必须实心');
+assert.equal(tagCount(intervalIconBranch, 'Line'), 2, '音程图标必须包含两根符干');
+assert.equal(tagCount(chordIconBranch, 'Ellipse'), 3, '和弦图标必须包含三个符头');
+assert.equal((chordIconBranch.match(/<Ellipse\b[^>]*fill="none"/g) || []).length, 3, '和弦的三个符头必须空心');
+assert.equal(tagCount(chordIconBranch, 'Line'), 0, '全音符和弦不能带符干');
+assert.equal(tagCount(rhythmIconBranch, 'Line'), 5, '节奏图标必须包含四条交叉线和一条下划线');
+assert.equal((rhythmIconBranch.match(/strokeLinecap="round"/g) || []).length, 5, '节奏线端必须全部圆润');
+assert.equal(tagCount(mixedIconBranch, 'Rect'), 1, '模拟考试图标必须包含纸张轮廓');
+assert.equal(tagCount(mixedIconBranch, 'Path'), 1, '模拟考试图标必须包含折角');
+assert.equal(tagCount(mixedIconBranch, 'Line'), 2, '模拟考试图标必须包含两条答题线');
+assert.equal(tagCount(mixedIconBranch, 'Ellipse'), 2, '模拟考试图标必须包含两个音符标记');
+assert.equal(tagCount(targetIconBranch, 'Circle'), 3, '智能强化图标必须包含三个同心圆');
+assert.equal(tagCount(targetIconBranch, 'Line'), 2, '智能强化靶心必须使用两条线组成加号');
 assert.match(handIconSource, /M27 43c-7 0-10-5-8-10 2-5 10-6 14-2 4 4 1 11-5 11-7 0-11-8-8-16 3-10 13-15 12-21-1-4-5-2-6 2-2 7 4 14 7 21/, '首页高音谱号没有使用确认的矢量轮廓');
 assert.match(handIconSource, /<Line x1=\{21\} y1=\{24\} x2=\{27\} y2=\{24\}/, '智能强化靶心横线必须留在最内圈内');
 assert.match(handIconSource, /<Line x1=\{24\} y1=\{21\} x2=\{24\} y2=\{27\}/, '智能强化靶心竖线必须留在最内圈内');
+
+const singleEllipse = singleIconBranch.match(/<Ellipse\b[^>]*\/>/)?.[0] || '';
+const singleStem = singleIconBranch.match(/<Line\b[^>]*\/>/)?.[0] || '';
+const singleRotation = Number(singleEllipse.match(/transform="rotate\((-?\d+(?:\.\d+)?)/)?.[1]);
+assert.ok(Number.isFinite(singleRotation), '单音符头必须提供可验证的旋转角度');
+const radians = singleRotation * Math.PI / 180;
+const ellipseHalfWidth = Math.hypot(propNumber(singleEllipse, 'rx') * Math.cos(radians), propNumber(singleEllipse, 'ry') * Math.sin(radians)) + 1.7 / 2;
+const ellipseHalfHeight = Math.hypot(propNumber(singleEllipse, 'rx') * Math.sin(radians), propNumber(singleEllipse, 'ry') * Math.cos(radians)) + 1.7 / 2;
+const singleBounds = {
+  left: Math.min(propNumber(singleEllipse, 'cx') - ellipseHalfWidth, propNumber(singleStem, 'x1') - 1.7 / 2),
+  right: Math.max(propNumber(singleEllipse, 'cx') + ellipseHalfWidth, propNumber(singleStem, 'x1') + 1.7 / 2),
+  top: Math.min(propNumber(singleEllipse, 'cy') - ellipseHalfHeight, propNumber(singleStem, 'y1') - 1.7 / 2),
+  bottom: Math.max(propNumber(singleEllipse, 'cy') + ellipseHalfHeight, propNumber(singleStem, 'y2') + 1.7 / 2),
+};
+assert.ok(singleBounds.left >= 6 && singleBounds.right <= 42 && singleBounds.top >= 6 && singleBounds.bottom <= 42, `单音图标可见边界超出 36×36 光学校准框：${JSON.stringify(singleBounds)}`);
+assert.ok(Math.abs((singleBounds.left + singleBounds.right) / 2 - 24) <= 0.25, `单音图标没有水平居中：${JSON.stringify(singleBounds)}`);
+
 assert.match(appIconSource, /const NAV_VIEW_BOX = 48;/, '底部导航图标必须共享同一画布尺寸');
 assert.match(appIconSource, /const NAV_STROKE_WIDTH = 2\.6;/, '底部导航图标必须共享同一笔画宽度');
-for (const icon of ['headphones', 'wrongbook', 'profile', 'hand']) {
-  assert.match(appIconSource, new RegExp(`name === ['"]${icon}['"]`), `底部导航缺少 ${icon} 矢量图标分支`);
-}
+assert.match(appIconSource, /<G fill="none" stroke=\{color\} strokeWidth=\{NAV_STROKE_WIDTH\} strokeLinecap="round" strokeLinejoin="round">/, '底部导航图标必须共享圆角笔画');
+const headphonesIconBranch = iconBranch(appIconSource, 'headphones', 'wrongbookTab');
+const wrongbookTabIconBranch = iconBranch(appIconSource, 'wrongbookTab', 'profile');
+const profileIconBranch = iconBranch(appIconSource, 'profile', 'hand');
+assert.equal(tagCount(headphonesIconBranch, 'Rect'), 2, '耳机图标必须包含两个耳罩');
+assert.equal((headphonesIconBranch.match(/<Rect\b[^>]*fill=\{color\} stroke="none"/g) || []).length, 2, '两个耳罩必须全部实心');
+assert.equal(tagCount(wrongbookTabIconBranch, 'Rect'), 1, '导航错题本必须保留一个书本轮廓');
+assert.equal(tagCount(wrongbookTabIconBranch, 'Line'), 1, '导航错题本只能保留一条内页线');
+assert.equal(tagCount(profileIconBranch, 'Circle'), 1, '我的图标必须保留头像轮廓');
+assert.equal(tagCount(profileIconBranch, 'Path'), 1, '我的图标必须保留身体轮廓');
+assert.equal(tagCount(profileIconBranch, 'Line'), 2, '我的图标必须保留两条分离横线');
+assert.match(profileIconBranch, /<Line x1=\{34\} y1=\{33\} x2=\{41\} y2=\{33\}/, '我的图标上方横线必须与身体保持间隙');
+assert.match(appIconSource, /\{name === 'hand' && \([\s\S]*?<Path\b/, '举手图标必须使用矢量路径');
+assert.match(appIconSource, /wrongbook: \['checklist', 'fact_check'\]/, '非导航错题图标必须继续使用原生符号');
+assert.doesNotMatch(appIconSource, /name === 'wrongbook'(?:\s*\|\||\s*&&)/, '导航分支不能截获非导航 wrongbook 图标');
 assert.match(provinceSource, /group:\s*\{[^\r\n]*icon:\s*['"]triplet['"]/, '旋律音组必须使用独立三音图标');
 assert.match(homeSource, /<View\b[^>]*style=\{styles\.heroDivider\}[^>]*\/?>(?:[\s\S]*?)?/, '首页数据区必须渲染渐隐分割线样式');
 assert.match(homeSource, /heroDivider\s*:\s*\{/, '首页必须定义渐隐分割线样式');
