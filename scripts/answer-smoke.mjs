@@ -419,11 +419,12 @@ assert.equal(parseStoredVolume('0'), 0, '用户保存的静音设置必须保留
 assert.equal(parseStoredVolume(150), 100);
 assert.equal(parseStoredVolume(-10), 0);
 
-const lowPianoConfigs = [55, 56, 57, 58, 59].map(pianoPlaybackConfig);
-assert.equal(lowPianoConfigs.every(Boolean), true, '复盘钢琴 G3-B3 存在无法播放的琴键');
-assert.equal(new Set(lowPianoConfigs.map((item) => `${item.sampleMidi}:${item.playbackRate.toFixed(6)}`)).size, 5, '复盘钢琴 G3-B3 没有形成五个不同音高');
-assert.deepEqual(pianoPlaybackConfig(60), { sampleMidi: 60, playbackRate: 1 });
+for (let midi = 55; midi <= 81; midi++) {
+  assert.deepEqual(pianoPlaybackConfig(midi), { sampleMidi: midi, playbackRate: 1 },
+    `复盘钢琴 MIDI ${midi} 必须直接播放对应采样，不能变速移调`);
+}
 assert.equal(pianoPlaybackConfig(54), null);
+assert.equal(pianoPlaybackConfig(82), null);
 const audioEngineSource = readFileSync(new URL('../src/services/audio-engine.ts', import.meta.url), 'utf8');
 assert.match(audioEngineSource, /pianoPlayer\.setPlaybackRate\(config\.playbackRate\)/, '复盘钢琴必须通过 iOS 原生播放器方法设置音高');
 assert.doesNotMatch(audioEngineSource, /pianoPlayer\.playbackRate\s*=/, '直接写 playbackRate 会让 iOS 复盘钢琴静音');
