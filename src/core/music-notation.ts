@@ -22,6 +22,12 @@ export const STAFF_STEP_GAP = STAFF_LINE_GAP / 2;
 export const STAFF_LINE_YS = [28, 38, 48, 58, 68] as const;
 export const STAFF_STROKE_WIDTH = 1;
 
+export function fitTupletBeamY(beamY: number, direction: StemDirection, staffHeight: number, numberHeight: number, gap: number, beamThickness: number) {
+  return direction === 'up'
+    ? Math.max(beamY, numberHeight + gap)
+    : Math.min(beamY, staffHeight - numberHeight - gap - beamThickness);
+}
+
 export function noteheadStemX(noteX: number, halfWidth: number, direction: StemDirection, lineGap = STAFF_LINE_GAP) {
   const inset = lineGap * 0.2;
   return noteX + (direction === 'up' ? halfWidth - inset : -halfWidth + inset);

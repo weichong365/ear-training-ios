@@ -368,6 +368,14 @@ for (const component of ['src/components/notation-editor.tsx', 'src/components/s
 }
 const previewSource = projectSource('src/components/staff-preview.tsx');
 assert.match(previewSource, /!wholeNotes[^\n]*<Line/, '全音符预览必须保持无符干');
+const notationSource = projectSource('src/components/notation-editor.tsx');
+assert.match(notationSource, /isFinalSystem: boolean;/, '分行谱表必须显式接收是否为最终系统');
+const fourBarSystemCount = Math.ceil(4 / 2);
+assert.deepEqual(Array.from({ length: fourBarSystemCount }, (_, systemIndex) => systemIndex === fourBarSystemCount - 1), [false, true], '四小节谱面只能在第二系统显示终止线对');
+assert.equal((notationSource.match(/isFinalSystem=\{systemIndex === systems - 1\}/g) || []).length, 3, '谱例、作答和答案复盘都必须只标记最后一个系统');
+const ordinaryTerminalBar = notationSource.match(/<Line key="terminal-bar"[^>]*\/>/)?.[0];
+assert.ok(ordinaryTerminalBar, '中间系统必须保留普通终端小节线');
+assert.match(ordinaryTerminalBar, /y1=\{barline\.top\} y2=\{barline\.bottom\}/, '中间系统终端线必须使用共享谱线边界');
 for (const component of rendererComponents) {
   const finalBarStrokes = [...projectSource(component).matchAll(/<Line key="final-bar-(thin|thick)"[^>]*\/>/g)];
   assert.deepEqual(finalBarStrokes.map((match) => match[1]), ['thin', 'thick'], `${component} 必须绘制细粗两道终止线`);

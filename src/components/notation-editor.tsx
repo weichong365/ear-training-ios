@@ -85,6 +85,7 @@ type TimedStaffProps = {
   keySignature: string;
   barOffset: number;
   barCount: number;
+  isFinalSystem: boolean;
   disabled?: boolean;
   ink?: boolean;
   tone?: 'red' | 'green' | '';
@@ -222,7 +223,7 @@ function buildStemLayout(notes: RenderedNotation[]) {
   return { stems, beams, flags, tuplets };
 }
 
-export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, capacityMeter, keySignature, barOffset, barCount, disabled, ink = false, tone = '', emptyText, onStaffTap, onEventTap }: TimedStaffProps) {
+export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, capacityMeter, keySignature, barOffset, barCount, isFinalSystem, disabled, ink = false, tone = '', emptyText, onStaffTap, onEventTap }: TimedStaffProps) {
   const [layout, setLayout] = useState({ width: 340, height: STAFF_HEIGHT });
   const capacity = meterCapacity(capacityMeter || meter, 4);
   const noteStart = 104;
@@ -282,8 +283,10 @@ export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, 
       {keySignature === 'F' && <MusicAccidental x={57} y={staffSvgYFromWrittenMidi(71)} glyph="♭" color={Brand.ink} />}
       {!!meter && <><SvgText x="82" y={STAFF_LINE_YS[1]} fontSize="17" fontWeight="700" textAnchor="middle" alignmentBaseline="central" fill={Brand.ink}>{meter.split('/')[0]}</SvgText><SvgText x="82" y={STAFF_LINE_YS[3]} fontSize="17" fontWeight="700" textAnchor="middle" alignmentBaseline="central" fill={Brand.ink}>{meter.split('/')[1]}</SvgText></>}
       {Array.from({ length: barCount }, (_, index) => <Line key={`bar-${index}`} x1={noteStart + index * barWidth} x2={noteStart + index * barWidth} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />)}
-      <Line key="final-bar-thin" x1={finalBarX - 4} x2={finalBarX - 4} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />
-      <Line key="final-bar-thick" x1={finalBarX} x2={finalBarX} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth="3" />
+      {isFinalSystem ? <>
+        <Line key="final-bar-thin" x1={finalBarX - 4} x2={finalBarX - 4} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />
+        <Line key="final-bar-thick" x1={finalBarX} x2={finalBarX} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth="3" />
+      </> : <Line key="terminal-bar" x1={finalBarX} x2={finalBarX} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />}
       {rendered.map(({ item, index, x, y, written, notation }, renderedIndex) => {
         const glyph = accidentalGlyph(item, keySignature);
         return <G key={`${item.inputOrder || index}-${rendered[renderedIndex].localBar}-${rendered[renderedIndex].beat}`}>
@@ -313,10 +316,11 @@ export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, 
 export const NotationStaff = memo(function NotationStaff({ events, meter, keySignature = '', barCount, ink = false }: { events: NotationEvent[]; meter: string; keySignature?: string; barCount: number; ink?: boolean }) {
   const capacity = meterCapacity(meter, 4);
   const decorated = decorateSequentialBars(events, capacity);
-  return <View style={{ gap: 7 }}>{Array.from({ length: Math.max(1, Math.ceil(barCount / 2)) }, (_, systemIndex) => {
+  const systems = Math.max(1, Math.ceil(barCount / 2));
+  return <View style={{ gap: 7 }}>{Array.from({ length: systems }, (_, systemIndex) => {
     const barOffset = systemIndex * 2;
     const systemBarCount = Math.min(2, barCount - barOffset);
-    return <TimedAnswerStaff key={systemIndex} events={decorated.filter((event) => Number(event.barIndex) >= barOffset && Number(event.barIndex) < barOffset + systemBarCount)} meter={systemIndex === 0 ? meter : ''} capacityMeter={meter} keySignature={keySignature} barOffset={barOffset} barCount={systemBarCount} disabled ink={ink} emptyText="" />;
+    return <TimedAnswerStaff key={systemIndex} events={decorated.filter((event) => Number(event.barIndex) >= barOffset && Number(event.barIndex) < barOffset + systemBarCount)} meter={systemIndex === 0 ? meter : ''} capacityMeter={meter} keySignature={keySignature} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled ink={ink} emptyText="" />;
   })}</View>;
 });
 
@@ -393,7 +397,7 @@ export function NotationEditor({ question, answer, unlocked, disabled, reviewCor
       const systemBarCount = Math.min(2, barCount - barOffset);
       const systemEvents = answer.events.filter((event) => Number(event.barIndex) >= barOffset && Number(event.barIndex) < barOffset + systemBarCount);
       const correctEvents = targetBars.slice(barOffset, barOffset + systemBarCount).flatMap((bar, localBar) => bar.map((event, index) => ({ ...event, barIndex: barOffset + localBar, inputOrder: index + 1 })));
-      return <View key={systemIndex} style={styles.systemCard}><View style={styles.systemHead}><Text style={[styles.systemLabel, ink && styles.systemLabelInk]}>第 {barOffset + 1}-{barOffset + systemBarCount} 小节</Text><Text style={[styles.systemBeat, ink && styles.systemBeatInk]}>已写 {roundBeats(sumDuration(systemEvents) * meterBeatScale(answer.meter))} 拍</Text></View><TimedAnswerStaff events={systemEvents} meter={systemIndex === 0 ? answer.meter : ''} capacityMeter={answer.meter} keySignature={isMelody ? answer.keySignature : ''} barOffset={barOffset} barCount={systemBarCount} disabled={!canEdit} ink={ink} tone={disabled ? reviewCorrect ? 'green' : 'red' : ''} emptyText={!answer.meter ? '请先选择拍号' : isMelody && !answer.keySignature ? '请先选择调号' : isMelody ? '选择时值后点击音高位置' : '选择时值后点击谱面写入'} onStaffTap={(barIndex, midi, spelling) => append(barIndex, midi, spelling)} onEventTap={(event) => setSelectedOrder(Number(event.inputOrder))} />{showCorrect && !reviewCorrect && <View style={styles.standardBlock}><Text style={styles.standardLabel}>{systemIndex === 0 ? `标准答案：${String(question.meter)}${isMelody ? ` · ${String(question.keyName || question.keySignature)}` : ''}` : '标准答案'}</Text><TimedAnswerStaff events={correctEvents} meter={systemIndex === 0 ? String(question.meter || '') : ''} capacityMeter={String(question.meter || '')} keySignature={isMelody ? String(question.keySignature || 'C') : ''} barOffset={barOffset} barCount={systemBarCount} disabled ink={ink} tone="green" emptyText="" /></View>}</View>;
+      return <View key={systemIndex} style={styles.systemCard}><View style={styles.systemHead}><Text style={[styles.systemLabel, ink && styles.systemLabelInk]}>第 {barOffset + 1}-{barOffset + systemBarCount} 小节</Text><Text style={[styles.systemBeat, ink && styles.systemBeatInk]}>已写 {roundBeats(sumDuration(systemEvents) * meterBeatScale(answer.meter))} 拍</Text></View><TimedAnswerStaff events={systemEvents} meter={systemIndex === 0 ? answer.meter : ''} capacityMeter={answer.meter} keySignature={isMelody ? answer.keySignature : ''} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled={!canEdit} ink={ink} tone={disabled ? reviewCorrect ? 'green' : 'red' : ''} emptyText={!answer.meter ? '请先选择拍号' : isMelody && !answer.keySignature ? '请先选择调号' : isMelody ? '选择时值后点击音高位置' : '选择时值后点击谱面写入'} onStaffTap={(barIndex, midi, spelling) => append(barIndex, midi, spelling)} onEventTap={(event) => setSelectedOrder(Number(event.inputOrder))} />{showCorrect && !reviewCorrect && <View style={styles.standardBlock}><Text style={styles.standardLabel}>{systemIndex === 0 ? `标准答案：${String(question.meter)}${isMelody ? ` · ${String(question.keyName || question.keySignature)}` : ''}` : '标准答案'}</Text><TimedAnswerStaff events={correctEvents} meter={systemIndex === 0 ? String(question.meter || '') : ''} capacityMeter={String(question.meter || '')} keySignature={isMelody ? String(question.keySignature || 'C') : ''} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled ink={ink} tone="green" emptyText="" /></View>}</View>;
     })}
     {!!message && <Text accessibilityLiveRegion="polite" style={styles.error}>{message}</Text>}
   </View>;
