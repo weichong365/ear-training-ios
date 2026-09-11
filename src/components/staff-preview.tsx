@@ -1,11 +1,11 @@
 import { memo } from 'react';
 import { GestureResponderEvent, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { G, Line, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line } from 'react-native-svg';
 
-import { MusicNotehead, noteheadHalfWidth } from '@/components/music-glyphs';
+import { MusicAccidental, MusicNotehead, noteheadHalfWidth } from '@/components/music-glyphs';
 import { Brand, TouchTarget, TypeScale } from '@/constants/theme';
 import type { AccidentalMode } from '@/core/exam-answer';
-import { accidentalColumns, chordHeadOffsets, ledgerLineYs, STAFF_LINE_YS, stemDirectionForWrittenMidis } from '@/core/music-notation';
+import { accidentalColumns, barlineBounds, chordHeadOffsets, ledgerLineYs, noteheadStemStart, STAFF_LINE_YS, STAFF_MIDDLE_LINE_Y, STAFF_STROKE_WIDTH, stemDirectionForWrittenMidis } from '@/core/music-notation';
 import { accidentalGlyphForPitch, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
 import { ANSWER_STAFF_HEIGHT, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
 
@@ -85,21 +85,22 @@ export const StaffPreview = memo(function StaffPreview({ midis = [], harmonic = 
   const previewHeadKind = wholeNotes ? 'whole' : 'black';
   const previewHeadHalfWidth = noteheadHalfWidth(previewHeadKind);
   const harmonicStemDirection = stemDirectionForWrittenMidis(writtenNotes);
+  const barline = barlineBounds();
 
   const staff = (
     <View style={[styles.container, ink && styles.inkContainer, compact && styles.compact]} accessibilityLabel="五线谱预览">
       <Svg viewBox="0 0 320 96" preserveAspectRatio="none" width="100%" height="100%">
         {STAFF_LINE_YS.map((y) => (
-          <Line key={y} x1="16" x2="308" y1={y} y2={y} stroke={ink ? '#141414' : '#596169'} strokeWidth="1" />
+          <Line key={y} x1="16" x2="308" y1={y} y2={y} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />
         ))}
-        <Line x1="308" x2="308" y1="28" y2="68" stroke={ink ? '#141414' : '#596169'} strokeWidth="1.4" />
+        <Line x1="308" x2="308" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth="1.4" />
         {!wholeNotes && harmonic && notes.length > 0 && (() => {
-          const stemX = harmonicStemDirection === 'up'
-            ? Math.max(...notes.map((_, index) => noteX(index) + previewHeadHalfWidth))
-            : Math.min(...notes.map((_, index) => noteX(index) - previewHeadHalfWidth));
+          const starts = notes.map((_, index) => noteheadStemStart(noteX(index), noteYs[index], previewHeadHalfWidth, harmonicStemDirection));
+          const stemX = harmonicStemDirection === 'up' ? Math.max(...starts.map((start) => start.x)) : Math.min(...starts.map((start) => start.x));
           const topY = Math.min(...noteYs);
           const bottomY = Math.max(...noteYs);
-          return <Line x1={stemX} x2={stemX} y1={harmonicStemDirection === 'up' ? topY - 27 : topY} y2={harmonicStemDirection === 'up' ? bottomY : bottomY + 27} stroke={Brand.ink} strokeWidth="1.5" />;
+          const stemStartY = harmonicStemDirection === 'up' ? Math.max(...starts.map((start) => start.y)) : Math.min(...starts.map((start) => start.y));
+          return <Line x1={stemX} x2={stemX} y1={stemStartY} y2={harmonicStemDirection === 'up' ? topY - 27 : bottomY + 27} stroke={Brand.ink} strokeWidth="1.5" />;
         })()}
         {notes.map((midi, index) => {
           const x = noteX(index);
@@ -112,12 +113,12 @@ export const StaffPreview = memo(function StaffPreview({ midis = [], harmonic = 
             ? accidentalGlyphForPitch(midi, spelling)
             : accidental === 'sharp' ? '♯' : accidental === 'flat' ? '♭' : accidental === 'natural' ? '♮' : '';
           const direction = stemDirectionForWrittenMidis([writtenMidi]);
-          const stemX = x + (direction === 'up' ? previewHeadHalfWidth : -previewHeadHalfWidth);
+          const stemStart = noteheadStemStart(x, y, previewHeadHalfWidth, direction);
           return (
             <G key={`${midi}-${index}`}>
-              {ledgerLineYs(writtenMidi).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={x - 11} x2={x + 11} y1={ledgerY} y2={ledgerY} stroke={Brand.ink} strokeWidth="1.2" />)}
-              {!wholeNotes && !harmonic && <Line x1={stemX} x2={stemX} y1={direction === 'up' ? y - 27 : y} y2={direction === 'up' ? y : y + 27} stroke={Brand.ink} strokeWidth="1.5" />}
-              {!!glyph && <SvgText x={x - 15 - accidentalColumn[index] * 9} y={y + (glyph === '♭' ? 6 : 5)} fontSize={glyph === '♭' ? 18 : 16} fill={Brand.ink}>{glyph}</SvgText>}
+              {ledgerLineYs(writtenMidi).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={x - 11} x2={x + 11} y1={ledgerY} y2={ledgerY} stroke={Brand.ink} strokeWidth={STAFF_STROKE_WIDTH} />)}
+              {!wholeNotes && !harmonic && <Line x1={stemStart.x} x2={stemStart.x} y1={stemStart.y} y2={direction === 'up' ? y - 27 : y + 27} stroke={Brand.ink} strokeWidth="1.5" />}
+              {!!glyph && <MusicAccidental x={x - 15 - accidentalColumn[index] * 9} y={y} glyph={glyph} color={Brand.ink} />}
               <MusicNotehead x={x} y={y} kind={previewHeadKind} color={Brand.ink} />
             </G>
           );
@@ -152,11 +153,11 @@ const styles = StyleSheet.create({
   clef: {
     position: 'absolute',
     left: 6,
-    top: 12,
+    top: STAFF_MIDDLE_LINE_Y * ANSWER_STAFF_HEIGHT / 96 - 101 / 2,
     width: 40,
     height: 101,
   },
-  compactClef: { top: 8, width: 30, height: 76 },
+  compactClef: { top: STAFF_MIDDLE_LINE_Y - 76 / 2, width: 30, height: 76 },
   accidentalWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   accidentalButton: { minWidth: TouchTarget, minHeight: TouchTarget, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: Brand.border, backgroundColor: Brand.ivory },
   accidentalActive: { borderColor: Brand.forest, backgroundColor: Brand.forest },

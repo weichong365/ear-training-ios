@@ -19,12 +19,14 @@ const {
   barlineBounds,
   chordHeadOffsets,
   durationNotation,
+  fitTupletBeamY,
   ledgerLineYs,
+  noteheadStemX,
   noteheadStemStart,
   STAFF_LINE_GAP,
   STAFF_LINE_YS,
-  stemDirectionForWrittenMidis,
   STAFF_STROKE_WIDTH,
+  stemDirectionForWrittenMidis,
 } = await import('../src/core/music-notation.ts');
 const {
   accidentalGlyphForPitch,
@@ -39,6 +41,7 @@ const { pianoPlaybackConfig } = await import('../src/core/piano-playback.ts');
 const require = createRequire(import.meta.url);
 const questionCore = require('../src/core/legacy/question.js');
 const pcmRenderer = require('../src/core/legacy/pcm-renderer.js');
+const projectSource = (relativePath) => readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
 const { midiToName } = require('../src/core/legacy/theory.js');
 
 const tabsLayoutUrl = new URL('../src/app/(tabs)/_layout.tsx', import.meta.url);
@@ -322,16 +325,44 @@ assert.equal(accidentalGlyphForKeySignature(70, 'Bb4', 'F'), '', 'F 大调中 B�
 assert.equal(formatPitchSpelling(80), 'G♯5', '谱面与答案文本必须使用同一音名');
 assert.deepEqual(STAFF_LINE_YS, [28, 38, 48, 58, 68], '五线谱必须固定使用五个共享 SVG 线中心');
 assert.deepEqual(ledgerLineYs(60), [78], '中央 C 必须显示第一条下加线');
+assert.deepEqual(ledgerLineYs(57), [78, 88], '下加二线必须与下加一线保持标准谱线间距');
+assert.equal(ledgerLineYs(57)[1] - ledgerLineYs(57)[0], STAFF_LINE_YS[1] - STAFF_LINE_YS[0], '相邻下加线间距必须等于五线谱线距');
 assert.equal(ledgerLineYs(57)[1] - ledgerLineYs(57)[0], STAFF_LINE_GAP, '相邻下加线间距必须等于共享谱线距');
 assert.equal(barlineBounds().top, STAFF_LINE_YS[0], '小节线必须从第一线中心开始');
 assert.equal(barlineBounds().bottom, STAFF_LINE_YS[4], '小节线必须在第五线中心结束');
 assert.deepEqual(noteheadStemStart(40, 40, 6, 'up'), { x: 44, y: 41 }, '向上符干起点必须与符头几何重叠');
 assert.deepEqual(noteheadStemStart(40, 40, 6, 'down'), { x: 36, y: 39 }, '向下符干起点必须与符头几何重叠');
 assert.equal(accidentalScale('sharp'), 0.9, '升号必须缩小 10%');
-assert.deepEqual(ledgerLineYs(81), [18], 'A5 必须显示第一条上加线');
-assert.equal(STAFF_STROKE_WIDTH, 1, '五线谱主线与加线必须使用统一线宽');
 assert.equal(accidentalScale('flat'), 1, '降号必须保持原始缩放');
 assert.equal(accidentalScale('natural'), 1, '还原号必须保持原始缩放');
+assert.equal(STAFF_STROKE_WIDTH, 1, '五线谱主线与加线必须使用统一线宽');
+assert.equal(noteheadStemX(100, 5.9, 'up', 10), 103.9, 'iOS 向上符干没有伸入符头右侧');
+assert.equal(noteheadStemX(100, 5.9, 'down', 10), 96.1, 'iOS 向下符干没有伸入符头左侧');
+assert.equal(fitTupletBeamY(6, 'up', 96, 9, 4, 4), 13, 'iOS 三连音横梁没有为上方数字预留空间');
+assert.equal(fitTupletBeamY(88, 'down', 96, 9, 4, 4), 79, 'iOS 下方三连音标记可能越出谱面');
+assert.deepEqual(ledgerLineYs(81), [18], 'A5 必须显示第一条上加线');
+const rendererComponents = ['src/components/answer-staff.tsx', 'src/components/notation-editor.tsx', 'src/components/staff-preview.tsx'];
+for (const component of rendererComponents) {
+  const source = projectSource(component);
+  assert.match(source, /STAFF_LINE_YS\.map\(/, `${component} 没有从共享谱线中心绘制五线谱`);
+  assert.match(source, /STAFF_STROKE_WIDTH/, `${component} 没有共享谱线与加线宽度`);
+  assert.match(source, /staffSvgYFromWrittenMidi\(/, `${component} 没有共享书写音高坐标`);
+  assert.match(source, /barlineBounds\(\)/, `${component} 的小节线没有使用共享上下边界`);
+  assert.match(source, /<MusicAccidental\b/, `${component} 的临时记号没有使用 SVG 几何`);
+  assert.doesNotMatch(source, /Platform\.OS/, `${component} 仍包含平台专属谱面定位`);
+  assert.doesNotMatch(source, /<SvgText[^>]*>\s*[♯♭♮]\s*<\/SvgText>/, `${component} 仍以字体基线定位临时记号`);
+  assert.ok(source.indexOf('ledgerLineYs(') < source.lastIndexOf('<MusicNotehead'), `${component} 的加线必须先于符头绘制`);
+}
+const glyphSource = projectSource('src/components/music-glyphs.tsx');
+assert.match(glyphSource, /export function MusicAccidental\(/, '共享字形组件缺少 SVG 临时记号');
+assert.match(glyphSource, /accidentalScale\(kind\)/, 'SVG 临时记号没有应用共享缩放');
+for (const component of ['src/components/notation-editor.tsx', 'src/components/staff-preview.tsx']) {
+  const source = projectSource(component);
+  assert.match(source, /noteheadStemStart\(/, `${component} 的符干没有使用共享符头内缩起点`);
+  assert.doesNotMatch(source, /noteheadStemX\(/, `${component} 仍只共享符干横坐标，遗漏纵向内缩`);
+}
+const previewSource = projectSource('src/components/staff-preview.tsx');
+assert.match(previewSource, /!wholeNotes[^\n]*<Line/, '全音符预览必须保持无符干');
 assert.deepEqual(ledgerLineYs(79), [], 'G5 位于第五线上方的间，不应误加线');
 assert.equal(durationNotation(4).headKind, 'whole', '四拍时值必须使用全音符头');
 assert.equal(durationNotation(4).hasStem, false, '全音符不能显示符干');

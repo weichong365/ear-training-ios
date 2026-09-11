@@ -3,15 +3,16 @@ import { GestureResponderEvent, Image, LayoutChangeEvent, Pressable, ScrollView,
 import Svg, { Ellipse, G, Line, Text as SvgText } from 'react-native-svg';
 
 import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
-import { MusicFlag, MusicNotehead, MusicRest, noteheadHalfWidth } from '@/components/music-glyphs';
+import { MusicAccidental, MusicFlag, MusicNotehead, MusicRest, noteheadHalfWidth } from '@/components/music-glyphs';
 import { meterBeatScale, meterCapacity, splitBars, sumDuration, targetTimedEvents } from '@/core/answer-sync';
 import type { ExamAnswer, NotationEvent } from '@/core/exam-answer';
-import { augmentationDotY, durationNotation, ledgerLineYs, STAFF_LINE_YS, staffStepFromWrittenMidi, stemDirectionForWrittenMidis, type DurationNotation, type StemDirection } from '@/core/music-notation';
+import { augmentationDotY, barlineBounds, durationNotation, fitTupletBeamY, ledgerLineYs, noteheadStemStart, STAFF_LINE_YS, STAFF_MIDDLE_LINE_Y, STAFF_STROKE_WIDTH, staffStepFromWrittenMidi, stemDirectionForWrittenMidis, type DurationNotation, type StemDirection } from '@/core/music-notation';
 import { accidentalGlyphForKeySignature, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
 import type { ExamQuestion } from '@/core/provinces';
 import { naturalMidiFromStaffSvgY, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
 
 const STAFF_HEIGHT = 96;
+const STAFF_CENTER_Y = STAFF_MIDDLE_LINE_Y;
 const METERS = ['2/4', '3/4', '4/4', '3/8', '6/8'];
 const KEYS = [
   { value: 'C', label: 'C 大调' },
@@ -108,24 +109,29 @@ type RenderedNotation = {
 type StemLine = { key: string; x: number; y1: number; y2: number };
 type BeamLine = { key: string; x1: number; x2: number; y: number };
 type FlagMark = { key: string; stemX: number; stemEndY: number; beamCount: number; direction: StemDirection };
+type TupletMark = { key: string; x: number; y: number };
 
 function buildStemLayout(notes: RenderedNotation[]) {
   const stems: StemLine[] = [];
   const beams: BeamLine[] = [];
   const flags: FlagMark[] = [];
+  const tuplets: TupletMark[] = [];
   const stemLength = 27;
+  const tupletGap = 4;
+  const tupletHeight = 9;
+  const beamThickness = 4;
   let run: RenderedNotation[] = [];
 
-  function stemX(note: RenderedNotation, direction = note.direction) {
-    return note.x + (direction === 'up' ? note.headHalfWidth : -note.headHalfWidth);
+  function stemStart(note: RenderedNotation, direction = note.direction) {
+    return noteheadStemStart(note.x, note.y, note.headHalfWidth, direction);
   }
 
   function addIndependent(note: RenderedNotation) {
-    const x = stemX(note);
+    const start = stemStart(note);
     const stemEndY = note.direction === 'up' ? note.y - stemLength : note.y + stemLength;
-    stems.push({ key: `stem-${note.index}`, x, y1: note.y, y2: stemEndY });
+    stems.push({ key: `stem-${note.index}`, x: start.x, y1: start.y, y2: stemEndY });
     if (note.notation.beamCount) {
-      flags.push({ key: `flag-${note.index}`, stemX: x, stemEndY, beamCount: note.notation.beamCount, direction: note.direction });
+      flags.push({ key: `flag-${note.index}`, stemX: start.x, stemEndY, beamCount: note.notation.beamCount, direction: note.direction });
     }
   }
 
@@ -134,15 +140,18 @@ function buildStemLayout(notes: RenderedNotation[]) {
     if (run.length >= 2) {
       const anchor = run.reduce((best, note) => Math.abs(staffStepFromWrittenMidi(note.written) - 4) > Math.abs(staffStepFromWrittenMidi(best.written) - 4) ? note : best, run[0]);
       const direction = anchor.direction;
-      const xs = run.map((note) => stemX(note, direction));
-      const beamY = direction === 'up'
+      const starts = run.map((note) => stemStart(note, direction));
+      let beamY = direction === 'up'
         ? Math.min(...run.map((note) => note.y - stemLength))
         : Math.max(...run.map((note) => note.y + stemLength));
-      beams.push({ key: `beam-${run[0].index}`, x1: xs[0], x2: xs[xs.length - 1], y: beamY });
+      if (run.some((note) => note.notation.tuplet)) {
+        beamY = fitTupletBeamY(beamY, direction, STAFF_HEIGHT, tupletHeight, tupletGap, beamThickness);
+      }
+      beams.push({ key: `beam-${run[0].index}`, x1: starts[0].x, x2: starts[starts.length - 1].x, y: beamY });
       run.forEach((note, index) => stems.push({
         key: `stem-${note.index}`,
-        x: xs[index],
-        y1: note.y,
+        x: starts[index].x,
+        y1: starts[index].y,
         y2: beamY,
       }));
 
@@ -151,11 +160,11 @@ function buildStemLayout(notes: RenderedNotation[]) {
         if (!subRun.length) return;
         const secondaryY = beamY + (direction === 'up' ? 5.5 : -5.5);
         if (subRun.length >= 2) {
-          beams.push({ key: `beam-2-${run[subRun[0]].index}`, x1: xs[subRun[0]], x2: xs[subRun[subRun.length - 1]], y: secondaryY });
+          beams.push({ key: `beam-2-${run[subRun[0]].index}`, x1: starts[subRun[0]].x, x2: starts[subRun[subRun.length - 1]].x, y: secondaryY });
         } else {
           const position = subRun[0];
           const pointsRight = position === 0;
-          beams.push({ key: `beamlet-${run[position].index}`, x1: xs[position] + (pointsRight ? 0 : -9), x2: xs[position] + (pointsRight ? 9 : 0), y: secondaryY });
+          beams.push({ key: `beamlet-${run[position].index}`, x1: starts[position].x + (pointsRight ? 0 : -9), x2: starts[position].x + (pointsRight ? 9 : 0), y: secondaryY });
         }
         subRun = [];
       };
@@ -175,6 +184,7 @@ function buildStemLayout(notes: RenderedNotation[]) {
     }
     if (note.notation.beamCount > 0) {
       if (run.length && run[run.length - 1].localBar !== note.localBar) flushRun();
+      if (run.length && !!run[run.length - 1].notation.tuplet !== !!note.notation.tuplet) flushRun();
       run.push(note);
       return;
     }
@@ -182,7 +192,34 @@ function buildStemLayout(notes: RenderedNotation[]) {
     addIndependent(note);
   });
   flushRun();
-  return { stems, beams, flags };
+
+  // 三连音「3」放横梁外侧，x 对齐组内中间音符（与小程序 staff-notation 同步）。
+  let tripletGroup: RenderedNotation[] = [];
+  const dist = (note: RenderedNotation) => Math.abs(staffStepFromWrittenMidi(note.written) - 4);
+  const flushTriplet = () => {
+    if (!tripletGroup.length) return;
+    const anchor = tripletGroup.reduce((best, note) => (dist(note) > dist(best) ? note : best), tripletGroup[0]);
+    const middle = tripletGroup[Math.floor(tripletGroup.length / 2)];
+    let y;
+    if (anchor.direction === 'up') {
+      const beamY = fitTupletBeamY(Math.min(...tripletGroup.map((note) => note.y - stemLength)), 'up', STAFF_HEIGHT, tupletHeight, tupletGap, beamThickness);
+      y = beamY - tupletGap;
+    } else {
+      const beamY = fitTupletBeamY(Math.max(...tripletGroup.map((note) => note.y + stemLength)), 'down', STAFF_HEIGHT, tupletHeight, tupletGap, beamThickness);
+      y = beamY + beamThickness + tupletGap + tupletHeight;
+    }
+    tuplets.push({ key: `tuplet-${tripletGroup[0].index}`, x: middle.x, y });
+    tripletGroup = [];
+  };
+  notes.forEach((note) => {
+    const isTuplet = !!note.notation.tuplet && !note.item.rest;
+    if (!isTuplet) { flushTriplet(); return; }
+    if (tripletGroup.length && note.localBar !== tripletGroup[tripletGroup.length - 1].localBar) flushTriplet();
+    tripletGroup.push(note);
+  });
+  flushTriplet();
+
+  return { stems, beams, flags, tuplets };
 }
 
 export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, capacityMeter, keySignature, barOffset, barCount, disabled, ink = false, tone = '', emptyText, onStaffTap, onEventTap }: TimedStaffProps) {
@@ -217,8 +254,9 @@ export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, 
     };
   }), [barWidth, capacity, positioned]);
   const stemLayout = useMemo(() => buildStemLayout(rendered), [rendered]);
-  const color = tone === 'green' ? '#218B70' : tone === 'red' ? Brand.danger : ink ? '#141414' : Brand.ink;
+  const color = tone === 'green' ? '#2e8b6f' : tone === 'red' ? Brand.danger : ink ? '#141414' : Brand.ink;
   const staffLine = ink ? '#141414' : '#596169';
+  const barline = barlineBounds();
 
   function tap(event: GestureResponderEvent) {
     if (disabled) return;
@@ -238,31 +276,29 @@ export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, 
 
   return <Pressable accessibilityRole={disabled ? 'image' : 'button'} accessibilityState={disabled ? undefined : { disabled: false }} disabled={disabled} onPress={tap} onLayout={(event: LayoutChangeEvent) => setLayout(event.nativeEvent.layout)} style={[styles.staffShell, ink && styles.inkStaff, tone === 'red' && styles.wrongStaff, tone === 'green' && styles.correctStaff]} accessibilityLabel={disabled ? '五线谱谱例' : '两小节五线谱答题区域'}>
     <Svg viewBox="0 0 340 96" preserveAspectRatio="none" width="100%" height="100%">
-      {STAFF_LINE_YS.map((y) => <Line key={y} x1="12" x2="330" y1={y} y2={y} stroke={staffLine} strokeWidth="1" />)}
-      {keySignature === 'G' && <SvgText x="57" y="35" fontSize="19" fill={Brand.ink}>♯</SvgText>}
-      {keySignature === 'F' && <SvgText x="57" y="53" fontSize="20" fill={Brand.ink}>♭</SvgText>}
-      {!!meter && <><SvgText x="82" y="46" fontSize="17" fontWeight="700" textAnchor="middle" fill={Brand.ink}>{meter.split('/')[0]}</SvgText><SvgText x="82" y="64" fontSize="17" fontWeight="700" textAnchor="middle" fill={Brand.ink}>{meter.split('/')[1]}</SvgText></>}
-      {Array.from({ length: barCount + 1 }, (_, index) => <Line key={`bar-${index}`} x1={noteStart + index * barWidth} x2={noteStart + index * barWidth} y1="28" y2="68" stroke={staffLine} strokeWidth={index === barCount ? 1.5 : 1} />)}
+      {STAFF_LINE_YS.map((y) => <Line key={y} x1="12" x2="330" y1={y} y2={y} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />)}
+      {keySignature === 'G' && <MusicAccidental x={57} y={staffSvgYFromWrittenMidi(77)} glyph="♯" color={Brand.ink} />}
+      {keySignature === 'F' && <MusicAccidental x={57} y={staffSvgYFromWrittenMidi(71)} glyph="♭" color={Brand.ink} />}
+      {!!meter && <><SvgText x="82" y={STAFF_LINE_YS[1]} fontSize="17" fontWeight="700" textAnchor="middle" alignmentBaseline="central" fill={Brand.ink}>{meter.split('/')[0]}</SvgText><SvgText x="82" y={STAFF_LINE_YS[3]} fontSize="17" fontWeight="700" textAnchor="middle" alignmentBaseline="central" fill={Brand.ink}>{meter.split('/')[1]}</SvgText></>}
+      {Array.from({ length: barCount + 1 }, (_, index) => <Line key={`bar-${index}`} x1={noteStart + index * barWidth} x2={noteStart + index * barWidth} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={index === barCount ? 1.5 : STAFF_STROKE_WIDTH} />)}
       {rendered.map(({ item, index, x, y, written, notation }, renderedIndex) => {
         const glyph = accidentalGlyph(item, keySignature);
-        const previous = rendered[renderedIndex - 1];
-        const startsTuplet = notation.tuplet && (!previous?.notation.tuplet || previous.localBar !== rendered[renderedIndex].localBar);
         return <G key={`${item.inputOrder || index}-${rendered[renderedIndex].localBar}-${rendered[renderedIndex].beat}`}>
           {item.rest ? <>
             <MusicRest x={x} kind={notation.restKind} color={color} />
             {!!notation.dotCount && <Ellipse cx={x + 9} cy={43} rx="1.65" ry="1.65" fill={color} />}
           </> : <>
-            {ledgerLineYs(written).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={x - 11} x2={x + 11} y1={ledgerY} y2={ledgerY} stroke={color} strokeWidth="1.2" />)}
-            {!!glyph && <SvgText x={x - 15} y={y + (glyph === '♭' ? 6 : 5)} fontSize={glyph === '♭' ? 18 : 16} fill={color}>{glyph}</SvgText>}
+            {ledgerLineYs(written).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={x - 11} x2={x + 11} y1={ledgerY} y2={ledgerY} stroke={color} strokeWidth={STAFF_STROKE_WIDTH} />)}
+            {!!glyph && <MusicAccidental x={x - 15} y={y} glyph={glyph} color={color} />}
             <MusicNotehead x={x} y={y} kind={notation.headKind} color={color} />
             {!!notation.dotCount && <Ellipse cx={x + noteheadHalfWidth(notation.headKind) + 5} cy={augmentationDotY(written)} rx="1.65" ry="1.65" fill={color} />}
-            {startsTuplet && <SvgText x={x + 7} y={Math.max(16, y - 17)} fontSize="9" fontStyle="italic" fill={color}>3</SvgText>}
           </>}
         </G>;
       })}
       {stemLayout.stems.map((stem) => <Line key={stem.key} x1={stem.x} x2={stem.x} y1={stem.y1} y2={stem.y2} stroke={color} strokeWidth="1.5" />)}
       {stemLayout.beams.map((beam) => <Line key={beam.key} x1={beam.x1} x2={beam.x2} y1={beam.y} y2={beam.y} stroke={color} strokeWidth="4" strokeLinecap="butt" />)}
       {stemLayout.flags.map((flag) => <MusicFlag key={flag.key} stemX={flag.stemX} stemEndY={flag.stemEndY} beamCount={flag.beamCount} direction={flag.direction} color={color} />)}
+      {stemLayout.tuplets.map((tuplet) => <SvgText key={tuplet.key} x={tuplet.x} y={tuplet.y} fontSize="9" fontStyle="italic" fontWeight="700" textAnchor="middle" fill={color}>3</SvgText>)}
     </Svg>
     <Image source={require('../../assets/images/g-clef.png')} resizeMode="contain" style={styles.timedClef} />
     {!events.length && <Text style={[styles.emptyText, { pointerEvents: 'none' }]}>{emptyText}</Text>}
@@ -364,7 +400,7 @@ const styles = StyleSheet.create({
   editor: { gap: 12 }, choiceLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, choiceLabel: { width: 42, minHeight: TouchTarget, paddingTop: 13, color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, options: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, choice: { minWidth: TouchTarget, minHeight: TouchTarget, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.border, backgroundColor: '#F3F5F2' }, keyChoice: { minWidth: 104 }, choiceActive: { borderColor: Brand.forest, backgroundColor: Brand.forest }, choiceText: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, choiceTextActive: { color: Brand.textOnAccent },
   durationToolbar: { flexDirection: 'row', gap: 7, padding: 8, borderRadius: Radius.card, backgroundColor: '#EEE7D8' }, durationRow: { gap: 7, paddingRight: 3 }, durationChoice: { minWidth: 76, height: TouchTarget, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.border, backgroundColor: Brand.ivory }, durationText: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, restChoice: { width: 86, height: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: '#DEC476', backgroundColor: Brand.warningSoft }, restActive: { borderColor: Brand.gold, backgroundColor: Brand.gold }, restText: { color: Brand.warning, fontSize: 11, fontWeight: '800' },
   helpRow: { minHeight: TouchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 3 }, helpText: { flex: 1, color: Brand.muted, fontSize: TypeScale.caption }, undoButton: { minWidth: 64, minHeight: TouchTarget, marginLeft: 8, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forestSoft }, undoText: { color: Brand.forest, fontSize: TypeScale.caption, fontWeight: '800' }, accidentalMenu: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, padding: 7, borderRadius: Radius.control, backgroundColor: '#F3F5F2' }, accidentalLabel: { marginHorizontal: 4, color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, accidentalButton: { minWidth: TouchTarget, height: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forestSoft }, accidentalText: { color: Brand.forest, fontSize: TypeScale.footnote, fontWeight: '800' },
-  systemCard: { gap: 8, marginTop: 3 }, systemHead: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 3 }, systemLabel: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, systemBeat: { color: Brand.muted, fontSize: TypeScale.caption, fontVariant: ['tabular-nums'] }, staffShell: { height: STAFF_HEIGHT, overflow: 'hidden', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.border, backgroundColor: '#FFFFFF' }, inkStaff: { borderColor: '#141414' }, wrongStaff: { borderColor: '#DDAAA1', backgroundColor: '#FFF9F7' }, correctStaff: { borderColor: '#9FCBB1', backgroundColor: '#F8FFFA' }, emptyText: { position: 'absolute', left: 106, right: 10, top: 50, color: Brand.muted, fontSize: TypeScale.caption, textAlign: 'center' }, standardBlock: { gap: 7, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#B9DACC', borderStyle: 'dashed' }, standardLabel: { color: Brand.success, fontSize: TypeScale.caption, fontWeight: '800' }, error: { color: Brand.danger, fontSize: TypeScale.footnote, lineHeight: 18 },
+  systemCard: { gap: 8, marginTop: 3 }, systemHead: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 3 }, systemLabel: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, systemBeat: { color: Brand.muted, fontSize: TypeScale.caption, fontVariant: ['tabular-nums'] }, staffShell: { height: STAFF_HEIGHT, overflow: 'hidden', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.border, backgroundColor: '#FFFFFF' }, inkStaff: { borderColor: '#141414' }, wrongStaff: { borderColor: '#DDAAA1', backgroundColor: '#FFF9F7' }, correctStaff: { borderColor: '#9FCBB1', backgroundColor: '#F8FFFA' }, emptyText: { position: 'absolute', left: 106, right: 10, top: STAFF_CENTER_Y - 9, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' }, standardBlock: { gap: 7, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#B9DACC', borderStyle: 'dashed' }, standardLabel: { color: Brand.success, fontSize: TypeScale.caption, fontWeight: '800' }, error: { color: Brand.danger, fontSize: TypeScale.footnote, lineHeight: 18 },
   choiceInk: { borderColor: '#141414', backgroundColor: '#FFFFFF' }, choiceActiveInk: { borderColor: '#141414', backgroundColor: '#141414' }, choiceTextInk: { color: '#141414' },
   durationChoiceInk: { borderColor: '#141414', backgroundColor: '#FFFFFF' }, durationTextInk: { color: '#141414' },
   restChoiceInk: { borderColor: '#141414', backgroundColor: '#FFFFFF' }, restActiveInk: { borderColor: '#141414', backgroundColor: '#141414' }, restTextInk: { color: '#141414' },
@@ -373,5 +409,5 @@ const styles = StyleSheet.create({
   choiceLabelInk: { color: '#141414' }, helpTextInk: { color: '#141414' },
   durationToolbarInk: { backgroundColor: '#F2F2F2' }, accidentalMenuInk: { backgroundColor: '#F2F2F2' },
   systemLabelInk: { color: '#141414' }, systemBeatInk: { color: '#141414' },
-  timedClef: { position: 'absolute', left: 4, top: 6, width: 36, height: 82 },
+  timedClef: { position: 'absolute', left: 4, top: STAFF_CENTER_Y - 82 / 2, width: 36, height: 82 },
 });

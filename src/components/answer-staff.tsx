@@ -1,15 +1,16 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { GestureResponderEvent, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { G, Line, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line } from 'react-native-svg';
 
 import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
-import { MusicNotehead } from '@/components/music-glyphs';
-import { accidentalColumns, chordHeadOffsets, ledgerLineYs, STAFF_LINE_YS } from '@/core/music-notation';
+import { MusicAccidental, MusicNotehead } from '@/components/music-glyphs';
+import { accidentalColumns, barlineBounds, chordHeadOffsets, ledgerLineYs, STAFF_LINE_YS, STAFF_MIDDLE_LINE_Y, STAFF_STROKE_WIDTH } from '@/core/music-notation';
 import { accidentalGlyphForPitch, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
 import { naturalMidiFromStaffTapY, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
 
 const STAFF_HEIGHT = 122;
 const DOUBLE_TAP_MS = 320;
+const STAFF_CENTER_Y = STAFF_MIDDLE_LINE_Y * STAFF_HEIGHT / 96;
 function naturalSpelling(midi: number) {
   return defaultPitchSpelling(midi);
 }
@@ -209,7 +210,8 @@ export const AnswerStaff = memo(function AnswerStaff({
     setMenuTarget(null);
   }
 
-  const activeColor = tone === 'green' ? '#218B70' : tone === 'red' ? Brand.danger : ink ? '#141414' : Brand.ink;
+  const activeColor = tone === 'green' ? '#2e8b6f' : tone === 'red' ? Brand.danger : ink ? '#141414' : Brand.ink;
+  const barline = barlineBounds();
   const renderNotes = (values: number[], valueSpellings: string[], color: string, offset = 0) => {
     const writtenValues = values.map((midi, index) => writtenMidi(midi, valueSpellings[index]));
     const accidentalColumn = accidentalColumns(writtenValues);
@@ -221,8 +223,8 @@ export const AnswerStaff = memo(function AnswerStaff({
     const y = staffSvgYFromWrittenMidi(written);
     const glyph = accidentalGlyph(midi, spelling);
     return <G key={`${color}-${midi}-${index}`}>
-      {ledgerLineYs(written).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={x - 11} x2={x + 11} y1={ledgerY} y2={ledgerY} stroke={color} strokeWidth="1.2" />)}
-      {!!glyph && <SvgText x={x - 15 - accidentalColumn[index] * 9} y={y + (glyph === '♭' ? 6 : 5)} fontSize={glyph === '♭' ? 18 : 16} fill={color}>{glyph}</SvgText>}
+      {ledgerLineYs(written).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={x - 11} x2={x + 11} y1={ledgerY} y2={ledgerY} stroke={color} strokeWidth={STAFF_STROKE_WIDTH} />)}
+      {!!glyph && <MusicAccidental x={x - 15 - accidentalColumn[index] * 9} y={y} glyph={glyph} color={color} />}
       <MusicNotehead x={x} y={y} kind="whole" color={color} />
     </G>;
     });
@@ -244,13 +246,13 @@ export const AnswerStaff = memo(function AnswerStaff({
         accessibilityState={disabled ? undefined : { disabled: false }}
         accessibilityLabel={disabled ? '五线谱谱面' : '五线谱答题区域'}>
         <Svg viewBox="0 0 320 96" preserveAspectRatio="none" width="100%" height="100%">
-          {STAFF_LINE_YS.map((y) => <Line key={y} x1="16" x2="308" y1={y} y2={y} stroke={ink ? '#141414' : '#596169'} strokeWidth="1" />)}
+          {STAFF_LINE_YS.map((y) => <Line key={y} x1="16" x2="308" y1={y} y2={y} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />)}
           {Array.from({ length: Math.max(1, slots) - 1 }, (_, index) => (
             <Line key={`slot-${index}`} x1={76 + (index + 1) * 224 / Math.max(1, slots)} x2={76 + (index + 1) * 224 / Math.max(1, slots)} y1="28" y2="68" stroke="#D6D9DF" strokeDasharray="3 3" />
           ))}
-          <Line x1="308" x2="308" y1="28" y2="68" stroke={ink ? '#141414' : '#596169'} strokeWidth="1.4" />
+          <Line x1="308" x2="308" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth="1.4" />
           {renderNotes(pitches, spellings, activeColor)}
-          {showCorrect && renderNotes(correctPitches, correctSpellings, '#218B70', stacked ? 38 : 30)}
+          {showCorrect && renderNotes(correctPitches, correctSpellings, '#2e8b6f', stacked ? 38 : 30)}
         </Svg>
         <Image source={require('../../assets/images/g-clef.png')} resizeMode="contain" style={[styles.clef, compact && styles.compactClef]} />
         {!pitches.some(Number.isFinite) && <Text style={[styles.emptyText, compact && styles.compactEmptyText, { pointerEvents: 'none' }]}>{emptyText}</Text>}
@@ -274,10 +276,10 @@ const styles = StyleSheet.create({
   compactTouchArea: { height: 96 },
   wrongShell: { borderColor: '#E5B5AA', backgroundColor: '#FFF9F7' },
   correctShell: { borderColor: '#A9D4BB', backgroundColor: '#F8FFFA' },
-  clef: { position: 'absolute', left: 6, top: 12, width: 40, height: 101 },
-  compactClef: { top: 6, width: 36, height: 82 },
-  emptyText: { position: 'absolute', left: 78, right: 18, top: 50, color: Brand.muted, fontSize: TypeScale.caption, textAlign: 'center' },
-  compactEmptyText: { top: 41 },
+  clef: { position: 'absolute', left: 6, top: STAFF_CENTER_Y - 101 / 2, width: 40, height: 101 },
+  compactClef: { top: STAFF_MIDDLE_LINE_Y - 82 / 2, width: 36, height: 82 },
+  emptyText: { position: 'absolute', left: 78, right: 18, top: STAFF_CENTER_Y - 9, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' },
+  compactEmptyText: { top: STAFF_MIDDLE_LINE_Y - 9 },
   menu: { position: 'absolute', zIndex: 5, top: -59, right: 8, flexDirection: 'row', alignItems: 'center', gap: 5, padding: 6, borderRadius: Radius.control, backgroundColor: Brand.ivory, borderWidth: 1, borderColor: Brand.border, ...Shadows.floating },
   menuLabel: { marginHorizontal: 4, color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' },
   menuButton: { width: TouchTarget, height: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forestSoft },

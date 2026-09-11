@@ -1,6 +1,6 @@
 import { Path } from 'react-native-svg';
 
-import type { NoteheadKind, RestKind, StemDirection } from '@/core/music-notation';
+import { accidentalScale, STAFF_LINE_YS, type NoteheadKind, type RestKind, type StemDirection } from '@/core/music-notation';
 
 const GLYPH_SCALE = 10 / 250;
 
@@ -46,9 +46,20 @@ export function noteheadHalfWidth(kind: NoteheadKind) {
 
 export function MusicRest({ x, kind, color }: { x: number; kind: RestKind; color: string }) {
   const glyph = RESTS[kind];
-  const anchorY = kind === 'whole' ? 38 : 48;
+  const anchorY = kind === 'whole' ? STAFF_LINE_YS[1] : STAFF_LINE_YS[2];
   const left = x - glyph.width * GLYPH_SCALE / 2;
   return <Path d={glyph.path} fill={color} transform={`translate(${left} ${anchorY}) scale(${GLYPH_SCALE} ${-GLYPH_SCALE})`} />;
+}
+
+export function MusicAccidental({ x, y, glyph, color }: { x: number; y: number; glyph: string; color: string }) {
+  const kind = glyph === '♯' ? 'sharp' : glyph === '♭' ? 'flat' : glyph === '♮' ? 'natural' : null;
+  if (!kind) return null;
+  const path = kind === 'sharp'
+    ? 'M-3.2-9L-4.6 8M3.8-10L2.4 7M-7-3L7-5M-7 3L7 1'
+    : kind === 'flat'
+      ? 'M-3-10V8M-3 0C4-4 6-1 5 2C4 5 1 7-3 8'
+      : 'M-3-9V5L4 2V9M4-5L-3-2';
+  return <Path d={path} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" transform={`translate(${x} ${y}) scale(${accidentalScale(kind)})`} />;
 }
 
 export function MusicFlag({ stemX, stemEndY, beamCount, direction, color }: { stemX: number; stemEndY: number; beamCount: number; direction: StemDirection; color: string }) {
