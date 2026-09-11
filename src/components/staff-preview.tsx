@@ -9,6 +9,8 @@ import { accidentalColumns, barlineBounds, chordHeadOffsets, ledgerLineYs, noteh
 import { accidentalGlyphForPitch, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
 import { ANSWER_STAFF_HEIGHT, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
 
+const COMPACT_STAFF_HEIGHT = 92;
+
 type StaffPreviewProps = {
   midis?: number[];
   harmonic?: boolean;
@@ -93,14 +95,16 @@ export const StaffPreview = memo(function StaffPreview({ midis = [], harmonic = 
         {STAFF_LINE_YS.map((y) => (
           <Line key={y} x1="16" x2="308" y1={y} y2={y} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />
         ))}
-        <Line x1="308" x2="308" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth="1.4" />
+        <Line key="final-bar-thin" x1="304" x2="304" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />
+        <Line key="final-bar-thick" x1="308" x2="308" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth="3" />
         {!wholeNotes && harmonic && notes.length > 0 && (() => {
-          const starts = notes.map((_, index) => noteheadStemStart(noteX(index), noteYs[index], previewHeadHalfWidth, harmonicStemDirection));
-          const stemX = harmonicStemDirection === 'up' ? Math.max(...starts.map((start) => start.x)) : Math.min(...starts.map((start) => start.x));
+          const noteXs = notes.map((_, index) => noteX(index));
           const topY = Math.min(...noteYs);
           const bottomY = Math.max(...noteYs);
-          const stemStartY = harmonicStemDirection === 'up' ? Math.max(...starts.map((start) => start.y)) : Math.min(...starts.map((start) => start.y));
-          return <Line x1={stemX} x2={stemX} y1={stemStartY} y2={harmonicStemDirection === 'up' ? topY - 27 : bottomY + 27} stroke={Brand.ink} strokeWidth="1.5" />;
+          const stemHeadX = harmonicStemDirection === 'up' ? Math.min(...noteXs) : Math.max(...noteXs);
+          const stemHeadY = harmonicStemDirection === 'up' ? bottomY : topY;
+          const stemStart = noteheadStemStart(stemHeadX, stemHeadY, previewHeadHalfWidth, harmonicStemDirection);
+          return <Line x1={stemStart.x} x2={stemStart.x} y1={stemStart.y} y2={harmonicStemDirection === 'up' ? topY - 27 : bottomY + 27} stroke={Brand.ink} strokeWidth="1.5" />;
         })()}
         {notes.map((midi, index) => {
           const x = noteX(index);
@@ -133,7 +137,7 @@ export const StaffPreview = memo(function StaffPreview({ midis = [], harmonic = 
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="点击五线谱写入音符"
-      onPress={(event) => onPressY(resolvePressY(event, compact ? 92 : ANSWER_STAFF_HEIGHT))}>
+      onPress={(event) => onPressY(resolvePressY(event, compact ? COMPACT_STAFF_HEIGHT : ANSWER_STAFF_HEIGHT))}>
       {staff}
     </Pressable>
   );
@@ -149,7 +153,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   inkContainer: { borderColor: '#141414' },
-  compact: { height: 92 },
+  compact: { height: COMPACT_STAFF_HEIGHT },
   clef: {
     position: 'absolute',
     left: 6,
@@ -157,7 +161,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 101,
   },
-  compactClef: { top: STAFF_MIDDLE_LINE_Y - 76 / 2, width: 30, height: 76 },
+  compactClef: { top: STAFF_MIDDLE_LINE_Y * COMPACT_STAFF_HEIGHT / 96 - 76 / 2, width: 30, height: 76 },
   accidentalWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   accidentalButton: { minWidth: TouchTarget, minHeight: TouchTarget, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: Brand.border, backgroundColor: Brand.ivory },
   accidentalActive: { borderColor: Brand.forest, backgroundColor: Brand.forest },

@@ -250,7 +250,8 @@ export const AnswerStaff = memo(function AnswerStaff({
           {Array.from({ length: Math.max(1, slots) - 1 }, (_, index) => (
             <Line key={`slot-${index}`} x1={76 + (index + 1) * 224 / Math.max(1, slots)} x2={76 + (index + 1) * 224 / Math.max(1, slots)} y1="28" y2="68" stroke="#D6D9DF" strokeDasharray="3 3" />
           ))}
-          <Line x1="308" x2="308" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth="1.4" />
+          <Line key="final-bar-thin" x1="304" x2="304" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />
+          <Line key="final-bar-thick" x1="308" x2="308" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth="3" />
           {renderNotes(pitches, spellings, activeColor)}
           {showCorrect && renderNotes(correctPitches, correctSpellings, '#2e8b6f', stacked ? 38 : 30)}
         </Svg>

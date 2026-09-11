@@ -58,7 +58,7 @@ export function MusicAccidental({ x, y, glyph, color }: { x: number; y: number; 
     ? 'M-3.2-9L-4.6 8M3.8-10L2.4 7M-7-3L7-5M-7 3L7 1'
     : kind === 'flat'
       ? 'M-3-10V8M-3 0C4-4 6-1 5 2C4 5 1 7-3 8'
-      : 'M-3-9V5L4 2V9M4-5L-3-2';
+      : 'M-3-9V5M-3-2L4-5M-3 5L4 2M4-5V9';
   return <Path d={path} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" transform={`translate(${x} ${y}) scale(${accidentalScale(kind)})`} />;
 }
 

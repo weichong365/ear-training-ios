@@ -257,6 +257,7 @@ export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, 
   const color = tone === 'green' ? '#2e8b6f' : tone === 'red' ? Brand.danger : ink ? '#141414' : Brand.ink;
   const staffLine = ink ? '#141414' : '#596169';
   const barline = barlineBounds();
+  const finalBarX = noteStart + barCount * barWidth;
 
   function tap(event: GestureResponderEvent) {
     if (disabled) return;
@@ -280,7 +281,9 @@ export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, 
       {keySignature === 'G' && <MusicAccidental x={57} y={staffSvgYFromWrittenMidi(77)} glyph="♯" color={Brand.ink} />}
       {keySignature === 'F' && <MusicAccidental x={57} y={staffSvgYFromWrittenMidi(71)} glyph="♭" color={Brand.ink} />}
       {!!meter && <><SvgText x="82" y={STAFF_LINE_YS[1]} fontSize="17" fontWeight="700" textAnchor="middle" alignmentBaseline="central" fill={Brand.ink}>{meter.split('/')[0]}</SvgText><SvgText x="82" y={STAFF_LINE_YS[3]} fontSize="17" fontWeight="700" textAnchor="middle" alignmentBaseline="central" fill={Brand.ink}>{meter.split('/')[1]}</SvgText></>}
-      {Array.from({ length: barCount + 1 }, (_, index) => <Line key={`bar-${index}`} x1={noteStart + index * barWidth} x2={noteStart + index * barWidth} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={index === barCount ? 1.5 : STAFF_STROKE_WIDTH} />)}
+      {Array.from({ length: barCount }, (_, index) => <Line key={`bar-${index}`} x1={noteStart + index * barWidth} x2={noteStart + index * barWidth} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />)}
+      <Line key="final-bar-thin" x1={finalBarX - 4} x2={finalBarX - 4} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />
+      <Line key="final-bar-thick" x1={finalBarX} x2={finalBarX} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth="3" />
       {rendered.map(({ item, index, x, y, written, notation }, renderedIndex) => {
         const glyph = accidentalGlyph(item, keySignature);
         return <G key={`${item.inputOrder || index}-${rendered[renderedIndex].localBar}-${rendered[renderedIndex].beat}`}>

@@ -25,6 +25,7 @@ const {
   noteheadStemStart,
   STAFF_LINE_GAP,
   STAFF_LINE_YS,
+  STAFF_MIDDLE_LINE_Y,
   STAFF_STROKE_WIDTH,
   stemDirectionForWrittenMidis,
 } = await import('../src/core/music-notation.ts');
@@ -356,6 +357,10 @@ for (const component of rendererComponents) {
 const glyphSource = projectSource('src/components/music-glyphs.tsx');
 assert.match(glyphSource, /export function MusicAccidental\(/, '共享字形组件缺少 SVG 临时记号');
 assert.match(glyphSource, /accidentalScale\(kind\)/, 'SVG 临时记号没有应用共享缩放');
+const naturalPath = glyphSource.match(/: '([^']+)';\r?\n\s*return <Path/)?.[1];
+assert.ok(naturalPath, '无法读取还原号 SVG 路径');
+assert.match(naturalPath, /M4-5V9/, '还原号右侧竖线必须连续穿过上下横线');
+assert.doesNotMatch(naturalPath, /V9M4-5/, '还原号右侧竖线不能在上下横线之间断开');
 for (const component of ['src/components/notation-editor.tsx', 'src/components/staff-preview.tsx']) {
   const source = projectSource(component);
   assert.match(source, /noteheadStemStart\(/, `${component} 的符干没有使用共享符头内缩起点`);
@@ -363,6 +368,26 @@ for (const component of ['src/components/notation-editor.tsx', 'src/components/s
 }
 const previewSource = projectSource('src/components/staff-preview.tsx');
 assert.match(previewSource, /!wholeNotes[^\n]*<Line/, '全音符预览必须保持无符干');
+for (const component of rendererComponents) {
+  const finalBarStrokes = [...projectSource(component).matchAll(/<Line key="final-bar-(thin|thick)"[^>]*\/>/g)];
+  assert.deepEqual(finalBarStrokes.map((match) => match[1]), ['thin', 'thick'], `${component} 必须绘制细粗两道终止线`);
+  finalBarStrokes.forEach(([stroke]) => {
+    assert.match(stroke, /y1=\{barline\.top\} y2=\{barline\.bottom\}/, `${component} 的两道终止线必须共享谱线边界`);
+  });
+  assert.match(finalBarStrokes[0][0], /strokeWidth=\{STAFF_STROKE_WIDTH\}/, `${component} 的第一道终止线必须保持细线宽度`);
+  assert.match(finalBarStrokes[1][0], /strokeWidth="3"/, `${component} 的第二道终止线必须保持粗线宽度`);
+}
+const adjacentChordXs = chordHeadOffsets([64, 65]).map((offset) => 157 + offset);
+const previewHeadHalfWidth = 5.9;
+const upwardChordStemX = noteheadStemStart(Math.min(...adjacentChordXs), 48, previewHeadHalfWidth, 'up').x;
+const downwardChordStemX = noteheadStemStart(Math.max(...adjacentChordXs), 48, previewHeadHalfWidth, 'down').x;
+assert.equal(upwardChordStemX, 160.9, '相邻二度和弦的向上符干必须落在共同符头重叠区');
+assert.equal(downwardChordStemX, 161.1, '相邻二度和弦的向下符干必须落在共同符头重叠区');
+assert.equal(adjacentChordXs.every((x) => upwardChordStemX >= x - previewHeadHalfWidth && upwardChordStemX <= x + previewHeadHalfWidth), true, '向上和弦符干必须连接所有错位符头');
+assert.equal(adjacentChordXs.every((x) => downwardChordStemX >= x - previewHeadHalfWidth && downwardChordStemX <= x + previewHeadHalfWidth), true, '向下和弦符干必须连接所有错位符头');
+assert.match(previewSource, /const stemHeadX = harmonicStemDirection === 'up' \? Math\.min\(\.\.\.noteXs\) : Math\.max\(\.\.\.noteXs\)/, '和弦预览没有选择共同符干轴');
+assert.equal(STAFF_MIDDLE_LINE_Y * 92 / 96 - 76 / 2, 8, '紧凑谱号必须以 92px 容器中的谱面中线居中');
+assert.match(previewSource, /STAFF_MIDDLE_LINE_Y \* COMPACT_STAFF_HEIGHT \/ 96 - 76 \/ 2/, '紧凑谱号没有把 SVG 中线换算到实际容器高度');
 assert.deepEqual(ledgerLineYs(79), [], 'G5 位于第五线上方的间，不应误加线');
 assert.equal(durationNotation(4).headKind, 'whole', '四拍时值必须使用全音符头');
 assert.equal(durationNotation(4).hasStem, false, '全音符不能显示符干');
