@@ -67,13 +67,13 @@ function verifySamplePitch(sample, midi, file) {
 }
 
 // A stronger second/third harmonic must not hide a two-cent fundamental error.
-function syntheticPiano(midi, cents = 0) {
+function syntheticPiano(midi, cents = 0, fadeSeconds = 0.08) {
   const sampleRate = 16000;
   const frequency = 440 * 2 ** ((midi - 69) / 12 + cents / 1200);
   const samples = Int16Array.from({ length: sampleRate * 1.85 }, (_, index) => {
     const time = index / sampleRate;
     const phase = 2 * Math.PI * frequency * time;
-    const fade = Math.min(1, (1.85 - time) / 0.08);
+    const fade = fadeSeconds ? Math.min(1, (1.85 - time) / fadeSeconds) : 1;
     return Math.round(20000 * Math.exp(-time) * fade
       * (0.08 * Math.sin(phase) + 0.5 * Math.sin(2 * phase + 0.3) + 0.25 * Math.sin(3 * phase + 0.7)));
   });
@@ -127,6 +127,20 @@ function verifySampleQuality(sample, file) {
     `final 80ms fade: last 20ms RMS ${finalRms.toFixed(6)}, first 20ms ${firstRms.toFixed(6)}`]);
   checks.push([Math.abs(samples.at(-1)) <= 2 && Math.abs(samples.at(-1) - samples.at(-2)) <= 2,
     `abrupt terminal step: final PCM values ${samples.at(-2)}, ${samples.at(-1)} (limit 2 LSB)`]);
+  const peak = samples.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0);
+  const envelopeWindow = Math.round(sampleRate * 0.005);
+  // A normal harmonic slope continues oscillating; a cutoff falls into silence.
+  // Compare the step with the preceding 5ms envelope, ignoring sub -60dB tails.
+  for (let index = samples.length - tail.length; index < samples.length; index++) {
+    const step = Math.abs(samples[index] - samples[index - 1]);
+    if (step <= Math.max(2, peak * 0.001)) continue;
+    const before = rms(samples.slice(index - envelopeWindow, index)) * 32768;
+    const after = rms(samples.slice(index, index + envelopeWindow)) * 32768;
+    if (step > before * 0.25 && after < Math.max(2, before * 0.1)) {
+      checks.push([false, `abrupt tail transition at ${(index / sampleRate).toFixed(5)}s: ${step} LSB step, preceding RMS ${before.toFixed(1)}`]);
+      break;
+    }
+  }
   return checks.filter(([passed]) => !passed).map(([, message]) => `${path.basename(file)}: ${message}`);
 }
 
@@ -138,7 +152,22 @@ assert.ok(verifySampleQuality(unfadedFixture, 'synthetic no fade').some((error) 
 const abruptFixture = { ...qualityFixture, samples: qualityFixture.samples.slice() };
 abruptFixture.samples[abruptFixture.samples.length - 1] = 100;
 assert.ok(verifySampleQuality(abruptFixture, 'synthetic abrupt end').some((error) => error.includes('abrupt terminal step')));
-console.log('Fade self-check passed: clean tail accepted; missing fade and abrupt endpoint rejected.');
+const paddedCutoffFixture = syntheticPiano(69, 0, 0);
+paddedCutoffFixture.samples.fill(0, -320);
+assert.equal(Math.abs(paddedCutoffFixture.samples.at(-321)), 647, 'reproduce the reported 647-LSB cutoff');
+assert.ok(verifySampleQuality(paddedCutoffFixture, 'synthetic padded cutoff').some((error) => error.includes('abrupt tail transition')),
+  'an abrupt cutoff followed by 20ms silence must not pass the fade contract');
+paddedCutoffFixture.samples[paddedCutoffFixture.samples.length - 321] = 3000;
+assert.ok(verifySampleQuality(paddedCutoffFixture, 'synthetic 3000-LSB cutoff').some((error) => error.includes('abrupt tail transition')));
+for (let midi = 55; midi <= 81; midi++) {
+  const smoothFixture = syntheticPiano(midi, 0, 0);
+  const cutoff = smoothFixture.samples.length - 320;
+  for (let index = cutoff - 960; index < smoothFixture.samples.length; index++) {
+    smoothFixture.samples[index] = Math.round(smoothFixture.samples[index] * Math.max(0, (cutoff - index) / 960) ** 2);
+  }
+  assert.deepEqual(verifySampleQuality(smoothFixture, `synthetic smooth MIDI ${midi}`), []);
+}
+console.log('Fade self-check passed: 27 smooth padded fades accepted; missing fade, abrupt endpoint and 647/3000-LSB padded cutoffs rejected.');
 
 const qualityFailures = [];
 
