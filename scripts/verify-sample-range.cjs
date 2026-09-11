@@ -128,16 +128,16 @@ function verifySampleQuality(sample, file) {
   checks.push([Math.abs(samples.at(-1)) <= 2 && Math.abs(samples.at(-1) - samples.at(-2)) <= 2,
     `abrupt terminal step: final PCM values ${samples.at(-2)}, ${samples.at(-1)} (limit 2 LSB)`]);
   const peak = samples.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0);
-  const envelopeWindow = Math.round(sampleRate * 0.005);
-  // A normal harmonic slope continues oscillating; a cutoff falls into silence.
-  // Compare the step with the preceding 5ms envelope, ignoring sub -60dB tails.
+  const envelopeWindow = Math.round(sampleRate * 0.01);
+  // Use whole waveform windows: even a zero-crossing cutoff collapses its RMS.
+  // A smooth fade is already decreasing before silence; an abrupt cut is not.
   for (let index = samples.length - tail.length; index < samples.length; index++) {
-    const step = Math.abs(samples[index] - samples[index - 1]);
-    if (step <= Math.max(2, peak * 0.001)) continue;
     const before = rms(samples.slice(index - envelopeWindow, index)) * 32768;
+    if (before <= Math.max(2, peak * 0.001)) continue;
+    const earlier = rms(samples.slice(index - 2 * envelopeWindow, index - envelopeWindow)) * 32768;
     const after = rms(samples.slice(index, index + envelopeWindow)) * 32768;
-    if (step > before * 0.25 && after < Math.max(2, before * 0.1)) {
-      checks.push([false, `abrupt tail transition at ${(index / sampleRate).toFixed(5)}s: ${step} LSB step, preceding RMS ${before.toFixed(1)}`]);
+    if (before > earlier * 0.7 && after < Math.max(2, before * 0.1)) {
+      checks.push([false, `abrupt tail transition at ${(index / sampleRate).toFixed(5)}s: RMS ${earlier.toFixed(1)} → ${before.toFixed(1)} → ${after.toFixed(1)} LSB`]);
       break;
     }
   }
@@ -159,15 +159,35 @@ assert.ok(verifySampleQuality(paddedCutoffFixture, 'synthetic padded cutoff').so
   'an abrupt cutoff followed by 20ms silence must not pass the fade contract');
 paddedCutoffFixture.samples[paddedCutoffFixture.samples.length - 321] = 3000;
 assert.ok(verifySampleQuality(paddedCutoffFixture, 'synthetic 3000-LSB cutoff').some((error) => error.includes('abrupt tail transition')));
+const phaseCutoffFixture = syntheticPiano(55, 0, 0);
+phaseCutoffFixture.samples.fill(0, 28689);
+assert.equal(Math.abs(phaseCutoffFixture.samples[28688]), 335, 'reproduce the reported phase-offset cutoff');
+assert.ok(verifySampleQuality(phaseCutoffFixture, 'synthetic phase-offset cutoff').some((error) => error.includes('abrupt tail transition')),
+  'a sudden energy drop must fail even when the last waveform sample is below 25% of local RMS');
 for (let midi = 55; midi <= 81; midi++) {
-  const smoothFixture = syntheticPiano(midi, 0, 0);
-  const cutoff = smoothFixture.samples.length - 320;
-  for (let index = cutoff - 960; index < smoothFixture.samples.length; index++) {
-    smoothFixture.samples[index] = Math.round(smoothFixture.samples[index] * Math.max(0, (cutoff - index) / 960) ** 2);
+  for (const curve of [(remaining) => remaining ** 2, (remaining) => remaining, (remaining) => Math.sin(remaining * Math.PI / 2)]) {
+    const smoothFixture = syntheticPiano(midi, 0, 0);
+    const cutoff = smoothFixture.samples.length - 320;
+    for (let index = cutoff - 960; index < smoothFixture.samples.length; index++) {
+      smoothFixture.samples[index] = Math.round(smoothFixture.samples[index] * curve(Math.max(0, (cutoff - index) / 960)));
+    }
+    assert.deepEqual(verifySampleQuality(smoothFixture, `synthetic smooth MIDI ${midi}`), []);
   }
-  assert.deepEqual(verifySampleQuality(smoothFixture, `synthetic smooth MIDI ${midi}`), []);
+  const quietFixture = syntheticPiano(midi, 0, 0);
+  for (let index = 24000; index < quietFixture.samples.length; index++) {
+    quietFixture.samples[index] = Math.round(quietFixture.samples[index] * Math.exp(-50 * (index / quietFixture.sampleRate - 1.5)));
+  }
+  assert.deepEqual(verifySampleQuality(quietFixture, `synthetic quiet MIDI ${midi}`), []);
 }
-console.log('Fade self-check passed: 27 smooth padded fades accepted; missing fade, abrupt endpoint and 647/3000-LSB padded cutoffs rejected.');
+for (const midi of [55, 69, 81]) {
+  for (let phase = 0; phase < 16; phase++) {
+    const fixture = syntheticPiano(midi, 0, 0);
+    const period = fixture.sampleRate / (440 * 2 ** ((midi - 69) / 12));
+    fixture.samples.fill(0, 28689 + Math.round(phase * period / 16));
+    assert.ok(verifySampleQuality(fixture, `synthetic phase ${phase} MIDI ${midi}`).some((error) => error.includes('abrupt tail transition')));
+  }
+}
+console.log('Fade self-check passed: 81 smooth fades and 27 quiet tails accepted; 48 phase-offset cutoffs, reported 335/647/3000-LSB cutoffs, missing fade and abrupt endpoint rejected.');
 
 const qualityFailures = [];
 
