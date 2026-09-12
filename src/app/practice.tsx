@@ -455,13 +455,13 @@ export default function PracticeScreen() {
       </View> : <>
         <View style={[styles.card, compactPitchMode && styles.compactCard]}>
           <Pressable accessibilityRole="button" accessibilityLabel={playing || preparing ? '音频播放中' : phase === 'feedback' ? '回放正确答案' : phase === 'ready' ? '播放题目' : '再听一遍'} accessibilityState={{ disabled: playing || preparing || (phase !== 'feedback' && playCount >= maxPlays), busy: playing || preparing }} onPress={() => void play()} disabled={playing || preparing || (phase !== 'feedback' && playCount >= maxPlays)} style={({ pressed }) => [styles.playButton, compactPitchMode && styles.compactPlayButton, (playing || preparing) && styles.playing, pressed && styles.pressed]}>
-            <View style={styles.playIcon}><AppIcon name={playing || preparing ? 'pause' : 'play'} size={20} color={Brand.textOnAccent} /></View><View style={styles.playCopy}><Text style={styles.playTitle}>{playing ? '播放中…' : phase === 'feedback' ? '回放答案' : phase === 'ready' ? '播放题目' : '再听一遍'}</Text>{!compactPitchMode && <Text style={styles.playSub}>{phase === 'feedback' ? '结合谱面与键盘复盘' : '先听题，再在五线谱上作答'}</Text>}</View><Text style={styles.replay}>{phase === 'feedback' ? '不限次数' : `剩余 ${Math.max(0, maxPlays - playCount)} 次`}</Text>
+            <View style={styles.playIcon}><AppIcon name={playing || preparing ? 'pause' : 'play'} size={20} color={Brand.textOnAccent} /></View><View style={styles.playCopy}><Text style={styles.playTitle}>{playing ? '播放中…' : phase === 'feedback' ? '回放答案' : phase === 'ready' ? '播放题目' : '再听一遍'}</Text><Text style={styles.playSub}>{phase === 'feedback' ? '结合谱面与键盘复盘' : '先听题，再在五线谱上作答'}</Text></View><Text style={styles.replay}>{phase === 'feedback' ? '不限次数' : `剩余 ${Math.max(0, maxPlays - playCount)} 次`}</Text>
           </Pressable>
           {volumeRow}
           {!!message && <Text accessibilityLiveRegion="polite" style={styles.error}>{message}</Text>}
           <View style={[styles.answerBlock, compactPitchMode && styles.compactAnswerBlock]}>
             <Text style={styles.answerTitle}>{answerTitleFor(scoringQuestion)}</Text>
-            {!compactPitchMode && !qualityOnly && <Text style={styles.answerMethod}>按住音符可上下拖动，单击音符可选择临时记号，双击可擦除音符。</Text>}
+            <Text style={styles.answerMethod}>{qualityOnly ? '先选性质（大/小/增/减三和弦），再选转位。' : '按住音符可上下拖动，单击音符可选择临时记号，双击可擦除音符。'}</Text>
             {timed ? <NotationEditor question={scoringQuestion} answer={answer} unlocked={phase === 'answering'} disabled={phase === 'feedback'} reviewCorrect={correct} showCorrect={phase === 'feedback'} onChange={setAnswer} /> : isConnection ? <View style={styles.connectionList}>
               {(scoringQuestion.chords as number[][]).map((chord, groupIndex) => {
                 const group = connectionGroupSlice(scoringQuestion, answer, groupIndex);
@@ -473,6 +473,7 @@ export default function PracticeScreen() {
                 );
               })}
             </View> : qualityOnly ? <View style={styles.qualityBlock}>
+              {phase !== 'feedback' && <Text style={styles.answerMethod}>{phase === 'ready' ? '播放题目后开始作答' : !selectedChordQuality ? '请选择和弦性质与转位' : !selectedChordInversion ? '请选择转位' : '已完成，可提交答案'}</Text>}
               <Text style={styles.qualityLabel}>和弦性质</Text>
               <View style={styles.qualityGrid}>{CHORD_QUALITY_NAMES.map((quality) => (
                 <Pressable key={quality} accessibilityRole="radio" accessibilityState={{ selected: selectedChordQuality === quality, disabled: phase !== 'answering' }} disabled={phase !== 'answering'} onPress={() => { if (phase !== 'answering') return; Haptics.selectionAsync(); setAnswer({ ...answer, quality, inversion: selectedChordInversion }); }} style={({ pressed }) => [styles.qualityOption, selectedChordQuality === quality && styles.qualityActive, pressed && styles.pressed]}><Text style={[styles.qualityText, selectedChordQuality === quality && styles.qualityTextActive]}>{quality}</Text></Pressable>
@@ -487,7 +488,7 @@ export default function PracticeScreen() {
         </View>
 
         <View style={[styles.keyboardCard, phase === 'feedback' && styles.keyboardOpen]}>
-          <View style={styles.keyboardHead}><View><Text style={styles.keyboardTitle}>复盘钢琴</Text>{!compactPitchMode && <Text style={styles.keyboardSub}>{phase === 'feedback' ? '键盘已解锁，可自由弹奏核对音高' : '提交谱面答案后自动解锁'}</Text>}</View><Text style={[styles.keyboardState, phase === 'feedback' && styles.keyboardStateOpen]}>{phase === 'feedback' ? '已解锁' : '待解锁'}</Text></View>
+          <View style={styles.keyboardHead}><View><Text style={styles.keyboardTitle}>复盘钢琴</Text><Text style={styles.keyboardSub}>{phase === 'feedback' ? '键盘已解锁，可自由弹奏核对音高' : '提交谱面答案后自动解锁'}</Text></View><Text style={[styles.keyboardState, phase === 'feedback' && styles.keyboardStateOpen]}>{phase === 'feedback' ? '已解锁' : '待解锁'}</Text></View>
           <View><View aria-hidden={phase !== 'feedback'} accessibilityElementsHidden={phase !== 'feedback'} importantForAccessibility={phase !== 'feedback' ? 'no-hide-descendants' : 'auto'}><PianoKeyboard disabled={phase !== 'feedback' || playing} highlights={highlights} volume={volume} onKeyPress={phase === 'feedback' ? (midi) => { if (!replaying.current) void playPianoNote(midi, playbackVolume).then((started) => { if (!started) reportAudioFailure(); }); } : undefined} /></View>{phase !== 'feedback' && <View accessibilityRole="text" accessibilityLabel="复盘钢琴待解锁，提交答案后解锁" style={styles.keyboardLock}><View style={styles.lockIcon}><AppIcon name="lock" size={21} color={Brand.textOnAccent} /></View><Text style={styles.lockText}>提交答案后解锁</Text></View>}</View>
         </View>
       </>}

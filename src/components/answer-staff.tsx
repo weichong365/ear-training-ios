@@ -27,6 +27,14 @@ function writtenMidi(midi: number, spelling?: string) {
   return naturalMidiForPitchSpelling(midi, spelling);
 }
 
+function writtenPitches(pitches: number[], spellings: string[]) {
+  const written: number[] = [];
+  pitches.forEach((midi, index) => {
+    if (Number.isFinite(midi)) written[index] = writtenMidi(midi, spellings[index]);
+  });
+  return written;
+}
+
 function accidentalGlyph(midi: number, spelling?: string) {
   return accidentalGlyphForPitch(midi, spelling);
 }
@@ -92,7 +100,7 @@ export const AnswerStaff = memo(function AnswerStaff({
 
   const noteX = (index: number, values = pitches, valueSpellings = spellings) => {
     if (stacked) {
-      const writtenValues = values.map((midi, valueIndex) => writtenMidi(midi, valueSpellings[valueIndex]));
+      const writtenValues = writtenPitches(values, valueSpellings);
       return 166 + chordHeadOffsets(writtenValues)[index];
     }
     const slot = Math.min(Math.max(0, index), Math.max(0, slots - 1));
@@ -143,7 +151,9 @@ export const AnswerStaff = memo(function AnswerStaff({
       const existing = latest.current.pitches.indexOf(note.midi);
       if (existing >= 0) return erase(existing);
       if (latest.current.pitches.filter(Number.isFinite).length >= maxStack) return;
-      onChange?.([...latest.current.pitches, note.midi], [...latest.current.spellings, note.spelling]);
+      const filled = latest.current.pitches.flatMap((midi, index) => Number.isFinite(midi)
+        ? [{ midi, spelling: latest.current.spellings[index] || defaultPitchSpelling(midi) }] : []);
+      onChange?.([...filled.map((value) => value.midi), note.midi], [...filled.map((value) => value.spelling), note.spelling]);
       return;
     }
     replaceNote(Math.max(0, slot), note.midi, note.spelling);
@@ -213,7 +223,7 @@ export const AnswerStaff = memo(function AnswerStaff({
   const activeColor = tone === 'green' ? '#2e8b6f' : tone === 'red' ? Brand.danger : ink ? '#141414' : Brand.ink;
   const barline = barlineBounds();
   const renderNotes = (values: number[], valueSpellings: string[], color: string, offset = 0) => {
-    const writtenValues = values.map((midi, index) => writtenMidi(midi, valueSpellings[index]));
+    const writtenValues = writtenPitches(values, valueSpellings);
     const accidentalColumn = accidentalColumns(writtenValues);
     return values.map((midi, index) => {
     if (!Number.isFinite(midi)) return null;

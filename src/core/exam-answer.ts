@@ -146,7 +146,7 @@ export function answerIsComplete(question: ExamQuestion, answer: ExamAnswer) {
   const targetCount = targetPitches(question).length;
   const pitchReady = !needsPitch(question) || (
     answer.pitches.length === targetCount
-    && answer.pitches.every(Number.isFinite)
+    && Array.from(answer.pitches).every(Number.isFinite)
   );
   const qualityReady = !needsQuality(question) || (question.type === 'chord'
     ? Boolean(answer.quality && (answer.inversion || answer.quality.includes(' · ')))

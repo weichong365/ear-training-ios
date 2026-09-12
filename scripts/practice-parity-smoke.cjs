@@ -212,4 +212,192 @@ timedStaffTags.forEach((tag, index) => {
   assert.match(tag, /meter=\{systemIndex === 0 \? (?:meter|answer\.meter|String\(question\.meter \|\| ''\)) : ''\}/, `timed staff ${index + 1} must hide display meter only on continuation systems`);
 });
 
-console.log(`practice parity contract passed (${files.length} source files checked)`);
+// Exercise production pitch renders and event handlers without a native runtime.
+// Only device effects and unrelated timed/piano components are replaced. State
+// names come from the AST so adding an earlier hook cannot shift test fixtures.
+function pitchHarness() {
+  const ast = ts.createSourceFile('practice.tsx', practice, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const stateNames = childrenOf(ast).filter((node) => ts.isVariableDeclaration(node)
+    && ts.isArrayBindingPattern(node.name) && node.initializer && ts.isCallExpression(node.initializer)
+    && node.initializer.expression.getText(ast) === 'useState').map((node) => node.name.elements[0].name.text);
+  let state = {}, mode = 'single', screenStateIndex = null;
+  const hooks = {
+    ...require('react'), memo: (component) => component, useEffect: () => {},
+    useMemo: (factory) => factory(), useCallback: (fn) => fn, useRef: (value) => ({ current: value }),
+    useState: (initial) => {
+      const name = screenStateIndex === null ? null : stateNames[screenStateIndex++];
+      const value = name && Object.hasOwn(state, name) ? state[name] : typeof initial === 'function' ? initial() : initial;
+      if (name) state[name] = value;
+      return [value, (next) => { if (name) state[name] = typeof next === 'function' ? next(state[name]) : next; }];
+    },
+  };
+  const mocks = {
+    react: hooks,
+    'react-native': { ...Object.fromEntries(['ActivityIndicator', 'Image', 'Pressable', 'ScrollView', 'Text', 'View'].map((name) => [name, name])),
+      StyleSheet: { create: (styles) => styles }, Platform: { select: (values) => values.ios ?? values.default } },
+    'react-native-svg': { __esModule: true, default: 'Svg', G: 'G', Line: 'Line', Path: 'Path' },
+    'expo-router': { useLocalSearchParams: () => ({ type: mode }), useFocusEffect: () => {} },
+    'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0 }) },
+    'expo-haptics': { selectionAsync: () => Promise.resolve() },
+    '@/services/audio-engine': {}, '@/services/local-data': {}, '@/global.css': {},
+    '@/components/app-icon': { AppIcon: () => null },
+    '@/components/notation-editor': { NotationEditor: () => null },
+    '@/components/piano-keyboard': { PianoKeyboard: () => null },
+  };
+  const cache = new Map();
+  function load(request, from = root) {
+    if (Object.hasOwn(mocks, request)) return mocks[request];
+    if (!request.startsWith('.') && !request.startsWith('@/')) return require(request);
+    const base = request.startsWith('@/') ? path.join(root, 'src', request.slice(2)) : path.resolve(from, request);
+    const file = [base, `${base}.ts`, `${base}.tsx`, path.join(base, 'index.ts')].find((candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
+    assert.ok(file, `test module not found: ${request}`);
+    if (file.endsWith('.png')) return file;
+    if (file.endsWith('.js')) return require(file);
+    if (cache.has(file)) return cache.get(file).exports;
+    const module = { exports: {} };
+    cache.set(file, module);
+    const compiled = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+    }).outputText;
+    new Function('require', 'module', 'exports', compiled)((name) => load(name, path.dirname(file)), module, module.exports);
+    return module.exports;
+  }
+  const Screen = load('./src/app/practice.tsx').default;
+  function nodes(value) {
+    if (value == null || typeof value === 'boolean') return [];
+    if (Array.isArray(value)) return value.flatMap(nodes);
+    if (typeof value !== 'object') return [value];
+    if (typeof value.type === 'function') return [value, ...nodes(value.type(value.props))];
+    return [value, ...nodes(value.props?.children)];
+  }
+  return {
+    load,
+    start(nextMode, question, phase, answer, correct = false) {
+      mode = nextMode;
+      state = { practiceLoaded: true, activePracticeSession: { mode, questions: [question] }, phase, answer, correct };
+    },
+    render() {
+      screenStateIndex = 0;
+      const tree = Screen();
+      screenStateIndex = null;
+      const rendered = nodes(tree);
+      return {
+        nodes: rendered.filter((node) => typeof node === 'object'),
+        text: rendered.filter((node) => typeof node === 'string' || typeof node === 'number').join(''),
+      };
+    },
+  };
+}
+
+const harness = pitchHarness();
+const { emptyExamAnswer, answerIsComplete } = harness.load('./src/core/exam-answer.ts');
+const questionCore = require('../src/core/legacy/question.js');
+const originalRandom = Math.random;
+let seed = 246813579;
+let pitchCases, adaptivePitches;
+try {
+  Math.random = () => { seed = seed * 1664525 + 1013904223 >>> 0; return seed / 0x100000000; };
+  pitchCases = ['single', 'group', 'interval', 'chord', 'chordQuality', 'chordPitch', 'connection']
+    .map((mode) => ({ mode, question: questionCore.generate(mode), qualityOnly: mode === 'chordQuality' }));
+  adaptivePitches = questionCore.generateSet('adaptive', 15).filter((question) => !['rhythm', 'melody'].includes(question.type));
+} finally {
+  Math.random = originalRandom;
+}
+assert.ok(adaptivePitches.length > 0, 'adaptive set must include pitch questions');
+pitchCases.push(...adaptivePitches.map((question) => ({ mode: 'adaptive', question, qualityOnly: question.answerMode === 'qualityFill' })));
+const submitButton = (render) => render.nodes.find((node) => node.type === 'Pressable' && node.props.accessibilityRole === 'button' && !node.props.accessibilityLabel && node.props.accessibilityState?.disabled !== undefined);
+const staffs = (render) => render.nodes.filter((node) => node.type?.name === 'AnswerStaff');
+for (const { mode, question, qualityOnly } of pitchCases) {
+  const readyAnswer = { ...emptyExamAnswer(), pitches: question.type === 'intervalConnection' ? question.chords.flat() : question.midis,
+    quality: qualityOnly ? '大三和弦' : '', inversion: qualityOnly ? '原位' : '' };
+  for (const phase of ['ready', 'answering', 'feedback']) {
+    const answer = phase === 'feedback' ? readyAnswer : emptyExamAnswer();
+    harness.start(mode, question, phase, answer);
+    const render = harness.render();
+    const noun = question.type === 'single' ? '单音' : question.type === 'chord' ? '和弦' : question.groupSize ? '音组' : '音程';
+    assert.ok(render.nodes.some((node) => node.type === 'Text' && typeof node.props.children === 'string' && node.props.children.includes('听到的') && node.props.children.includes(noun)), `${mode}/${phase}: missing answer title/noun`);
+    assert.ok(render.text.includes(qualityOnly ? '先选性质（大/小/增/减三和弦），再选转位。' : '按住音符可上下拖动'), `${mode}/${phase}: missing answer instruction`);
+    assert.ok(render.text.includes(phase === 'feedback' ? '结合谱面与键盘复盘' : '先听题，再在五线谱上作答'), `${mode}/${phase}: missing playback instruction`);
+    assert.ok(render.text.includes(phase === 'feedback' ? '键盘已解锁，可自由弹奏核对音高' : '提交谱面答案后自动解锁'), `${mode}/${phase}: missing keyboard instruction`);
+    if (phase !== 'feedback') {
+      const prompt = phase === 'ready' ? '播放题目后开始作答' : qualityOnly ? '请选择和弦性质与转位' : question.type === 'intervalConnection' ? '点击五线谱写入两个音' : '点击五线谱写入答案';
+      assert.ok(render.text.includes(prompt), `${mode}/${phase}: missing empty prompt`);
+      assert.equal(submitButton(render)?.props.disabled, true, `${mode}/${phase}: empty answer must disable submit`);
+    } else {
+      assert.ok(render.text.includes('正确答案：') && render.text.includes('你的答案：'), `${mode}: missing feedback summaries`);
+      assert.ok(render.nodes.some((node) => node.props.accessibilityLabel === '批改结果：错误'), `${mode}: missing teacher mark`);
+    }
+    if (qualityOnly) assert.deepEqual(render.nodes.filter((node) => node.type === 'Text' && ['和弦性质', '转位'].includes(node.props.children)).map((node) => node.props.children).slice(-2), ['和弦性质', '转位'], 'quality controls must appear before inversion controls');
+  }
+  harness.start(mode, question, 'answering', readyAnswer);
+  assert.equal(submitButton(harness.render())?.props.disabled, false, `${mode}: fully filled answer must enable submit`);
+  if (!qualityOnly && question.type !== 'intervalConnection') {
+    const staff = staffs(harness.render())[0];
+    assert.equal(staff.props.stacked, question.type === 'chord' || Boolean(question.harmonic), `${mode}: wrong stacking`);
+    assert.equal(staff.props.stacked ? staff.props.maxStack : staff.props.slots, question.midis.length, `${mode}: wrong pitch capacity`);
+  }
+}
+
+const connection = { type: 'intervalConnection', typeName: '和声音程连接', chords: [[60, 64], [62, 69]], answerText: 'C4 E4 → D4 A4' };
+harness.start('connection', connection, 'answering', emptyExamAnswer());
+staffs(harness.render())[1].props.onChange([62, 69], ['D4', 'A4']);
+assert.doesNotThrow(() => harness.render(), 'unfilled connection groups must render after a later group is filled');
+assert.equal(submitButton(harness.render()).props.disabled, true, 'last group alone cannot enable submit');
+staffs(harness.render())[0].props.onChange([60], ['C4']);
+assert.equal(submitButton(harness.render()).props.disabled, true, 'one missing group slot cannot enable submit');
+staffs(harness.render())[0].props.onChange([60, 64], ['C4', 'E4']);
+assert.equal(submitButton(harness.render()).props.disabled, false, 'all connection group slots enable submit');
+staffs(harness.render())[0].props.onChange([64], ['E4']);
+assert.equal(submitButton(harness.render()).props.disabled, true, 'erasing a group note disables submit again');
+assert.deepEqual(staffs(harness.render())[1].props.pitches, [62, 69], 'editing one connection group must preserve later groups');
+assert.equal(answerIsComplete(connection, { ...emptyExamAnswer(), pitches: [, 64, 62, 69] }), false, 'a sparse missing slot cannot count as complete');
+
+// Use the real staff responder to fill a previously empty group, not just its
+// parent onChange callback: fixed flat-array padding must not swallow new notes.
+harness.start('connection', connection, 'answering', emptyExamAnswer());
+staffs(harness.render())[1].props.onChange([62, 69], ['D4', 'A4']);
+const firstTouchArea = harness.render().nodes.find((node) => node.props.accessibilityLabel === '五线谱答题区域');
+const tap = { nativeEvent: { locationX: 166, locationY: 78 * 122 / 96 } };
+firstTouchArea.props.onResponderGrant(tap);
+firstTouchArea.props.onResponderRelease(tap);
+assert.deepEqual(staffs(harness.render())[0].props.pitches.filter(Number.isFinite), [60], 'tapping an empty padded connection group must write its first note');
+for (const y of [68, 58]) {
+  const area = harness.render().nodes.find((node) => node.props.accessibilityLabel === '五线谱答题区域');
+  const event = { nativeEvent: { locationX: 250, locationY: y * 122 / 96 } };
+  area.props.onResponderGrant(event);
+  area.props.onResponderRelease(event);
+}
+assert.deepEqual(staffs(harness.render())[0].props.pitches, [60, 64], 'connection staff writes the second note and enforces its two-note stack limit');
+assert.deepEqual(staffs(harness.render())[0].props.spellings, ['C4', 'E4'], 'stack insertion preserves spelling alignment');
+assert.equal(submitButton(harness.render()).props.disabled, false, 'real staff gestures can complete every connection slot');
+
+const qualityQuestion = pitchCases.find(({ mode }) => mode === 'chordQuality').question;
+harness.start('chordQuality', qualityQuestion, 'answering', emptyExamAnswer());
+let qualityChoices = harness.render().nodes.filter((node) => node.props.accessibilityRole === 'radio');
+qualityChoices[0].props.onPress();
+assert.equal(submitButton(harness.render()).props.disabled, true, 'quality alone cannot enable submit');
+assert.ok(harness.render().text.includes('请选择转位'), 'quality selection must prompt for the remaining inversion');
+qualityChoices = harness.render().nodes.filter((node) => node.props.accessibilityRole === 'radio');
+qualityChoices[4].props.onPress();
+assert.equal(submitButton(harness.render()).props.disabled, false, 'quality and inversion enable submit');
+
+const flatQuestion = { type: 'single', typeName: '单音听记', midis: [61], spellings: ['Db4'], answerText: 'D♭4' };
+for (const correct of [false, true]) {
+  harness.start('single', flatQuestion, 'feedback', { ...emptyExamAnswer(), pitches: [correct ? 61 : 60], spellings: [correct ? 'Db4' : 'C4'] }, correct);
+  const render = harness.render();
+  assert.ok(render.text.includes(`正确答案：D♭4你的答案：${correct ? 'D♭4' : 'C4'}`), 'feedback must include actual spelled correct/user answers');
+  assert.ok(render.nodes.some((node) => node.props.accessibilityLabel === `批改结果：${correct ? '正确' : '错误'}`), 'teacher mark must reflect the grade');
+  assert.equal(staffs(render)[0].props.showCorrect, !correct, 'only a wrong answer needs the correct overlay');
+}
+harness.start('group', { type: 'interval', typeName: '旋律音组', groupSize: 3, noteCount: 3, midis: [60, 64, 67] }, 'answering', { ...emptyExamAnswer(), pitches: [null, 64, 67] });
+assert.doesNotThrow(() => harness.render(), 'restored null pitch slots must render');
+assert.equal(submitButton(harness.render()).props.disabled, true, 'restored null pitch slots are incomplete');
+
+// Hand-checked line/space fixtures guard shared geometry before any changes to it.
+const coordinates = harness.load('./src/core/staff-coordinate.ts');
+for (const [midi, y] of [[60, 78], [64, 68], [65, 63], [71, 48], [77, 28], [81, 18]]) {
+  assert.equal(coordinates.staffSvgYFromWrittenMidi(midi), y);
+  for (const height of [96, 122]) assert.equal(coordinates.naturalMidiFromStaffTapY(y * height / 96, height), midi);
+}
+
+console.log(`practice parity contract passed (${files.length} source files and ${pitchCases.length} pitch workflows checked)`);
