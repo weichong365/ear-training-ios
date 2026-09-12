@@ -249,7 +249,7 @@ assert.match(practice, /async function play\(\) \{[\s\S]*?stopQuestionAudio\(\);
   'starting question replay must cancel an active or pending manual piano request before question audio begins');
 assert.match(practice, /function capturePracticeSnapshot\(\) \{[\s\S]*?snapshotPracticeHighlights\(phase, scoringQuestion, answer, correct, highlights\)[\s\S]*?highlights: snapshotHighlights/,
   'leaving feedback while a manual key is highlighted must persist reconstructed grading colors, not the transient highlight');
-assert.match(practice, /<PianoKeyboard\b[^>]*\bdisabled=\{phase !== 'feedback' \|\| playing \|\| preparing\}[^>]*\bonKeyPress=\{phase === 'feedback' \? reviewPianoKey : undefined\}/,
+assert.match(practice, /const keyboardUnavailable = phase !== 'feedback' \|\| playing \|\| preparing;[\s\S]*?<PianoKeyboard\b[^>]*\bdisabled=\{keyboardUnavailable\}[^>]*\bonKeyPress=\{phase === 'feedback' \? reviewPianoKey : undefined\}/,
   'review piano must unlock only after feedback and stay disabled while question audio is preparing or playing');
 assert.ok(!/\buse(?:State|Ref)\b/.test(piano),
   'PianoKeyboard must remain stateless while the practice screen owns review behavior');
@@ -508,6 +508,8 @@ const sharedAnswer = { ...emptyExamAnswer(), pitches: [60], spellings: ['C4'] };
 const sharedWrongAnswer = { ...emptyExamAnswer(), pitches: [62], spellings: ['D4'] };
 const sharedComponent = (render, Component) => render.nodes.find((node) => node.type === Component);
 const pianoKeys = (render) => render.nodes.filter((node) => node.type === 'Pressable' && /^钢琴键 /.test(node.props.accessibilityLabel || ''));
+const pianoAccessibilityWrapper = (render, keyboard) => render.nodes.find((node) => node.type === 'View'
+  && (Array.isArray(node.props.children) ? node.props.children : [node.props.children]).includes(keyboard));
 
 for (const phase of ['ready', 'answering']) {
   sharedPractice.start('single', sharedSingle, phase, phase === 'ready' ? emptyExamAnswer() : sharedAnswer);
@@ -517,7 +519,9 @@ for (const phase of ['ready', 'answering']) {
   assert.equal(keyboard.props.disabled, true, `${phase}: review piano must remain locked`);
   assert.equal(keyboard.props.onKeyPress, undefined, `${phase}: locked review piano must not expose a press handler`);
   assert.equal(pianoKeys(render).length, 0, `${phase}: locked review piano must not expose focusable keys`);
-  assert.ok(render.nodes.some((node) => node.props['aria-hidden'] === true && node.props.importantForAccessibility === 'no-hide-descendants'), `${phase}: locked review piano must hide descendants from accessibility focus`);
+  const accessibilityWrapper = pianoAccessibilityWrapper(render, keyboard);
+  assert.deepEqual([accessibilityWrapper.props['aria-hidden'], accessibilityWrapper.props.accessibilityElementsHidden, accessibilityWrapper.props.importantForAccessibility],
+    [true, true, 'no-hide-descendants'], `${phase}: locked review piano must hide descendants from accessibility focus`);
 }
 
 for (const [correct, answer, tone, showCorrect] of [[true, sharedAnswer, 'green', false], [false, sharedWrongAnswer, 'red', true]]) {
@@ -530,6 +534,9 @@ for (const [correct, answer, tone, showCorrect] of [[true, sharedAnswer, 'green'
   assert.equal(typeof keyboard.props.onKeyPress, 'function', 'unlocked feedback must wire the review piano handler');
   assert.equal(pianoKeys(render).length, 27, 'unlocked feedback must expose every G3–A5 key as a focusable control');
   assert.ok(pianoKeys(render).every((key) => key.props.disabled === false && key.props.accessibilityState?.disabled === false), 'idle unlocked review keys must be pressable');
+  const accessibilityWrapper = pianoAccessibilityWrapper(render, keyboard);
+  assert.deepEqual([accessibilityWrapper.props['aria-hidden'], accessibilityWrapper.props.accessibilityElementsHidden, accessibilityWrapper.props.importantForAccessibility],
+    [false, false, 'auto'], 'idle feedback must restore every review key to accessibility focus');
 }
 
 for (const audioState of ['playing', 'preparing']) {
@@ -539,6 +546,9 @@ for (const audioState of ['playing', 'preparing']) {
   assert.equal(keyboard.props.disabled, true, `feedback piano must disable while ${audioState}`);
   assert.equal(typeof keyboard.props.onKeyPress, 'function', `feedback piano keeps its handler while ${audioState} but gates every key`);
   assert.ok(pianoKeys(render).every((key) => key.props.disabled === true && key.props.accessibilityState?.disabled === true), `every unlocked review key must disable while ${audioState}`);
+  const accessibilityWrapper = pianoAccessibilityWrapper(render, keyboard);
+  assert.deepEqual([accessibilityWrapper.props['aria-hidden'], accessibilityWrapper.props.accessibilityElementsHidden, accessibilityWrapper.props.importantForAccessibility],
+    [true, true, 'no-hide-descendants'], `feedback review keys must leave accessibility focus while ${audioState}`);
 }
 
 const timedPracticeQuestion = { id: 'practice-rhythm', type: 'rhythm', typeName: '节奏听记', meter: '6/8', beatsPerBar: 3, barCount: 3, beats: Array(18).fill(0.5), repeatCount: 3 };
@@ -868,6 +878,13 @@ assert.ok(lockCover, 'locked review piano must expose the complete unlock instru
 const lockCoverStyle = flattenStyle(lockCover.props.style);
 assert.equal(lockCoverStyle.alignItems, 'center');
 assert.equal(lockCoverStyle.justifyContent, 'center');
+const pianoSurfaceStyle = pianoHarness.renderComponent(PianoKeyboard, {}).nodes.map((node) => flattenStyle(node.props.style))
+  .find((style) => style.height && style.padding === 3);
+assert.deepEqual(
+  { top: lockCoverStyle.top, height: lockCoverStyle.height, bottom: lockCoverStyle.bottom },
+  { top: 0, height: pianoSurfaceStyle.height, bottom: undefined },
+  'lock cover must match the piano surface instead of stretching through the legend',
+);
 const lockStage = lockedReview.nodes.find((node) => node.type === 'View'
   && (Array.isArray(node.props.children) ? node.props.children : [node.props.children]).includes(lockCover));
 assert.deepEqual(
