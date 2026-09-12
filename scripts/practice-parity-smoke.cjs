@@ -185,7 +185,7 @@ assert.match(practice, /const playbackVolume = normalizeAudioVolume\(volume\);/,
   'PracticeScreen must normalize its stored volume once');
 assert.match(practice, /playQuestionAudio\(question, \{[\s\S]*?volume: playbackVolume,/,
   'question playback must use the normalized stored volume');
-assert.match(practice, /playPianoNote\(midi, playbackVolume\)/,
+assert.match(practice, /playPianoNote\(midi, playbackVolume(?:,|\))/,
   'review piano playback must use the normalized stored volume');
 assert.match(practice, /const stopPlayback = useCallback\(\(\) => \{[\s\S]*?clearTimeout\(standardTimer\.current\)[\s\S]*?stopQuestionAudio\(\);[\s\S]*?setPlaying\(false\);[\s\S]*?setPreparing\(false\);[\s\S]*?setHighlights\(\{\}\);/,
   'playback cleanup must clear timers, active audio, state, and highlights');
@@ -207,29 +207,17 @@ assert.match(practice, /function next\(\) \{[\s\S]*?setAutoPlay\(true\);/,
 assert.match(practice, /if \(!autoPlay \|\| phase !== 'ready'\) return;\s*autoPlayTimer\.current = setTimeout\([\s\S]*?return \(\) => \{[\s\S]*?autoPlayTimer\.current = null;/,
   'the next-then-background path must retain and release its autoplay timer');
 
-assert.match(practice, /const REVIEW_KEY_PLAYBACK_MS = 1850;/,
-  'manual review keys must remain audible and highlighted for the full 1.85-second sample');
 assert.match(audioEngine, /const PIANO_NOTE_PLAYBACK_MS = 1850;[\s\S]*?pianoCleanup = setTimeout\([\s\S]*?PIANO_NOTE_PLAYBACK_MS\);/,
   'manual review audio must retain the full 1.85-second sample before cleanup');
-assert.match(practice, /const manualKeyTimer = useRef<ReturnType<typeof setTimeout> \| null>\(null\);/,
-  'manual review highlighting must keep a lifecycle-owned timer');
-assert.match(practice, /function reviewPianoKey\(midi: number\) \{[\s\S]*?setHighlights\(\{[\s\S]*?\[midi\]: 'play'[\s\S]*?\}\);[\s\S]*?manualKeyTimer\.current = setTimeout\([\s\S]*?REVIEW_KEY_PLAYBACK_MS\);[\s\S]*?playPianoNote\(midi, playbackVolume\)/,
-  'the practice screen must own manual note sound, highlight, and the 1.85-second cleanup');
-assert.match(practice, /function reviewPianoKey\(midi: number\) \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);/,
-  'a repeated manual key tap must replace the earlier cleanup timer');
-assert.match(practice, /async function play\(\) \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);\s*manualKeyTimer\.current = null;[\s\S]*?setHighlights\(\{\}\);/,
+assert.match(practice, /async function play\(\) \{[\s\S]*?stopQuestionAudio\(\);[\s\S]*?setHighlights\(\{\}\);/,
   'starting question replay must immediately remove a manual-key highlight');
-assert.match(practice, /async function play\(\) \{[\s\S]*?manualKeyTimer\.current = null;[\s\S]*?stopQuestionAudio\(\);[\s\S]*?playQuestionAudio\(/,
+assert.match(practice, /async function play\(\) \{[\s\S]*?stopQuestionAudio\(\);[\s\S]*?playQuestionAudio\(/,
   'starting question replay must cancel an active or pending manual piano request before question audio begins');
 assert.match(practice, /function capturePracticeSnapshot\(\) \{[\s\S]*?snapshotPracticeHighlights\(phase, scoringQuestion, answer, correct, highlights\)[\s\S]*?highlights: snapshotHighlights/,
   'leaving feedback while a manual key is highlighted must persist reconstructed grading colors, not the transient highlight');
-assert.match(practice, /playPianoNote\(midi, playbackVolume\)\.then\(\(result\) => \{ if \(result === 'failed'\) reportAudioFailure\(\); \}\)/,
-  'only real manual piano failures may show the retry message; cancellation is expected control flow');
-assert.match(practice, /const stopPlayback = useCallback\(\(\) => \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);\s*manualKeyTimer\.current = null;/,
-  'navigation and lifecycle cleanup must clear a pending manual key highlight');
 assert.match(practice, /<PianoKeyboard\b[^>]*\bdisabled=\{phase !== 'feedback' \|\| playing \|\| preparing\}[^>]*\bonKeyPress=\{phase === 'feedback' \? reviewPianoKey : undefined\}/,
   'review piano must unlock only after feedback and stay disabled while question audio is preparing or playing');
-assert.ok(!/\buse(?:State|Effect|Ref)\b/.test(piano),
+assert.ok(!/\buse(?:State|Ref)\b/.test(piano),
   'PianoKeyboard must remain stateless while the practice screen owns review behavior');
 assert.match(practice, /accessibilityLabel="复盘钢琴待解锁，提交答案后解锁"/,
   'locked review piano must expose its unlock instruction to assistive technology');
@@ -261,12 +249,19 @@ function pitchHarness() {
   const stateNames = childrenOf(ast).filter((node) => ts.isVariableDeclaration(node)
     && ts.isArrayBindingPattern(node.name) && node.initializer && ts.isCallExpression(node.initializer)
     && node.initializer.expression.getText(ast) === 'useState').map((node) => node.name.elements[0].name.text);
-  let state = {}, mode = 'single', screenStateIndex = null;
+  let state = {}, mode = 'single', params = {}, screenStateIndex = null;
+  let effects = null, screenRefIndex = null;
+  const screenRefs = [];
   const componentState = [];
   let componentStateIndex = null;
   const hooks = {
-    ...require('react'), memo: (component) => component, useEffect: () => {},
-    useMemo: (factory) => factory(), useCallback: (fn) => fn, useRef: (value) => ({ current: value }),
+    ...require('react'), memo: (component) => component, useEffect: (effect) => { effects?.push(effect); },
+    useMemo: (factory) => factory(), useCallback: (fn) => fn,
+    useRef: (value) => {
+      if (screenRefIndex === null) return { current: value };
+      const index = screenRefIndex++;
+      return screenRefs[index] ??= { current: value };
+    },
     useState: (initial) => {
       if (componentStateIndex !== null) {
         const index = componentStateIndex++;
@@ -282,11 +277,12 @@ function pitchHarness() {
   const mocks = {
     react: hooks,
     'react-native': { ...Object.fromEntries(['ActivityIndicator', 'Image', 'Pressable', 'ScrollView', 'Text', 'View'].map((name) => [name, name])),
-      StyleSheet: { create: (styles) => styles }, Platform: { select: (values) => values.ios ?? values.default } },
+      StyleSheet: { create: (styles) => styles }, Platform: { select: (values) => values.ios ?? values.default },
+      AppState: { addEventListener: () => ({ remove() {} }) }, AccessibilityInfo: { announceForAccessibility() {} } },
     'react-native-svg': { __esModule: true, default: 'Svg', G: 'G', Line: 'Line', Path: 'Path', Text: 'SvgText', Ellipse: 'Ellipse' },
-    'expo-router': { useLocalSearchParams: () => ({ type: mode }), useFocusEffect: () => {} },
+    'expo-router': { useLocalSearchParams: () => ({ type: mode, ...params }), useFocusEffect: (effect) => { effects?.push(effect); } },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0 }) },
-    'expo-haptics': { selectionAsync: () => Promise.resolve() },
+    'expo-haptics': { selectionAsync: () => Promise.resolve(), notificationAsync: () => Promise.resolve(), NotificationFeedbackType: { Success: 'success', Error: 'error' } },
     '@/services/audio-engine': {}, '@/services/local-data': {}, '@/global.css': {},
     '@/components/app-icon': { AppIcon: () => null },
     '@/components/notation-editor': { NotationEditor: () => null },
@@ -307,7 +303,7 @@ function pitchHarness() {
     const compiled = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
     }).outputText;
-    new Function('require', 'module', 'exports', compiled)((name) => load(name, path.dirname(file)), module, module.exports);
+    new Function('require', 'module', 'exports', '__DEV__', compiled)((name) => load(name, path.dirname(file)), module, module.exports, false);
     return module.exports;
   }
   const Screen = load('./src/app/practice.tsx').default;
@@ -320,7 +316,10 @@ function pitchHarness() {
   }
   return {
     load,
-    renderComponent(Component, props) {
+    mocks,
+    runEffects() { const pending = effects; effects = null; return pending?.map((effect) => effect()); },
+    renderComponent(Component, props, captureEffects = false) {
+      effects = captureEffects ? [] : null;
       componentStateIndex = 0;
       const tree = Component(props);
       componentStateIndex = null;
@@ -329,12 +328,23 @@ function pitchHarness() {
     },
     start(nextMode, question, phase, answer, correct = false) {
       mode = nextMode;
+      params = {};
+      screenRefs.length = 0;
       state = { practiceLoaded: true, activePracticeSession: { mode, questions: [question] }, phase, answer, correct };
     },
-    render() {
+    openReview(nextParams) {
+      params = nextParams;
+      mode = nextParams.type;
+      state = {};
+      screenRefs.length = 0;
+    },
+    render(captureEffects = false) {
+      effects = captureEffects ? [] : null;
       screenStateIndex = 0;
+      screenRefIndex = 0;
       const tree = Screen();
       screenStateIndex = null;
+      screenRefIndex = null;
       const rendered = nodes(tree);
       return {
         nodes: rendered.filter((node) => typeof node === 'object'),
@@ -552,4 +562,133 @@ for (const type of ['rhythm', 'melody']) timedCheck(`${type} editing workflow`, 
 });
 assert.deepEqual(timedFailures, [], 'timed notation parity failures');
 
+const pianoHarness = pitchHarness();
+const { PianoKeyboard } = pianoHarness.load('./src/components/piano-keyboard.tsx');
+const announcements = [];
+pianoHarness.mocks['react-native'].AccessibilityInfo.announceForAccessibility = (text) => announcements.push(text);
+const flattenStyle = (style) => Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean).map(flattenStyle)) : style || {};
+const childText = (node) => node == null || typeof node === 'boolean' ? '' : Array.isArray(node) ? node.map(childText).join('')
+  : typeof node === 'object' ? childText(node.props?.children) : String(node);
+for (const [highlight, mark, label] of [['correct', '✓', '正确音'], ['wrong', '×', '错误音'], ['play', '▶', '正在播放'], ['std', '●', '标准音']]) {
+  const render = pianoHarness.renderComponent(PianoKeyboard, { highlights: { 60: highlight, 61: highlight }, onKeyPress: () => {} }, true);
+  pianoHarness.runEffects();
+  for (const pitch of ['C4', 'C♯4']) {
+    const key = render.nodes.find((node) => node.type === 'Pressable' && node.props.accessibilityLabel === `钢琴键 ${pitch}`);
+    assert.ok(childText(key.props.children).includes(mark), `${pitch} ${label} must have a visible non-color marker`);
+    assert.equal(key.props.accessibilityValue?.text, label, `${pitch} must announce its current highlight meaning when focused`);
+  }
+  assert.ok(announcements.at(-1)?.includes(`C4，${label}`), 'changed piano feedback must request an iOS screen-reader announcement');
+  assert.ok(render.text.includes(`${mark} ${label}`), 'visible piano markers need an understandable legend');
+}
+const announcementCount = announcements.length;
+pianoHarness.renderComponent(PianoKeyboard, { disabled: true, highlights: { 60: 'play' }, onKeyPress: () => {} }, true);
+pianoHarness.runEffects();
+assert.equal(announcements.length, announcementCount, 'locked or question-playing piano must not interrupt audio with review announcements');
+pianoHarness.renderComponent(PianoKeyboard, { onKeyPress: () => {} }, true);
+pianoHarness.runEffects();
+assert.equal(announcements.at(-1), '播放结束', 'clearing the last playing key must expose an audible end state');
+for (const compact of [false, true]) {
+  const render = pianoHarness.renderComponent(PianoKeyboard, { compact, onKeyPress: () => {} });
+  const keys = render.nodes.filter((node) => node.type === 'Pressable');
+  const styles = keys.map((node) => flattenStyle(node.props.style({ pressed: false })));
+  const whites = styles.filter((style) => style.flex === 1);
+  const blacks = styles.filter((style) => style.position === 'absolute');
+  assert.equal(whites.length, 16, 'all 16 white keys must remain in one visible row');
+  assert.equal(blacks.length, 11);
+  assert.ok(whites.every((style) => !style.minWidth), 'dense piano keys must retain flexible widths');
+  assert.ok(blacks.every((style) => parseFloat(style.left) >= 0 && parseFloat(style.left) + parseFloat(style.width) <= 100), 'black keys must fit inside the keybed');
+  const keyboardStyle = render.nodes.map((node) => flattenStyle(node.props.style)).find((style) => style.height && style.padding === 3);
+  const keybedHeight = keyboardStyle.height - keyboardStyle.padding * 2;
+  const blackHeight = keybedHeight * parseFloat(blacks[0].height) / 100;
+  assert.ok(blackHeight >= 44 && keybedHeight - blackHeight - 2 * whites[0].borderWidth >= 44, 'black and exposed white key hit depths must remain at least 44 pt');
+}
+
 console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 12 beam fixtures and 2 timed workflows checked)`);
+
+async function flushAsyncEffects() {
+  for (let count = 0; count < 12; count += 1) await Promise.resolve();
+}
+
+(async () => {
+  const flow = pitchHarness();
+  const values = new Map();
+  flow.mocks['@react-native-async-storage/async-storage'] = {
+    getItem: async (key) => values.get(key) ?? null,
+    setItem: async (key, value) => { values.set(key, value); },
+    removeItem: async (key) => { values.delete(key); },
+  };
+  const local = flow.load('./src/services/local-data.ts');
+  Object.assign(flow.mocks['@/services/local-data'], local);
+  flow.mocks['@/services/audio-engine'].stopQuestionAudio = () => {};
+  let playback;
+  flow.mocks['@/services/audio-engine'].playQuestionAudio = async (_question, options) => { playback = options; return true; };
+  let route;
+  flow.mocks['expo-router'].router = { push: (next) => { route = next; } };
+  const question = { type: 'intervalConnection', typeName: '和声音程连接', chords: [[60, 64], [62, 69]],
+    answer: [[60, 64], [62, 69]], answerText: 'C4 E4 → D4 A4', knowledgeKey: 'connection-flow' };
+  flow.start('connection', question, 'answering', { ...emptyExamAnswer(), pitches: [60, 65, 62, 69] });
+  const findButton = (render, label) => render.nodes.find((node) => node.type === 'Pressable' && node.props.accessibilityLabel === label);
+  submitButton(flow.render()).props.onPress();
+  await flushAsyncEffects();
+  assert.equal((await local.getWrongRecords()).length, 1, 'submitting an incorrect connection must save it');
+
+  const Wrongbook = flow.load('./src/app/(tabs)/wrongbook.tsx').default;
+  const wrongbook = (captureEffects = false) => flow.renderComponent(Wrongbook, {}, captureEffects);
+  wrongbook(true);
+  flow.runEffects();
+  await flushAsyncEffects();
+  const group = findButton(wrongbook(), '和声音程连接，1 个错题');
+  assert.ok(group, 'the saved connection must appear as an accessible wrongbook group');
+  group.props.onPress();
+  findButton(wrongbook(), 'C4 E4 → D4 A4，错误 1 次，开始强化').props.onPress();
+  assert.equal(route.pathname, '/practice');
+  assert.equal(route.params.type, 'connection');
+  assert.equal(route.params.wrongId, (await local.getWrongRecords())[0].id);
+  flow.openReview(route.params);
+  flow.render(true);
+  flow.runEffects();
+  await flushAsyncEffects();
+  let review = flow.render();
+  assert.ok(review.text.includes('第 1 组 · 叠写两个音') && review.text.includes('第 2 组 · 叠写两个音'), 'the wrongbook route must load the original connection groups');
+  findButton(review, '播放题目').props.onPress();
+  await flushAsyncEffects();
+  // Simulate playback completion after the start promise settles.
+  playback.onFinish();
+  review = flow.render();
+  const staffs = review.nodes.filter((node) => node.type?.name === 'AnswerStaff');
+  staffs[0].props.onChange([64, 60], ['E4', 'C4']);
+  staffs[1].props.onChange([69, 62], ['A4', 'D4']);
+  assert.equal(submitButton(flow.render()).props.disabled, false, 'both recovered groups must be editable and complete');
+  submitButton(flow.render()).props.onPress();
+  await flushAsyncEffects();
+  assert.equal((await local.getPracticeRecords())[0].correct, true, 'retry must retain unordered-within-group scoring');
+  findButton(flow.render(), '查看结果').props.onPress();
+  await flushAsyncEffects();
+  assert.equal((await local.getWrongRecords()).length, 0, 'a correctly retried connection is removed on completion');
+  console.log('wrongbook flow passed: incorrect connection → stored group → original question retry → correct completion');
+
+  const manual = pitchHarness();
+  let noteLifecycle, settleNote;
+  manual.mocks['@/services/audio-engine'].playPianoNote = (midi, volume, options) => {
+    assert.equal(midi, 62);
+    assert.equal(volume, 0.78);
+    noteLifecycle = options;
+    return new Promise((resolve) => { settleNote = resolve; });
+  };
+  manual.start('single', { type: 'single', midis: [60], answer: [60] }, 'feedback', { ...emptyExamAnswer(), pitches: [62] });
+  const keyboard = () => manual.render().nodes.find((node) => node.type === manual.mocks['@/components/piano-keyboard'].PianoKeyboard);
+  keyboard().props.onKeyPress(62);
+  assert.notEqual(keyboard().props.highlights[62], 'play', 'a loading manual note must not start its visual lifetime early');
+  noteLifecycle.onStart();
+  settleNote('started');
+  await flushAsyncEffects();
+  assert.equal(keyboard().props.highlights[62], 'play', 'native start must activate the manual key');
+  noteLifecycle.onFinish();
+  assert.deepEqual(keyboard().props.highlights, { 60: 'correct', 62: 'wrong' }, 'audio end must restore grading highlights');
+  keyboard().props.onKeyPress(62);
+  settleNote('failed');
+  await flushAsyncEffects();
+  assert.deepEqual(keyboard().props.highlights, { 60: 'correct', 62: 'wrong' }, 'failed loading must leave grading intact without a playing key');
+  assert.ok(manual.render().text.includes('音频暂时无法播放，请重试'), 'an actual manual playback failure must show the safe retry prompt');
+  console.log('manual piano UI lifecycle passed: delayed start, audio end and failure');
+})().catch((error) => { console.error(error); process.exitCode = 1; });

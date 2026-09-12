@@ -62,7 +62,7 @@ function normalizeWrongRecords(value) {
       lastWrongAt: number(record.lastWrongAt),
       question: {
         ...question,
-        type,
+        type: type === 'connection' ? 'intervalConnection' : type,
         typeName,
         answerText,
         knowledgeKey: text(question.knowledgeKey, record.knowledgeKey),
@@ -82,12 +82,12 @@ function normalizeAnswer(value) {
     : [];
   const events = Array.isArray(answer.events) ? answer.events.flatMap((entry) => {
     const event = object(entry);
-    if (!event || !Number.isFinite(event.midi) || !Number.isFinite(event.duration) || Number(event.duration) <= 0) return [];
+    if (!event || !Number.isFinite(event.midi) || !Number.isFinite(event.duration) || Number(event.duration) === 0) return [];
     return [{
       ...event,
       midi: Number(event.midi),
       duration: Number(event.duration),
-      ...(event.rest === true ? { rest: true } : {}),
+      ...(event.rest === true || event.duration < 0 ? { rest: true } : {}),
       ...(ACCIDENTALS.has(event.accidental) ? { accidental: event.accidental } : {}),
       ...(text(event.spelling) ? { spelling: event.spelling } : {}),
       ...(Number.isFinite(event.barIndex) ? { barIndex: Math.max(0, Math.floor(Number(event.barIndex))) } : {}),

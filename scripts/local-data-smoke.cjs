@@ -140,6 +140,34 @@ const local = loadLocalData(storage);
   await local.clearActivePracticeSession();
   assert.equal(await local.getActivePracticeSession(), null, '重新开始必须清除活动练习会话');
 
+  for (const mode of ['rhythm', 'melody']) {
+    for (const phase of ['answering', 'feedback']) {
+      const events = [
+        { midi: 60, duration: 1, barIndex: 0, inputOrder: 0 },
+        { midi: 0, duration: -0.5, rest: true, barIndex: 0, inputOrder: 1 },
+        { midi: 62, duration: 0.5, barIndex: 0, inputOrder: 2 },
+        { midi: 0, duration: -1, barIndex: 1, inputOrder: 3 },
+      ];
+      await local.savePracticeSession({ ...practiceSession, mode, index: 0,
+        questions: [{ ...practiceQuestion, type: mode }],
+        snapshots: [{ ...practiceSession.snapshots[0], phase, answer: { ...emptyPracticeAnswer, events, meter: '2/4' } }],
+      });
+      const snapshot = (await local.getActivePracticeSession()).snapshots[0];
+      assert.equal(snapshot.phase, phase);
+      assert.deepEqual(snapshot.answer.events.map(({ midi, duration, rest }) => ({ midi, duration, rest: Boolean(rest) })), [
+        { midi: 60, duration: 1, rest: false },
+        { midi: 0, duration: -0.5, rest: true },
+        { midi: 62, duration: 0.5, rest: false },
+        { midi: 0, duration: -1, rest: true },
+      ], `${mode} ${phase} 存储往返必须保留音符/休止符顺序、带符号时值与休止语义`);
+      assert.deepEqual(snapshot.answer.events.map(({ barIndex, inputOrder }) => [barIndex, inputOrder]), [[0, 0], [0, 1], [0, 2], [1, 3]]);
+    }
+  }
+  assert.deepEqual(normalizeAnswer({ events: [
+    { midi: 60, duration: 0 }, { midi: 60, duration: NaN }, { midi: 60, duration: Infinity },
+    { midi: 60, duration: -Infinity }, { midi: NaN, duration: -1 },
+  ] }).events, [], '零时值和非有限音符仍须丢弃');
+
   const finalized = new Set();
   const firstScore = local.finalizePracticeSubmission(finalized, 0, 0, true);
   const secondScore = local.finalizePracticeSubmission(finalized, 0, firstScore, true);
@@ -152,6 +180,17 @@ const local = loadLocalData(storage);
   const wrongs = await local.getWrongRecords();
   assert.equal(wrongs.length, 1, '重复提交不得重复写入错题本');
   assert.equal(wrongs[0].errorCount, 1, '重复提交不得增加错题次数');
+
+  const connection = { type: 'intervalConnection', typeName: '和声音程连接',
+    chords: [[60, 64], [62, 69]], answer: [[60, 64], [62, 69]], answerText: 'C4 E4 → D4 A4', knowledgeKey: 'connection-c-e-d-a' };
+  await local.savePracticeResult(connection, false, { submissionKey: 'connection:0' });
+  const connectionWrong = (await local.getWrongRecords()).find((record) => record.knowledgeKey === connection.knowledgeKey);
+  assert.ok(connectionWrong, '连接题答错必须收入错题本');
+  assert.equal(connectionWrong.type, 'connection', '连接错题按练习入口键分组');
+  assert.equal(connectionWrong.question.type, 'intervalConnection', '重新作答必须恢复生题/评分要求的原始题型');
+  assert.deepEqual(connectionWrong.question.chords, [[60, 64], [62, 69]], '错题读取不得改变原始连接组');
+  assert.equal(normalizeWrongRecords([{ ...connectionWrong, question: { ...connection, type: 'connection' } }])[0].question.type,
+    'intervalConnection', '已安装版本中被归一化过的连接错题仍须恢复为可作答题型');
 
   console.log('local data smoke passed');
 })().catch((error) => {

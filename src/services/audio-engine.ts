@@ -30,12 +30,19 @@ let playbackGeneration = 0;
 let pendingStartCancel: (() => void) | null = null;
 let pianoPlayer: AudioPlayer | null = null;
 let pianoCleanup: ReturnType<typeof setTimeout> | null = null;
+let pianoStatusSubscription: { remove(): void } | null = null;
+let pianoEnd: ((result: PianoNotePlaybackResult) => void) | null = null;
 let pianoPlaybackGeneration = 0;
 const PIANO_NOTE_PLAYBACK_MS = 1850;
 
-function stopPianoAudio() {
+function stopPianoAudio(result: PianoNotePlaybackResult = 'cancelled') {
+  const end = pianoEnd;
+  pianoEnd = null;
+  end?.(result);
   if (pianoCleanup) clearTimeout(pianoCleanup);
   pianoCleanup = null;
+  pianoStatusSubscription?.remove();
+  pianoStatusSubscription = null;
   pianoPlayer?.pause();
   pianoPlayer?.remove();
   pianoPlayer = null;
@@ -112,6 +119,9 @@ export async function playQuestionAudio(
   if (renderingOrPlaying) return false;
   renderingOrPlaying = true;
   const generation = playbackGeneration;
+  let requestPlayer: AudioPlayer | null = null;
+  let failPlayback: ((error: Error) => void) | undefined;
+  const isCurrent = () => generation === playbackGeneration && player === requestPlayer;
   try {
     const { uri, duration } = await renderedAudio(question);
     // 页面退出或进入后台时会令 generation 失效；旧的异步渲染不得在稍后自行开播。
@@ -120,7 +130,8 @@ export async function playQuestionAudio(
     if (playbackWatchdog) clearTimeout(playbackWatchdog);
     if (!player) player = createAudioPlayer(uri, { updateInterval: 100 });
     else player.replace(uri);
-    player.volume = Math.max(0, Math.min(1, options.volume ?? 0.78));
+    requestPlayer = player;
+    requestPlayer.volume = Math.max(0, Math.min(1, options.volume ?? 0.78));
     let completed = false;
     let hasStarted = false;
     let startSettled = false;
@@ -132,22 +143,25 @@ export async function playQuestionAudio(
       startSettled = true;
       if (startTimeout) clearTimeout(startTimeout);
       startTimeout = null;
-      pendingStartCancel = null;
+      if (pendingStartCancel === cancelStart) pendingStartCancel = null;
       resolveStart(started);
     };
     const finalize = (reason: 'finish' | 'interrupted' | 'error', error?: Error) => {
       if (completed) return;
       completed = true;
       settleStart(false);
+      if (!isCurrent()) return;
       if (playbackWatchdog) clearTimeout(playbackWatchdog);
       playbackWatchdog = null;
-      if (generation !== playbackGeneration) return;
       renderingOrPlaying = false;
       if (reason === 'finish') options.onFinish?.();
       else if (reason === 'interrupted') options.onInterrupted?.();
       else if (error) options.onError?.(error);
     };
-    statusSubscription = player.addListener('playbackStatusUpdate', (status) => {
+    const cancelStart = () => finalize('interrupted');
+    failPlayback = (error) => finalize('error', error);
+    statusSubscription = requestPlayer.addListener('playbackStatusUpdate', (status) => {
+      if (completed || !isCurrent()) return;
       if (status.error) {
         finalize('error', new Error(status.error));
         return;
@@ -164,17 +178,22 @@ export async function playQuestionAudio(
         finalize('interrupted');
       }
     });
-    await player.seekTo(0);
-    pendingStartCancel = () => finalize('interrupted');
+    pendingStartCancel = cancelStart;
+    await requestPlayer.seekTo(0);
+    if (!isCurrent() || completed) return false;
     startTimeout = setTimeout(() => finalize('error', new Error('音频未能正常开始播放，请重试')), 3000);
     playbackWatchdog = setTimeout(() => finalize('finish'), Math.ceil((duration + 1.5) * 1000));
-    player.play();
-    return await startedPromise;
+    requestPlayer.play();
+    const started = await startedPromise;
+    return isCurrent() && started;
   } catch (reason) {
-    if (generation !== playbackGeneration) return false;
-    renderingOrPlaying = false;
+    if (generation !== playbackGeneration || (requestPlayer && player !== requestPlayer)) return false;
     const error = reason instanceof Error ? reason : new Error(String(reason));
-    options.onError?.(error);
+    if (failPlayback) failPlayback(error);
+    else {
+      renderingOrPlaying = false;
+      options.onError?.(error);
+    }
     return false;
   }
 }
@@ -197,32 +216,64 @@ export function stopQuestionAudio() {
   renderingOrPlaying = false;
 }
 
-export async function playPianoNote(midi: number, volume = 0.78): Promise<PianoNotePlaybackResult> {
+export async function playPianoNote(midi: number, volume = 0.78, options: {
+  onStart?: () => void; onFinish?: () => void; onError?: () => void;
+} = {}): Promise<PianoNotePlaybackResult> {
   const config = pianoPlaybackConfig(midi);
   if (!config) return 'failed';
   const moduleId = PIANO_NOTE_ASSETS[config.sampleMidi];
   if (!moduleId) return 'failed';
   const generation = ++pianoPlaybackGeneration;
+  stopPianoAudio();
   try {
     const asset = Asset.fromModule(moduleId);
     await asset.downloadAsync();
     if (generation !== pianoPlaybackGeneration) return 'cancelled';
     const uri = asset.localUri || asset.uri;
     if (!uri) return 'failed';
-    stopPianoAudio();
     pianoPlayer = createAudioPlayer(uri, { updateInterval: 250 });
     pianoPlayer.volume = Math.max(0, Math.min(1, volume));
     pianoPlayer.shouldCorrectPitch = false;
     pianoPlayer.setPlaybackRate(config.playbackRate);
-    pianoPlayer.play();
-    pianoCleanup = setTimeout(() => {
-      pianoPlayer?.pause();
-      pianoPlayer?.remove();
-      pianoPlayer = null;
-      pianoCleanup = null;
-    }, PIANO_NOTE_PLAYBACK_MS);
-    return 'started';
+    const requestPlayer = pianoPlayer;
+    const isCurrent = () => generation === pianoPlaybackGeneration && pianoPlayer === requestPlayer;
+    let hasStarted = false;
+    let completed = false;
+    let startTimeout: ReturnType<typeof setTimeout> | null = null;
+    let resolveStart: (result: PianoNotePlaybackResult) => void = () => undefined;
+    const startedPromise = new Promise<PianoNotePlaybackResult>((resolve) => { resolveStart = resolve; });
+    pianoEnd = (result) => {
+      if (completed) return;
+      completed = true;
+      if (startTimeout) clearTimeout(startTimeout);
+      startTimeout = null;
+      resolveStart(result);
+      if (hasStarted) options.onFinish?.();
+    };
+    pianoStatusSubscription = requestPlayer.addListener('playbackStatusUpdate', (status) => {
+      if (completed || !isCurrent()) return;
+      if (status.error) {
+        stopPianoAudio('failed');
+        if (hasStarted) options.onError?.();
+        return;
+      }
+      if (status.playing && !hasStarted) {
+        hasStarted = true;
+        if (startTimeout) clearTimeout(startTimeout);
+        startTimeout = null;
+        pianoCleanup = setTimeout(() => { if (isCurrent()) stopPianoAudio(); }, PIANO_NOTE_PLAYBACK_MS);
+        options.onStart?.();
+        resolveStart('started');
+      }
+      if (status.didJustFinish || (hasStarted && status.timeControlStatus === 'paused' && !status.isBuffering)) stopPianoAudio();
+    });
+    startTimeout = setTimeout(() => { if (isCurrent()) stopPianoAudio('failed'); }, 3000);
+    requestPlayer.play();
+    const result = await startedPromise;
+    return generation === pianoPlaybackGeneration ? result : 'cancelled';
   } catch {
-    return generation !== pianoPlaybackGeneration ? 'cancelled' : 'failed';
+    if (generation !== pianoPlaybackGeneration) return 'cancelled';
+    stopPianoAudio('failed');
+    return 'failed';
   }
 }

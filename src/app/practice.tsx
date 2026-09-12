@@ -24,7 +24,6 @@ const MODE_NAMES: Record<PracticeMode, string> = {
   single: '单音听记', group: '旋律音组', interval: '音程听记', connection: '和声音程连接', chord: '和弦听记', chordQuality: '和弦性质', chordPitch: '和弦音高', rhythm: '节奏听记', melody: '旋律听记', adaptive: '智能强化',
 };
 const STANDARD_GAP_MS = 1780;
-const REVIEW_KEY_PLAYBACK_MS = 1850;
 
 const PRACTICE_MODES: PracticeMode[] = ['single', 'group', 'interval', 'connection', 'chord', 'chordQuality', 'chordPitch', 'rhythm', 'melody', 'adaptive'];
 
@@ -163,7 +162,6 @@ export default function PracticeScreen() {
   const submitting = useRef(false);
   const standardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const manualKeyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionId = useRef(practiceSessionId());
   const questionSnapshots = useRef<Array<PracticeQuestionSnapshot | undefined>>([]);
   const completedQuestions = useRef(new Set<number>());
@@ -211,8 +209,6 @@ export default function PracticeScreen() {
     standardTimer.current = null;
     if (autoPlayTimer.current) clearTimeout(autoPlayTimer.current);
     autoPlayTimer.current = null;
-    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
-    manualKeyTimer.current = null;
     stopQuestionAudio();
     setPlaying(false);
     setPreparing(false);
@@ -279,8 +275,6 @@ export default function PracticeScreen() {
 
   async function play() {
     if (!question || !scoringQuestion || playing || preparing || (phase !== 'feedback' && playCount >= maxPlays)) return;
-    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
-    manualKeyTimer.current = null;
     stopQuestionAudio();
     setHighlights({});
     setPreparing(true);
@@ -369,14 +363,12 @@ export default function PracticeScreen() {
 
   function reviewPianoKey(midi: number) {
     if (!scoringQuestion || playing || preparing || replaying.current) return;
-    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
     const feedbackHighlights = keyHighlights(scoringQuestion, answer, correct);
-    setHighlights({ ...feedbackHighlights, [midi]: 'play' });
-    manualKeyTimer.current = setTimeout(() => {
-      manualKeyTimer.current = null;
-      setHighlights(feedbackHighlights);
-    }, REVIEW_KEY_PLAYBACK_MS);
-    void playPianoNote(midi, playbackVolume).then((result) => { if (result === 'failed') reportAudioFailure(); });
+    void playPianoNote(midi, playbackVolume, {
+      onStart: () => setHighlights({ ...feedbackHighlights, [midi]: 'play' }),
+      onFinish: () => setHighlights(feedbackHighlights),
+      onError: () => reportAudioFailure(),
+    }).then((result) => { if (result === 'failed') reportAudioFailure(); });
   }
 
   function capturePracticeSnapshot() {
@@ -405,8 +397,6 @@ export default function PracticeScreen() {
   function resetQuestionState() {
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
-    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
-    manualKeyTimer.current = null;
     setAnswer(emptyExamAnswer());
     setPhase('ready');
     setPlayCount(0);
@@ -422,8 +412,6 @@ export default function PracticeScreen() {
     void Haptics.selectionAsync();
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
-    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
-    manualKeyTimer.current = null;
     stopQuestionAudio();
     if (index >= questions.length - 1) {
       if (wrongId && correct) void removeWrongRecord(wrongId);
@@ -445,8 +433,6 @@ export default function PracticeScreen() {
     if (index <= 0 || playing || preparing) return;
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
-    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
-    manualKeyTimer.current = null;
     stopQuestionAudio();
     capturePracticeSnapshot();
     restorePracticeSnapshot(index - 1);
@@ -455,8 +441,6 @@ export default function PracticeScreen() {
   function restart() {
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
-    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
-    manualKeyTimer.current = null;
     stopQuestionAudio();
     setIndex(0);
     setScore(0);

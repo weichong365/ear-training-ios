@@ -142,7 +142,7 @@ export async function savePracticeResult(question: PracticeQuestion, correct: bo
   });
   await AsyncStorage.setItem(RECORDS_KEY, JSON.stringify(records.slice(0, 1000)));
 
-  if (!correct && question.type !== 'intervalConnection') {
+  if (!correct) {
     const wrongs = await readList<WrongRecord>(WRONGS_KEY);
     const index = wrongs.findIndex((item) => item.knowledgeKey === question.knowledgeKey);
     if (index >= 0) {

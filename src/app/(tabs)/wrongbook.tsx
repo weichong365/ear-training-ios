@@ -7,7 +7,7 @@ import type { PracticeType } from '@/core';
 import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
 import { getWrongRecords, removeWrongRecord, type WrongRecord } from '@/services/local-data';
 
-const TYPE_ORDER: PracticeType[] = ['single', 'interval', 'chord', 'rhythm', 'melody'];
+const TYPE_ORDER: PracticeType[] = ['single', 'group', 'interval', 'connection', 'chord', 'chordQuality', 'chordPitch', 'rhythm', 'melody'];
 
 export default function WrongbookScreen() {
   const [items, setItems] = useState<WrongRecord[]>([]);
