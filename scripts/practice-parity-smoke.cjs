@@ -591,8 +591,9 @@ function timedCheck(name, run) {
 const timedHarness = pitchHarness();
 const { TimedAnswerStaff, NotationStaff } = timedHarness.load('./src/components/notation-editor.tsx');
 for (const [meter, duration, count, primaryCount] of [
-  ['2/4', 0.5, 4, 2], ['4/4', 0.5, 8, 4], ['3/8', 0.5, 3, 0],
-  ['3/8', 0.25, 6, 3], ['6/8', 0.5, 6, 2], ['4/4', 1 / 3, 12, 4],
+  ['2/4', 0.5, 4, 2], ['4/4', 0.5, 8, 4], ['3/8', 1 / 3, 3, 1],
+  ['6/8', 1 / 3, 6, 2], ['3/8', 0.5, 3, 0], ['3/8', 0.25, 6, 3],
+  ['6/8', 0.5, 6, 2], ['4/4', 1 / 3, 12, 4],
 ]) {
   for (const continuation of [false, true]) timedCheck(`${meter}/${duration}/${continuation ? 'continuation' : 'first'} beams`, () => {
     const barOffset = continuation ? 2 : 0;
@@ -600,10 +601,63 @@ for (const [meter, duration, count, primaryCount] of [
     const render = timedHarness.renderComponent(TimedAnswerStaff, { events, meter: continuation ? '' : meter, capacityMeter: meter, keySignature: '', barOffset, barCount: 2, isFinalSystem: true, disabled: true, emptyText: '' });
     const primary = render.nodes.filter((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key));
     assert.equal(primary.length, primaryCount * 2, 'beams must stop at each beat and barline');
-    assert.equal(render.nodes.filter((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9').length, duration === 1 / 3 ? 8 : 0, 'each triplet beat needs its own numeral');
+    assert.equal(render.nodes.filter((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9').length, duration === 1 / 3 ? primaryCount * 2 : 0, 'each triplet beat needs its own numeral');
     if (continuation) assert.ok(!render.nodes.some((node) => node.type === 'SvgText' && node.props.fontSize === '17'), 'continuation hides only the meter label');
   });
 }
+
+timedCheck('header and notation anchors', () => {
+  const base = { events: [], meter: '4/4', capacityMeter: '4/4', barOffset: 0, barCount: 2, isFinalSystem: true, disabled: true, emptyText: '' };
+  for (const [keySignature, expectedY] of [['G', 28], ['F', 48]]) {
+    const render = timedHarness.renderComponent(TimedAnswerStaff, { ...base, keySignature });
+    const accidental = render.nodes.find((node) => node.type?.name === 'MusicAccidental');
+    assert.deepEqual([accidental.props.x, accidental.props.y], [57, expectedY], `${keySignature} key signature must use its mini-program anchor`);
+    const meter = render.nodes.filter((node) => node.type === 'SvgText' && node.props.fontSize === '17');
+    assert.deepEqual(meter.map((node) => [Number(node.props.x), node.props.y, node.props.children]), [[82, 38, '4'], [82, 58, '4']], 'time signature digits must align to the second and fourth staff lines');
+  }
+
+  const dots = timedHarness.renderComponent(TimedAnswerStaff, {
+    ...base, meter: '2/4', capacityMeter: '2/4', keySignature: '',
+    events: [{ midi: 64, duration: 0.75, barIndex: 0 }, { midi: 69, duration: -0.75, rest: true, barIndex: 0 }],
+  });
+  const rest = dots.nodes.find((node) => node.type?.name === 'MusicRest');
+  assert.deepEqual([rest.props.x, rest.props.kind], [149.625, 'eighth'], 'rests must retain their time position and SMuFL kind');
+  assert.deepEqual(dots.nodes.filter((node) => node.type === 'Ellipse').map((node) => [node.props.cx, node.props.cy]),
+    [[127.9, 63], [158.625, 43]], 'note and rest dots must use the mini-program line/space anchors');
+
+  const isolated = timedHarness.renderComponent(TimedAnswerStaff, {
+    ...base, meter: '2/4', capacityMeter: '2/4', keySignature: '',
+    events: [{ midi: 64, duration: 1, barIndex: 0 }, { midi: 69, duration: 0.5, barIndex: 0 }, { midi: 69, duration: -0.5, rest: true, barIndex: 0 }],
+  });
+  const stems = isolated.nodes.filter((node) => node.type === 'Line' && node.props.strokeWidth === '1.5');
+  assert.deepEqual(stems.map((node) => [node.props.x1, node.props.y1, node.props.y2]), [[120.9, 69, 41], [164.4, 54, 26]], 'isolated stems must start inside their noteheads and retain native length');
+  const flag = isolated.nodes.find((node) => node.type?.name === 'MusicFlag');
+  assert.deepEqual([flag.props.stemX, flag.props.stemEndY, flag.props.beamCount, flag.props.direction], [164.4, 26, 1, 'up'], 'an unbeamed eighth note must attach its flag to the stem end');
+
+  const triplets = timedHarness.renderComponent(TimedAnswerStaff, {
+    ...base, meter: '3/8', capacityMeter: '3/8', keySignature: '',
+    events: Array.from({ length: 3 }, () => ({ midi: 69, duration: 1 / 3, barIndex: 0 })),
+  });
+  const rounded = (value) => Math.round(Number(value) * 1000) / 1000;
+  const beam = triplets.nodes.find((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key));
+  assert.deepEqual([rounded(beam.props.x1), rounded(beam.props.x2), beam.props.y1], [120.9, 159.567, 26], 'triplet beam must span the first and third stem anchors');
+  const tuplet = triplets.nodes.find((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9');
+  assert.deepEqual([rounded(tuplet.props.x), tuplet.props.y], [136.333, 22], 'triplet numeral must align with the middle note outside the beam');
+});
+
+timedCheck('barline and final-bar bounds', () => {
+  const props = { events: [], meter: '', capacityMeter: '6/8', keySignature: '', barOffset: 2, barCount: 2, disabled: true, emptyText: '' };
+  const continuation = timedHarness.renderComponent(TimedAnswerStaff, { ...props, isFinalSystem: false });
+  assert.ok(!continuation.nodes.some((node) => node.type === 'SvgText' && node.props.fontSize === '17'), 'hidden meter must not emit time-signature text');
+  const bars = continuation.nodes.filter((node) => node.key === 'bar-0' || node.key === 'bar-1');
+  assert.deepEqual(bars.map((node) => [node.props.x1, node.props.y1, node.props.y2]), [[104, 28, 68], [217, 28, 68]], 'system and internal barlines must retain their exact horizontal and shared vertical anchors');
+  const terminal = continuation.nodes.find((node) => node.key === 'terminal-bar');
+  assert.deepEqual([terminal.props.x1, terminal.props.y1, terminal.props.y2, terminal.props.strokeWidth], [330, 28, 68, 1], 'continuation terminal line must use shared barline bounds');
+
+  const final = timedHarness.renderComponent(TimedAnswerStaff, { ...props, isFinalSystem: true });
+  const finalLines = final.nodes.filter((node) => node.key === 'final-bar-thin' || node.key === 'final-bar-thick');
+  assert.deepEqual(finalLines.map((node) => [node.props.x1, node.props.y1, node.props.y2, node.props.strokeWidth]), [[326, 28, 68, 1], [330, 28, 68, '3']], 'the final thick stroke may change width but never barline height');
+});
 
 timedCheck('rests and secondary beams', () => {
   const events = [0.5, -0.5, 0.5, 0.5, ...Array(8).fill(0.25)].map((duration, index) => ({ midi: 69, duration, rest: duration < 0, barIndex: index < 4 ? 0 : 1 }));
@@ -770,7 +824,7 @@ for (const compact of [false, true]) {
   assert.ok(blackHeight >= 44 && keybedHeight - blackHeight - 2 * whites[0].borderWidth >= 44, 'black and exposed white key hit depths must remain at least 44 pt');
 }
 
-console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 12 beam fixtures and 2 timed workflows checked)`);
+console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 16 beam fixtures and 2 timed workflows checked)`);
 
 async function flushAsyncEffects() {
   for (let count = 0; count < 12; count += 1) await Promise.resolve();
