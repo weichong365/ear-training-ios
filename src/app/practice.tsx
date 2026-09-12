@@ -153,6 +153,7 @@ export default function PracticeScreen() {
   const [preparing, setPreparing] = useState(false);
   const [correct, setCorrect] = useState(false);
   const [score, setScore] = useState(0);
+  const [unsavedWrongCount, setUnsavedWrongCount] = useState(0);
   const [message, setMessage] = useState('');
   const [highlights, setHighlights] = useState<Record<number, Highlight>>({});
   const [autoPlay, setAutoPlay] = useState(false);
@@ -162,6 +163,7 @@ export default function PracticeScreen() {
   const submitting = useRef(false);
   const standardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playRequest = useRef(0);
   const sessionId = useRef(practiceSessionId());
   const questionSnapshots = useRef<Array<PracticeQuestionSnapshot | undefined>>([]);
   const completedQuestions = useRef(new Set<number>());
@@ -205,6 +207,7 @@ export default function PracticeScreen() {
   }, []);
 
   const stopPlayback = useCallback(() => {
+    playRequest.current += 1;
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
     if (autoPlayTimer.current) clearTimeout(autoPlayTimer.current);
@@ -275,6 +278,7 @@ export default function PracticeScreen() {
 
   async function play() {
     if (!question || !scoringQuestion || playing || preparing || (phase !== 'feedback' && playCount >= maxPlays)) return;
+    const request = ++playRequest.current;
     stopQuestionAudio();
     setHighlights({});
     setPreparing(true);
@@ -286,6 +290,7 @@ export default function PracticeScreen() {
     const started = await playQuestionAudio(question, {
       volume: playbackVolume,
       onFinish: () => {
+        if (request !== playRequest.current) return;
         if (standardTimer.current) clearTimeout(standardTimer.current);
         standardTimer.current = null;
         setPlaying(false);
@@ -293,13 +298,16 @@ export default function PracticeScreen() {
         if (isReplay) setHighlights(correctKeyHighlights(scoringQuestion));
       },
       onInterrupted: () => {
+        if (request !== playRequest.current) return;
         stopPlayback();
       },
       onError: (error) => {
+        if (request !== playRequest.current) return;
         stopPlayback();
         reportAudioFailure(error);
       },
     });
+    if (request !== playRequest.current) return;
     setPreparing(false);
     if (!started) return;
     setPlaying(true);
@@ -354,6 +362,7 @@ export default function PracticeScreen() {
     try {
       await savePracticeResult(question, result, { sessionId: sessionId.current, modeName: wrongId ? '错题强化' : MODE_NAMES[mode], submissionKey: `${sessionId.current}:${index}` });
     } catch {
+      if (!result) setUnsavedWrongCount((value) => value + 1);
       setMessage('本题已完成批改，但练习记录未能保存到本机。你仍可继续下一题。');
     } finally {
       submitting.current = false;
@@ -444,6 +453,7 @@ export default function PracticeScreen() {
     stopQuestionAudio();
     setIndex(0);
     setScore(0);
+    setUnsavedWrongCount(0);
     sessionId.current = practiceSessionId();
     questionSnapshots.current = [];
     completedQuestions.current.clear();
@@ -469,7 +479,7 @@ export default function PracticeScreen() {
       <View style={[styles.progressTrack, compactPitchMode && styles.compactProgressTrack]}><View style={[styles.progressFill, { width: `${(index + 1) / questions.length * 100}%` }]} /></View>
 
       {phase === 'finished' ? <View style={styles.resultCard}>
-        <AppIcon name={accuracy >= 70 ? 'trophy' : 'check'} size={52} color={accuracy >= 70 ? Brand.gold : Brand.forest} /><Text style={styles.resultTitle}>本组训练完成</Text><Text style={styles.resultScore}>{accuracy}%</Text><Text style={styles.resultDesc}>共 {questions.length} 题，答对 {score} 题</Text>{score < questions.length && <Text style={styles.resultSub}>{questions.length - score} 道错题已收入错题复盘</Text>}
+        <AppIcon name={accuracy >= 70 ? 'trophy' : 'check'} size={52} color={accuracy >= 70 ? Brand.gold : Brand.forest} /><Text style={styles.resultTitle}>本组训练完成</Text><Text style={styles.resultScore}>{accuracy}%</Text><Text style={styles.resultDesc}>共 {questions.length} 题，答对 {score} 题</Text>{questions.length - score - unsavedWrongCount > 0 && <Text style={styles.resultSub}>{questions.length - score - unsavedWrongCount} 道错题已收入错题复盘</Text>}{unsavedWrongCount > 0 && <Text style={styles.error}>{unsavedWrongCount} 道错题未能保存，请返回后重试</Text>}
         <Pressable accessibilityRole="button" onPress={restart} style={styles.primary}><Text style={styles.primaryText}>{wrongId ? '再练一次' : '再来一组'}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => router.replace(wrongId ? '/wrongbook' : '/')} style={styles.secondary}><Text style={styles.secondaryText}>{wrongId ? '返回错题复盘' : '返回首页'}</Text></Pressable>
       </View> : <>
         <View style={[styles.card, compactPitchMode && styles.compactCard]}>

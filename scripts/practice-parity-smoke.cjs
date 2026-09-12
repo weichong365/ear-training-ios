@@ -193,7 +193,7 @@ assert.match(practice, /AppState\.addEventListener\('change', \(state\) => \{\s*
   'background interruption must use the shared playback cleanup');
 assert.match(practice, /useFocusEffect\(useCallback\(\(\) => \(\) => \{ stopPlayback\(\); \}, \[stopPlayback\]\)\);/,
   'navigation blur must stop active playback');
-assert.match(practice, /onInterrupted: \(\) => \{\s*stopPlayback\(\);\s*\}/,
+assert.match(practice, /onInterrupted: \(\) => \{\s*if \(request !== playRequest\.current\) return;\s*stopPlayback\(\);\s*\}/,
   'interrupted question playback must use the shared cleanup');
 assert.match(practice, /const reportAudioFailure = useCallback\(\(error\?: Error\) => \{\s*if \(__DEV__\) console\.warn\('音频播放失败', error\);\s*setMessage\('音频暂时无法播放，请重试'\);/,
   'raw audio diagnostics must be development-only while users receive a short retry message');
@@ -231,8 +231,6 @@ assert.match(practice, /const accuracy = questions\.length \? Math\.round\(score
   'completion must calculate one stable accuracy from finalized question scores');
 assert.match(practice, /共 \{questions\.length\} 题，答对 \{score\} 题/,
   'completion must render its total and correct-answer counts');
-assert.match(practice, /score < questions\.length && <Text[^>]*>\{questions\.length - score\} 道错题已收入错题复盘<\/Text>/,
-  'completion must tell learners when missed questions enter the wrongbook');
 
 const timedStaffTags = notation.match(/<TimedAnswerStaff\b[\s\S]*?\/>/g) || [];
 assert.ok(timedStaffTags.length >= 3, 'all timed staff render paths must be present');
@@ -330,7 +328,7 @@ function pitchHarness() {
       mode = nextMode;
       params = {};
       screenRefs.length = 0;
-      state = { practiceLoaded: true, activePracticeSession: { mode, questions: [question] }, phase, answer, correct };
+      state = { practiceLoaded: true, activePracticeSession: { mode, questions: [question], snapshots: [], sessionId: 'test-session' }, phase, answer, correct };
     },
     openReview(nextParams) {
       params = nextParams;
@@ -691,4 +689,38 @@ async function flushAsyncEffects() {
   assert.deepEqual(keyboard().props.highlights, { 60: 'correct', 62: 'wrong' }, 'failed loading must leave grading intact without a playing key');
   assert.ok(manual.render().text.includes('音频暂时无法播放，请重试'), 'an actual manual playback failure must show the safe retry prompt');
   console.log('manual piano UI lifecycle passed: delayed start, audio end and failure');
+
+  const playbackRace = pitchHarness();
+  const pendingStarts = [];
+  const pendingOptions = [];
+  playbackRace.mocks['@/services/audio-engine'].stopQuestionAudio = () => {};
+  playbackRace.mocks['@/services/audio-engine'].playQuestionAudio = (_question, options) => new Promise((resolve) => {
+    pendingStarts.push(resolve);
+    pendingOptions.push(options);
+  });
+  playbackRace.start('single', { type: 'single', typeName: '单音听记', midis: [60], answer: [60], repeatCount: 3 }, 'ready', emptyExamAnswer());
+  const playButton = (render) => render.nodes.find((node) => node.type === 'Pressable' && ['播放题目', '再听一遍', '回放正确答案', '音频播放中'].includes(node.props.accessibilityLabel));
+  playButton(playbackRace.render()).props.onPress();
+  assert.equal(playButton(playbackRace.render()).props.disabled, true, 'the first pending playback must disable its button');
+  pendingOptions[0].onInterrupted();
+  playButton(playbackRace.render()).props.onPress();
+  assert.equal(playButton(playbackRace.render()).props.disabled, true, 'the replacement pending playback must disable its button');
+  pendingStarts[0](false);
+  await flushAsyncEffects();
+  assert.equal(playButton(playbackRace.render()).props.disabled, true, 'a stale playback result must not clear the replacement request preparing state');
+
+  const failedSave = pitchHarness();
+  failedSave.mocks['@/services/audio-engine'].stopQuestionAudio = () => {};
+  Object.assign(failedSave.mocks['@/services/local-data'], {
+    savePracticeResult: async () => { throw new Error('disk full'); },
+    finalizePracticeSubmission: (_completed, _index, score, correct) => score + (correct ? 1 : 0),
+    clearActivePracticeSession: async () => {},
+  });
+  failedSave.start('single', { type: 'single', typeName: '单音听记', midis: [60], answer: [60] }, 'answering', { ...emptyExamAnswer(), pitches: [62] });
+  submitButton(failedSave.render()).props.onPress();
+  await flushAsyncEffects();
+  failedSave.render().nodes.find((node) => node.type === 'Pressable' && node.props.accessibilityLabel === '查看结果').props.onPress();
+  const failedResult = failedSave.render();
+  assert.ok(!failedResult.text.includes('1 道错题已收入错题复盘'), 'a failed local write must not be reported as saved');
+  assert.ok(failedResult.text.includes('1 道错题未能保存，请返回后重试'), 'completion must retain an actionable local-save failure summary');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

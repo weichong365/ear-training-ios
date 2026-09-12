@@ -63,3 +63,12 @@ Native iOS rendering, Yoga hit testing, VoiceOver audibility/interruption behavi
 The controller's existing native-acceptance ruling therefore remains: verify on a narrow iPhone and a Dynamic-Island iPhone through the native build/TestFlight workflow. In particular, check symbol legibility, VoiceOver state announcements, note/highlight timing under cold sample loading, background/foreground cancellation and force-quit/restored answers. No native build, push, publication, TestFlight upload or Codemagic run was started by this fix task.
 
 API references checked before editing: [Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/), [Expo Audio](https://docs.expo.dev/versions/v57.0.0/sdk/audio/) and [React Native accessibility announcements](https://reactnative.dev/docs/accessibilityinfo#announceforaccessibility), together with the installed React Native API declarations.
+
+## Final scoped re-review follow-up
+
+The single scoped re-review found two additional page-level edge cases. Both were reproduced before implementation and fixed surgically:
+
+- A stale question-play request can no longer clear the preparing state owned by its replacement request.
+- A failed wrong-answer write is no longer reported as saved on the completion card; the unsaved count remains visible with a retry instruction.
+
+Fresh verification after these fixes passed: typecheck, lint (0 errors / 4 existing warnings), core, provinces, answers, storage, province-tier, sample-range, practice-parity, web export, the 96-state component matrix, and the audio lifecycle harness.
