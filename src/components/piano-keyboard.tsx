@@ -1,6 +1,8 @@
 import { memo, useEffect, useMemo } from 'react';
 import { AccessibilityInfo, Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 
+import { pianoBlackKeys, pianoWhiteMidis } from '@/core/music-notation';
+
 type Highlight = 'correct' | 'wrong' | 'play' | 'std' | undefined;
 const KEY_STATES = {
   correct: { mark: '✓', label: '正确音' }, wrong: { mark: '×', label: '错误音' },
@@ -16,7 +18,7 @@ function WhiteKey({ midi, disabled, highlight, label, onKeyPress }: {
   midi: number; disabled?: boolean; highlight: Highlight; label: string; onKeyPress?: (midi: number) => void;
 }) {
   const state = highlight ? KEY_STATES[highlight] : undefined;
-  const face = <View style={styles.whiteFace}>{state && <Text style={styles.keyMark}>{state.mark}</Text>}<Text style={styles.keyLabel}>{label}</Text></View>;
+  const face = <View style={styles.whiteFace}>{state && <Text style={[styles.keyMark, highlight === 'std' && styles.standardMark]}>{state.mark}</Text>}<Text style={[styles.keyLabel, highlight && highlight !== 'std' && styles.highlightedLabel]}>{label}</Text></View>;
   if (!onKeyPress) {
     return <View accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.whiteKey, keyColor(highlight, false)]}>{face}</View>;
   }
@@ -28,7 +30,7 @@ function WhiteKey({ midi, disabled, highlight, label, onKeyPress }: {
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={() => onKeyPress(midi)}
-      style={({ pressed }) => [styles.whiteKey, keyColor(highlight, false), pressed && styles.keyPressed]}>
+      style={({ pressed }) => [styles.whiteKey, keyColor(highlight, false), pressed && !highlight && styles.whitePressed, pressed && styles.keyPressed]}>
       {face}
     </Pressable>
   );
@@ -51,7 +53,7 @@ function BlackKey({ midi, disabled, highlight, label, left, width, onKeyPress }:
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={() => onKeyPress(midi)}
-      style={({ pressed }) => [...style, pressed && styles.keyPressed]}>
+      style={({ pressed }) => [...style, pressed && !highlight && styles.blackPressed, pressed && styles.keyPressed]}>
       {face}
     </Pressable>
   );
@@ -74,17 +76,8 @@ export const PianoKeyboard = memo(function PianoKeyboard({
   onKeyPress?: (midi: number) => void;
 }) {
   const { whites, blacks } = useMemo(() => {
-    const whiteValues: { midi: number; whiteIndex: number }[] = [];
-    const blackValues: { midi: number; left: number }[] = [];
-    let whiteIndex = 0;
-    for (let midi = startMidi; midi <= endMidi; midi += 1) {
-      if ([1, 3, 6, 8, 10].includes(((midi % 12) + 12) % 12)) blackValues.push({ midi, left: whiteIndex });
-      else whiteValues.push({ midi, whiteIndex: whiteIndex++ });
-    }
-    return { whites: whiteValues, blacks: blackValues };
+    return { whites: pianoWhiteMidis(startMidi, endMidi), blacks: pianoBlackKeys(startMidi, endMidi) };
   }, [startMidi, endMidi]);
-  const whiteWidth = 100 / Math.max(1, whites.length);
-  const blackWidth = whiteWidth * 0.55;
   const announcement = Object.entries(highlights).filter(([, highlight]) => highlight)
     .map(([midi, highlight]) => `${pitchName(Number(midi))}，${KEY_STATES[highlight!].label}`).join('；');
   const canAnnounce = Boolean(onKeyPress && !disabled);
@@ -95,8 +88,8 @@ export const PianoKeyboard = memo(function PianoKeyboard({
     <View>
       <View style={[styles.keyboard, compact && styles.compactKeyboard, disabled && styles.disabled]}>
         <View style={styles.keybed}>
-          {whites.map((key) => <WhiteKey key={key.midi} midi={key.midi} disabled={disabled} highlight={highlights[key.midi]} label={pitchName(key.midi)} onKeyPress={onKeyPress} />)}
-          {blacks.map((key) => <BlackKey key={key.midi} midi={key.midi} disabled={disabled} highlight={highlights[key.midi]} label={pitchName(key.midi)} left={`${Math.max(0, Math.min(100 - blackWidth, key.left * whiteWidth - blackWidth / 2))}%`} width={`${blackWidth}%`} onKeyPress={onKeyPress} />)}
+          {whites.map((midi) => <WhiteKey key={midi} midi={midi} disabled={disabled} highlight={highlights[midi]} label={pitchName(midi)} onKeyPress={onKeyPress} />)}
+          {blacks.map((key) => <BlackKey key={key.midi} midi={key.midi} disabled={disabled} highlight={highlights[key.midi]} label={pitchName(key.midi)} left={`${key.leftPercent}%`} width={`${key.widthPercent}%`} onKeyPress={onKeyPress} />)}
         </View>
       </View>
       <View accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.legend}>
@@ -107,27 +100,30 @@ export const PianoKeyboard = memo(function PianoKeyboard({
 });
 
 function keyColor(highlight: Highlight, black: boolean) {
-  if (highlight === 'correct') return { backgroundColor: black ? '#2e8b6f' : '#e2f2ec' };
-  if (highlight === 'wrong') return { backgroundColor: black ? '#E5484D' : '#FFD3D3' };
+  if (highlight === 'correct') return { backgroundColor: '#2E8B6F' };
+  if (highlight === 'wrong') return { backgroundColor: '#C65D54' };
   if (highlight === 'std') return { backgroundColor: black ? '#FAAD14' : '#FFE58F' };
-  if (highlight === 'play') return { backgroundColor: black ? '#1f6f5b' : '#e7f2ee' };
+  if (highlight === 'play') return { backgroundColor: '#1F6F5B' };
   return undefined;
 }
 
 const styles = StyleSheet.create({
-  keyboard: { height: 155, padding: 3, borderRadius: 10, backgroundColor: '#0C0D10' },
+  keyboard: { width: '100%', height: 150, padding: 3, borderRadius: 10, backgroundColor: '#0C0D10' },
   compactKeyboard: { height: 116 },
-  disabled: { opacity: 0.75 },
+  disabled: { opacity: 0.72 },
   keybed: { position: 'relative', flex: 1, flexDirection: 'row' },
   whiteKey: { flex: 1, borderWidth: 0.5, borderColor: '#BDBBB5', borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: '#FFFEFA', overflow: 'hidden' },
   whiteFace: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8 },
   blackKey: { position: 'absolute', zIndex: 2, top: 0, height: '59%', borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: '#121313', borderWidth: 0.5, borderColor: '#050506', overflow: 'hidden' },
   blackFace: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 6 },
-  keyMark: { color: '#17372C', fontSize: 12, lineHeight: 16, fontWeight: '900' },
-  blackMark: { color: '#FFFFFF', fontSize: 10 },
+  keyMark: { color: '#FFFFFF', fontSize: 12, lineHeight: 16, fontWeight: '900' },
+  blackMark: { fontSize: 10 },
   standardMark: { color: '#17372C' },
   keyLabel: { color: '#9AA0AD', fontSize: 7 },
+  highlightedLabel: { color: '#FFFFFF' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   legendText: { color: '#53645D', fontSize: 10, lineHeight: 14 },
+  whitePressed: { backgroundColor: '#E7F2EE' },
+  blackPressed: { backgroundColor: '#2E8B6F' },
   keyPressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
 });

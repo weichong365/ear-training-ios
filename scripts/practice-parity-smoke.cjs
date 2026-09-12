@@ -595,6 +595,50 @@ pianoHarness.mocks['react-native'].AccessibilityInfo.announceForAccessibility = 
 const flattenStyle = (style) => Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean).map(flattenStyle)) : style || {};
 const childText = (node) => node == null || typeof node === 'boolean' ? '' : Array.isArray(node) ? node.map(childText).join('')
   : typeof node === 'object' ? childText(node.props?.children) : String(node);
+const descendantNodes = (node) => {
+  const values = [];
+  const visit = (value) => {
+    if (value == null || typeof value === 'boolean') return;
+    if (Array.isArray(value)) return value.forEach(visit);
+    if (typeof value !== 'object') return;
+    values.push(value);
+    visit(value.props?.children);
+  };
+  visit(node?.props?.children);
+  return values;
+};
+
+// Removing the explicit range would silently fall back to a component default,
+// while changing the lock structure would regress mini-program parity.
+harness.start('single', { type: 'single', typeName: '单音听记', midis: [60], answer: [60] }, 'ready', emptyExamAnswer());
+const lockedReview = harness.render();
+const lockedKeyboard = lockedReview.nodes.find((node) => node.type === harness.mocks['@/components/piano-keyboard'].PianoKeyboard);
+assert.equal(lockedKeyboard.props.startMidi, 55, 'practice must explicitly keep the review piano at G3');
+assert.equal(lockedKeyboard.props.endMidi, 81, 'practice must explicitly keep the review piano at A5');
+assert.equal(lockedKeyboard.props.disabled, true, 'practice must disable the review piano before feedback');
+const lockCover = lockedReview.nodes.find((node) => node.props.accessibilityLabel === '复盘钢琴待解锁，提交答案后解锁');
+assert.ok(lockCover, 'locked review piano must expose the complete unlock instruction');
+const lockCoverStyle = flattenStyle(lockCover.props.style);
+assert.equal(lockCoverStyle.alignItems, 'center');
+assert.equal(lockCoverStyle.justifyContent, 'center');
+const lockStage = lockedReview.nodes.find((node) => node.type === 'View'
+  && (Array.isArray(node.props.children) ? node.props.children : [node.props.children]).includes(lockCover));
+assert.deepEqual(
+  { position: flattenStyle(lockStage?.props.style).position, overflow: flattenStyle(lockStage?.props.style).overflow },
+  { position: 'relative', overflow: 'hidden' },
+  'review piano and lock cover must share one clipped stage',
+);
+const lockViews = descendantNodes(lockCover).filter((node) => node.type === 'View');
+const lockTile = lockViews.find((node) => {
+  const style = flattenStyle(node.props.style);
+  return style.width === style.height && style.width >= 44 && String(style.backgroundColor).startsWith('rgba(');
+});
+assert.ok(lockTile, 'lock artwork must sit in a centered translucent tile');
+assert.ok(descendantNodes(lockTile).some((node) => {
+  const style = flattenStyle(node.props.style);
+  return node.type === 'View' && style.width > style.height && style.height > 0 && style.borderRadius >= style.height / 2;
+}), 'lock artwork must include a horizontal capsule keyhole');
+
 for (const [highlight, mark, label] of [['correct', '✓', '正确音'], ['wrong', '×', '错误音'], ['play', '▶', '正在播放'], ['std', '●', '标准音']]) {
   const render = pianoHarness.renderComponent(PianoKeyboard, { highlights: { 60: highlight, 61: highlight }, onKeyPress: () => {} }, true);
   pianoHarness.runEffects();
@@ -614,7 +658,7 @@ pianoHarness.renderComponent(PianoKeyboard, { onKeyPress: () => {} }, true);
 pianoHarness.runEffects();
 assert.equal(announcements.at(-1), '播放结束', 'clearing the last playing key must expose an audible end state');
 for (const compact of [false, true]) {
-  const render = pianoHarness.renderComponent(PianoKeyboard, { compact, onKeyPress: () => {} });
+  const render = pianoHarness.renderComponent(PianoKeyboard, { startMidi: 55, endMidi: 81, compact, onKeyPress: () => {} });
   const keys = render.nodes.filter((node) => node.type === 'Pressable');
   const styles = keys.map((node) => flattenStyle(node.props.style({ pressed: false })));
   const whites = styles.filter((style) => style.flex === 1);
@@ -624,6 +668,19 @@ for (const compact of [false, true]) {
   assert.ok(whites.every((style) => !style.minWidth), 'dense piano keys must retain flexible widths');
   assert.ok(blacks.every((style) => parseFloat(style.left) >= 0 && parseFloat(style.left) + parseFloat(style.width) <= 100), 'black keys must fit inside the keybed');
   const keyboardStyle = render.nodes.map((node) => flattenStyle(node.props.style)).find((style) => style.height && style.padding === 3);
+  assert.equal(keyboardStyle.width, '100%', 'the G3–A5 keyboard must fit the available 320-point stage without horizontal scrolling');
+  const keybedWidth = 320 - keyboardStyle.padding * 2;
+  assert.ok(blacks.every((style) => (parseFloat(style.left) + parseFloat(style.width)) * keybedWidth / 100 <= keybedWidth),
+    'percentage-positioned black keys must not overflow a 320-point keybed');
+  const whiteNodes = keys.filter((node) => flattenStyle(node.props.style({ pressed: false })).flex === 1);
+  assert.deepEqual(whiteNodes.map((node) => childText(node.props.children)),
+    ['G3', 'A3', 'B3', 'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F5', 'G5', 'A5'],
+    'all white keys must keep their bottom pitch labels');
+  assert.ok(whiteNodes.every((node) => {
+    const face = node.props.children;
+    const style = flattenStyle(face.props.style);
+    return style.justifyContent === 'flex-end' && style.paddingBottom > 0;
+  }), 'white-key labels must remain aligned to the bottom edge');
   const keybedHeight = keyboardStyle.height - keyboardStyle.padding * 2;
   const blackHeight = keybedHeight * parseFloat(blacks[0].height) / 100;
   assert.ok(blackHeight >= 44 && keybedHeight - blackHeight - 2 * whites[0].borderWidth >= 44, 'black and exposed white key hit depths must remain at least 44 pt');
