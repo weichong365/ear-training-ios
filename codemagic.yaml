@@ -20,6 +20,10 @@ workflows:
     scripts:
       - name: 安装 npm 依赖
         script: npm ci
+      - name: 设置递增构建号
+        script: |
+          export BUILD_VERSION=$((40 + PROJECT_BUILD_NUMBER))
+          node -e "const fs=require('fs');const p=require('./app.json');p.expo.ios.buildNumber=process.env.BUILD_VERSION;fs.writeFileSync('app.json',JSON.stringify(p,null,2)+'\n')"
       - name: 生成 iOS 原生工程（Expo prebuild）
         script: CI=1 npx expo prebuild --platform ios --no-install
       - name: 安装 CocoaPods 依赖
