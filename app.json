@@ -2,7 +2,7 @@
   "expo": {
     "name": "练耳搭子",
     "slug": "ear-training-buddy",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/app-icon-v1.png",
     "scheme": "lianerdazi",
@@ -10,7 +10,7 @@
     "ios": {
       "icon": "./assets/images/app-icon-v1.png",
       "bundleIdentifier": "com.lianerdazi.app",
-      "buildNumber": "40",
+      "buildNumber": "41",
       "supportsTablet": false,
       "config": {
         "usesNonExemptEncryption": false
