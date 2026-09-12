@@ -14,7 +14,7 @@ import { answerIsComplete, CHORD_INVERSIONS, CHORD_QUALITY_NAMES, emptyExamAnswe
 import type { ExamQuestion } from '@/core/provinces';
 import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
 import { playPianoNote, playQuestionAudio, stopQuestionAudio } from '@/services/audio-engine';
-import { clearActivePracticeSession, getActivePracticeSession, getAudioVolume, getPracticeProfile, getWrongRecords, removeWrongRecord, saveAudioVolume, savePracticeResult, savePracticeSession, type PracticeQuestionSnapshot, type PracticeSession } from '@/services/local-data';
+import { clearActivePracticeSession, finalizePracticeSubmission, getActivePracticeSession, getAudioVolume, getPracticeProfile, getWrongRecords, removeWrongRecord, saveAudioVolume, savePracticeResult, savePracticeSession, type PracticeQuestionSnapshot, type PracticeSession } from '@/services/local-data';
 
 type Phase = 'ready' | 'answering' | 'feedback' | 'finished';
 type Highlight = 'correct' | 'wrong' | 'std';
@@ -156,6 +156,7 @@ export default function PracticeScreen() {
   const standardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionId = useRef(practiceSessionId());
   const questionSnapshots = useRef<Array<PracticeQuestionSnapshot | undefined>>([]);
+  const completedQuestions = useRef(new Set<number>());
   const restoredSessionId = useRef<string | null>(null);
   const skipPracticeSave = useRef(false);
   const question = questions[index] as ExamQuestion | undefined;
@@ -199,6 +200,7 @@ export default function PracticeScreen() {
     restoredSessionId.current = resumeSession.sessionId;
     skipPracticeSave.current = true;
     questionSnapshots.current = resumeSession.snapshots;
+    completedQuestions.current = new Set(resumeSession.snapshots.flatMap((snapshot, snapshotIndex) => snapshot?.phase === 'feedback' ? [snapshotIndex] : []));
     sessionId.current = resumeSession.sessionId;
     setScore(resumeSession.score);
     restorePracticeSnapshot(resumeSession.index);
@@ -326,7 +328,7 @@ export default function PracticeScreen() {
     setCorrect(result);
     setPhase('feedback');
     setHighlights(keyHighlights(scoringQuestion, answer, result));
-    setScore((value) => value + (result ? 1 : 0));
+    setScore(finalizePracticeSubmission(completedQuestions.current, index, score, result));
     try {
       await savePracticeResult(question, result, { sessionId: sessionId.current, modeName: wrongId ? '错题强化' : MODE_NAMES[mode], submissionKey: `${sessionId.current}:${index}` });
     } catch {
@@ -411,6 +413,7 @@ export default function PracticeScreen() {
     setScore(0);
     sessionId.current = practiceSessionId();
     questionSnapshots.current = [];
+    completedQuestions.current.clear();
     restoredSessionId.current = null;
     setActivePracticeSession(null);
     resetQuestionState();

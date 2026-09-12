@@ -107,12 +107,20 @@ function normalizeAnswer(value) {
   };
 }
 
+function validPracticeAnswer(value) {
+  const answer = object(value);
+  return Boolean(answer && Array.isArray(answer.pitches) && Array.isArray(answer.spellings) && Array.isArray(answer.accidentals) && Array.isArray(answer.events)
+    && typeof answer.meter === 'string' && typeof answer.keySignature === 'string' && typeof answer.quality === 'string' && typeof answer.inversion === 'string'
+    && (answer.choiceIndex === null || Number.isInteger(answer.choiceIndex)));
+}
+
 function normalizePracticeSnapshot(value) {
   const snapshot = object(value);
-  if (!snapshot || !PRACTICE_PHASES.has(snapshot.phase) || typeof snapshot.correct !== 'boolean' || !Number.isFinite(snapshot.playCount) || Number(snapshot.playCount) < 0 || !object(snapshot.highlights)) return null;
+  if (!snapshot || !validPracticeAnswer(snapshot.answer) || !PRACTICE_PHASES.has(snapshot.phase) || typeof snapshot.correct !== 'boolean' || !Number.isFinite(snapshot.playCount) || Number(snapshot.playCount) < 0 || !object(snapshot.highlights)) return null;
   const highlights = {};
   for (const [midi, highlight] of Object.entries(snapshot.highlights)) {
-    if (Number.isFinite(Number(midi)) && HIGHLIGHTS.has(highlight)) highlights[Number(midi)] = highlight;
+    if (!Number.isFinite(Number(midi)) || !HIGHLIGHTS.has(highlight)) return null;
+    highlights[Number(midi)] = highlight;
   }
   return {
     answer: normalizeAnswer(snapshot.answer),

@@ -29,6 +29,28 @@ exit=0
 tsc --noEmit
 ```
 
+## Review fix round 2
+
+- Added the smallest executable completion seam used by the practice submit handler. It records each finalized question index and returns the unchanged score on a second completion; the storage smoke test executes both submissions and asserts that score remains unchanged.
+- Snapshot normalization now requires the full persisted answer shape before applying the existing answer normalizer. It rejects the whole session for a missing answer, non-finite highlight key, or unknown highlight state instead of silently repairing malformed snapshot structure.
+- Added near-complete malformed fixtures for a missing `answer` and an invalid highlight enum.
+
+Exact commands and output:
+
+```text
+npm run test:storage
+exit=0
+local data smoke passed
+
+npm run test:practice-parity
+exit=0
+practice parity contract passed (5 source files checked)
+
+npm run typecheck
+exit=0
+tsc --noEmit
+```
+
 ## Self-review
 
 - Confirmed snapshot persistence excludes playing, preparation, timers, and error messages.

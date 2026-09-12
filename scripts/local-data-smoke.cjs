@@ -128,6 +128,8 @@ assert.equal(restoredPracticeSession.snapshots[0].answer.pitches[0], 60);
 assert.ok(Number.isNaN(restoredPracticeSession.snapshots[0].answer.pitches[1]), '序列化后的音高空位必须归一化');
 assert.equal(restoredPracticeSession.snapshots[1].phase, 'ready', '未答题快照必须保留准备状态');
 assert.equal(normalizePracticeSession({ ...practiceSession, snapshots: [{}] }), null, '不完整快照不得进入练习页');
+assert.equal(normalizePracticeSession({ ...practiceSession, snapshots: [{ ...practiceSession.snapshots[0], answer: undefined }] }), null, '缺少答案的近完整快照不得进入练习页');
+assert.equal(normalizePracticeSession({ ...practiceSession, snapshots: [{ ...practiceSession.snapshots[0], highlights: { 60: 'invalid' } }] }), null, '含非法高亮状态的近完整快照不得进入练习页');
 
 const storage = memoryStorage();
 const local = loadLocalData(storage);
@@ -137,6 +139,12 @@ const local = loadLocalData(storage);
   assert.equal((await local.getActivePracticeSession()).snapshots[1].phase, 'ready', '存储读取必须恢复未答题快照');
   await local.clearActivePracticeSession();
   assert.equal(await local.getActivePracticeSession(), null, '重新开始必须清除活动练习会话');
+
+  const finalized = new Set();
+  const firstScore = local.finalizePracticeSubmission(finalized, 0, 0, true);
+  const secondScore = local.finalizePracticeSubmission(finalized, 0, firstScore, true);
+  assert.equal(firstScore, 1, '首次提交正确答案必须增加分数');
+  assert.equal(secondScore, firstScore, '同一题第二次完成不得重复增加分数');
 
   await local.savePracticeResult(practiceQuestion, false, { sessionId: 'practice-smoke', submissionKey: 'practice-smoke:0' });
   await local.savePracticeResult(practiceQuestion, false, { sessionId: 'practice-smoke', submissionKey: 'practice-smoke:0' });

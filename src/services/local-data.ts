@@ -120,6 +120,12 @@ function canonicalPracticeType(type: PracticeQuestion['type']): PracticeType {
   return (type === 'intervalConnection' ? 'connection' : type) as PracticeType;
 }
 
+export function finalizePracticeSubmission(completedQuestions: Set<number>, index: number, score: number, correct: boolean) {
+  if (completedQuestions.has(index)) return score;
+  completedQuestions.add(index);
+  return score + (correct ? 1 : 0);
+}
+
 export async function savePracticeResult(question: PracticeQuestion, correct: boolean, context: { sessionId?: string; modeName?: string; submissionKey?: string } = {}) {
   const now = Date.now();
   const normalizedType = canonicalPracticeType(question.type);
