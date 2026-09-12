@@ -498,6 +498,86 @@ for (const [midi, y] of [[60, 78], [64, 68], [65, 63], [71, 48], [77, 28], [81, 
   for (const height of [96, 122]) assert.equal(coordinates.naturalMidiFromStaffTapY(y * height / 96, height), midi);
 }
 
+// A renderer-local offset must not make an editable staff disagree with the
+// read-only preview. These fixtures inspect the real component trees so a
+// duplicated line, accidental, ledger, stem, clef or prompt anchor is caught.
+const rendererHarness = pitchHarness();
+const { AnswerStaff } = rendererHarness.load('./src/components/answer-staff.tsx');
+const { StaffPreview } = rendererHarness.load('./src/components/staff-preview.tsx');
+const flattenRendererStyle = (style) => Array.isArray(style)
+  ? Object.assign({}, ...style.filter(Boolean).map(flattenRendererStyle))
+  : style || {};
+const lineNodes = (render) => render.nodes.filter((node) => node.type === 'Line');
+const staffLineNodes = (render) => lineNodes(render).filter((node) => Number(node.props.x1) === 16 && Number(node.props.x2) === 308);
+const barlineNodes = (render) => lineNodes(render).filter((node) => Number(node.props.x1) === 304 || Number(node.props.x1) === 308);
+const ledgerNodes = (render) => lineNodes(render).filter((node) => typeof node.props.x1 === 'number'
+  && typeof node.props.x2 === 'number' && node.props.x2 - node.props.x1 === 22 && node.props.y1 === node.props.y2);
+const noteheadNodes = (render) => render.nodes.filter((node) => node.type?.name === 'MusicNotehead');
+const accidentalNodes = (render) => render.nodes.filter((node) => node.type?.name === 'MusicAccidental');
+
+const wholeMidis = [65, 64, 81, 60]; // first space, first line, upper ledger, lower ledger
+const wholeSpellings = ['F4', 'E4', 'A5', 'C4'];
+const answerWhole = rendererHarness.renderComponent(AnswerStaff, {
+  pitches: wholeMidis, spellings: wholeSpellings, slots: 4, disabled: true, emptyText: '',
+});
+const previewWhole = rendererHarness.renderComponent(StaffPreview, { midis: wholeMidis, wholeNotes: true });
+for (const [name, render, expectedLedgers] of [
+  ['AnswerStaff', answerWhole, [[18, 216], [78, 272]]],
+  ['StaffPreview', previewWhole, [[18, 146], [78, 173]]],
+]) {
+  const svg = render.nodes.find((node) => node.type === 'Svg');
+  assert.equal(svg.props.viewBox, '0 0 320 96', `${name} must use the shared logical viewBox`);
+  assert.deepEqual(staffLineNodes(render).map((line) => line.props.y1), [28, 38, 48, 58, 68], `${name} must use the native line centers`);
+  assert.ok(staffLineNodes(render).every((line) => line.props.strokeWidth === 1), `${name} staff lines must use the shared stroke width`);
+  assert.deepEqual(barlineNodes(render).map((line) => ({ top: line.props.y1, bottom: line.props.y2 })),
+    [{ top: 28, bottom: 68 }, { top: 28, bottom: 68 }], `${name} final barlines must stop at the outer line centers`);
+  assert.deepEqual(noteheadNodes(render).map((head) => [head.props.kind, head.props.y]),
+    [['whole', 63], ['whole', 68], ['whole', 18], ['whole', 78]], `${name} whole notes must stay centered on spaces, lines and ledgers`);
+  const ledgers = ledgerNodes(render);
+  assert.deepEqual(ledgers.map((line) => [line.props.y1, (line.props.x1 + line.props.x2) / 2]), expectedLedgers,
+    `${name} upper and lower ledgers must stay centered under their noteheads`);
+  assert.ok(ledgers.every((line) => line.props.strokeWidth === 1 && line.props.x2 - line.props.x1 === 22),
+    `${name} ledger strokes must share staff width and extents`);
+  const clef = render.nodes.find((node) => node.type === 'Image');
+  const clefStyle = flattenRendererStyle(clef.props.style);
+  assert.equal(clefStyle.top + clefStyle.height / 2, 61, `${name} clef must center on the middle staff line`);
+}
+
+const answerChord = rendererHarness.renderComponent(AnswerStaff, {
+  pitches: [61, 63], spellings: ['C#4', 'D#4'], stacked: true, disabled: true,
+});
+const previewChord = rendererHarness.renderComponent(StaffPreview, { midis: [61, 63], harmonic: true, wholeNotes: true });
+for (const [name, render] of [['AnswerStaff', answerChord], ['StaffPreview', previewChord]]) {
+  const heads = noteheadNodes(render);
+  const accidentals = accidentalNodes(render);
+  assert.equal(accidentals.length, 2, `${name} must render both chord accidentals`);
+  assert.deepEqual(accidentals.map((accidental, index) => heads[index].props.x - accidental.props.x).sort((a, b) => a - b), [15, 24],
+    `${name} vertically colliding accidentals must occupy separate anchor columns`);
+}
+
+const stemRenders = [
+  [rendererHarness.renderComponent(StaffPreview, { midis: [60, 81] }), 2],
+  [rendererHarness.renderComponent(StaffPreview, { midis: [60, 64], harmonic: true }), 1],
+];
+stemRenders.forEach(([render, expectedStemCount]) => {
+  const heads = noteheadNodes(render);
+  const stems = lineNodes(render).filter((node) => node.props.strokeWidth === '1.5');
+  assert.equal(stems.length, expectedStemCount, 'preview must retain every isolated or shared chord stem');
+  stems.forEach((stem) => {
+    const head = heads.find((candidate) => Math.abs(candidate.props.x - stem.props.x1) < 6
+      && Math.abs(candidate.props.y - stem.props.y1) === 1);
+    assert.ok(head, 'every isolated or chord stem must begin inside its notehead');
+  });
+});
+
+const emptyAnswer = rendererHarness.renderComponent(AnswerStaff, {
+  pitches: [], disabled: true, emptyText: '播放题目后开始作答',
+});
+const prompt = emptyAnswer.nodes.find((node) => node.type === 'Text' && node.props.children === '播放题目后开始作答');
+const promptStyle = flattenRendererStyle(prompt.props.style);
+assert.equal((promptStyle.left + 320 - promptStyle.right) / 2, 192,
+  'the playback prompt must be horizontally centered in the 76…308 writable area');
+
 // Timed tests exercise real editor handlers and inspect the emitted SVG. Removing
 // prerequisite guards or merging adjacent beat runs must fail these fixtures.
 const timedFailures = [];

@@ -1,8 +1,23 @@
 import { Path } from 'react-native-svg';
 
-import { accidentalScale, STAFF_LINE_YS, type NoteheadKind, type RestKind, type StemDirection } from '@/core/music-notation';
+import {
+  accidentalScale,
+  STAFF_LINE_YS,
+  type NoteheadKind,
+  type RestKind,
+  type StemDirection,
+} from '@/core/music-notation';
 
 const GLYPH_SCALE = 10 / 250;
+const LEDGER_HALF_WIDTH = 11;
+const ACCIDENTAL_OFFSET = 15;
+const ACCIDENTAL_COLUMN_GAP = 9;
+
+export const MUSIC_STAFF_VIEW_BOX = '0 0 320 96';
+export const MUSIC_STAFF_LEFT = 16;
+export const MUSIC_STAFF_RIGHT = 308;
+export const MUSIC_STAFF_WRITABLE_LEFT = 76;
+export const MUSIC_STAFF_WRITABLE_RIGHT = MUSIC_STAFF_RIGHT;
 
 const NOTEHEADS: Record<NoteheadKind, { width: number; path: string }> = {
   whole: {
@@ -42,6 +57,14 @@ export function MusicNotehead({ x, y, kind, color }: { x: number; y: number; kin
 
 export function noteheadHalfWidth(kind: NoteheadKind) {
   return NOTEHEADS[kind].width * GLYPH_SCALE / 2;
+}
+
+export function musicAccidentalX(noteX: number, column: number) {
+  return noteX - ACCIDENTAL_OFFSET - column * ACCIDENTAL_COLUMN_GAP;
+}
+
+export function musicLedgerBounds(noteX: number) {
+  return { x1: noteX - LEDGER_HALF_WIDTH, x2: noteX + LEDGER_HALF_WIDTH };
 }
 
 export function MusicRest({ x, kind, color }: { x: number; kind: RestKind; color: string }) {

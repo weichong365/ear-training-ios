@@ -3,7 +3,17 @@ import { GestureResponderEvent, Image, LayoutChangeEvent, Pressable, StyleSheet,
 import Svg, { G, Line } from 'react-native-svg';
 
 import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
-import { MusicAccidental, MusicNotehead } from '@/components/music-glyphs';
+import {
+  MUSIC_STAFF_VIEW_BOX,
+  MUSIC_STAFF_LEFT,
+  MUSIC_STAFF_RIGHT,
+  MUSIC_STAFF_WRITABLE_LEFT,
+  MUSIC_STAFF_WRITABLE_RIGHT,
+  MusicAccidental,
+  MusicNotehead,
+  musicAccidentalX,
+  musicLedgerBounds,
+} from '@/components/music-glyphs';
 import { accidentalColumns, barlineBounds, chordHeadOffsets, ledgerLineYs, STAFF_LINE_YS, STAFF_MIDDLE_LINE_Y, STAFF_STROKE_WIDTH } from '@/core/music-notation';
 import { accidentalGlyphForPitch, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
 import { naturalMidiFromStaffTapY, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
@@ -232,9 +242,10 @@ export const AnswerStaff = memo(function AnswerStaff({
     const x = noteX(index, values, valueSpellings) + offset;
     const y = staffSvgYFromWrittenMidi(written);
     const glyph = accidentalGlyph(midi, spelling);
+    const ledger = musicLedgerBounds(x);
     return <G key={`${color}-${midi}-${index}`}>
-      {ledgerLineYs(written).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={x - 11} x2={x + 11} y1={ledgerY} y2={ledgerY} stroke={color} strokeWidth={STAFF_STROKE_WIDTH} />)}
-      {!!glyph && <MusicAccidental x={x - 15 - accidentalColumn[index] * 9} y={y} glyph={glyph} color={color} />}
+      {ledgerLineYs(written).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={ledger.x1} x2={ledger.x2} y1={ledgerY} y2={ledgerY} stroke={color} strokeWidth={STAFF_STROKE_WIDTH} />)}
+      {!!glyph && <MusicAccidental x={musicAccidentalX(x, accidentalColumn[index])} y={y} glyph={glyph} color={color} />}
       <MusicNotehead x={x} y={y} kind="whole" color={color} />
     </G>;
     });
@@ -255,8 +266,8 @@ export const AnswerStaff = memo(function AnswerStaff({
         accessibilityRole={disabled ? 'image' : 'button'}
         accessibilityState={disabled ? undefined : { disabled: false }}
         accessibilityLabel={disabled ? '五线谱谱面' : '五线谱答题区域'}>
-        <Svg viewBox="0 0 320 96" preserveAspectRatio="none" width="100%" height="100%">
-          {STAFF_LINE_YS.map((y) => <Line key={y} x1="16" x2="308" y1={y} y2={y} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />)}
+        <Svg viewBox={MUSIC_STAFF_VIEW_BOX} preserveAspectRatio="none" width="100%" height="100%">
+          {STAFF_LINE_YS.map((y) => <Line key={y} x1={MUSIC_STAFF_LEFT} x2={MUSIC_STAFF_RIGHT} y1={y} y2={y} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />)}
           {Array.from({ length: Math.max(1, slots) - 1 }, (_, index) => (
             <Line key={`slot-${index}`} x1={76 + (index + 1) * 224 / Math.max(1, slots)} x2={76 + (index + 1) * 224 / Math.max(1, slots)} y1="28" y2="68" stroke="#D6D9DF" strokeDasharray="3 3" />
           ))}
@@ -289,7 +300,7 @@ const styles = StyleSheet.create({
   correctShell: { borderColor: '#A9D4BB', backgroundColor: '#F8FFFA' },
   clef: { position: 'absolute', left: 6, top: STAFF_CENTER_Y - 101 / 2, width: 40, height: 101 },
   compactClef: { top: STAFF_MIDDLE_LINE_Y - 82 / 2, width: 36, height: 82 },
-  emptyText: { position: 'absolute', left: 78, right: 18, top: STAFF_CENTER_Y - 9, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' },
+  emptyText: { position: 'absolute', left: MUSIC_STAFF_WRITABLE_LEFT, right: 320 - MUSIC_STAFF_WRITABLE_RIGHT, top: STAFF_CENTER_Y - 9, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' },
   compactEmptyText: { top: STAFF_MIDDLE_LINE_Y - 9 },
   menu: { position: 'absolute', zIndex: 5, top: -59, right: 8, flexDirection: 'row', alignItems: 'center', gap: 5, padding: 6, borderRadius: Radius.control, backgroundColor: Brand.ivory, borderWidth: 1, borderColor: Brand.border, ...Shadows.floating },
   menuLabel: { marginHorizontal: 4, color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' },
