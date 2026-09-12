@@ -152,3 +152,55 @@ exit=0
 ```
 
 Self-review: inspected the full diff against both findings, verified no production files changed, and confirmed the positive fixtures accept both snapshot storage forms and the real finished-page conditional. The mutation probes cover each field mapping, missing/wrong index updates, missing/wrong capture assignments, native/component/state shadowing, absent handlers, gated row initializers/insertions, duplicate insertions, and a disconnected previous button. The contract remains a focused structural smoke check, not a runtime proof of every control-flow path; later-task parity gaps intentionally keep the application smoke test red.
+
+## Review fix round 5 (final allowed round)
+
+Addressed the two open round-4 findings with changes only to the contract, its existing probes, and this report:
+
+- The restore helper must not overwrite a field after restoring it, or call the bound `resetQuestionState` after restoration begins. The caller must not reset or overwrite any of the five saved fields after the restore call. Reset/guard logic before restoration remains valid, including an early-return fallback for a missing snapshot.
+- The volume card's complete ancestry to the component return is now checked. JSX containers and parentheses are allowed, along with at most one switch whose condition is the bound `phase === 'finished'` and whose practice branch contains the card. Any extra conditional/logical gate is rejected.
+- Preserved all 5 existing positive fixtures and all 30 mutations. Added 4 positive fixtures for prior reset/guard flow, a fragment in the practice branch, and an ungated card. Added the requested reset-in-helper, post-restore answer overwrite, post-restore phase overwrite, hidden ternary card, and hidden logical card mutations, plus 5 related regression cases. The two overwrite examples are separate probes.
+- The existing probe runner now reports all missed mutations together, so a failure cannot hide the remaining review examples.
+
+Exact commands and relevant outputs (working directory: `F:\WorkBuddy\练耳大师\ios-app\.worktrees\ios-practice-parity`):
+
+```text
+# Before changing the contract: reproduced the findings with the added probes.
+node .superpowers/sdd/2026-09-12-ios-practice-parity/task-1-r4-probes.cjs
+exit=1
+AssertionError [ERR_ASSERTION]: all positive fixtures must pass and every mutation must be rejected
+actual: [
+  'valid fixture 6: previous must not reset the restored snapshot',
+  'Missing expected exception (AssertionError): reset inside restore helper',
+  'Missing expected exception (AssertionError): answer overwritten after restore',
+  'Missing expected exception (AssertionError): phase overwritten after restore',
+  'Missing expected exception (AssertionError): conditional card ancestor',
+  'Missing expected exception (AssertionError): logical card ancestor',
+  'Missing expected exception (AssertionError): answer overwritten inside restore helper',
+  'Missing expected exception (AssertionError): phase overwritten inside restore helper',
+  'Missing expected exception (AssertionError): wrong card switch',
+  'Missing expected exception (AssertionError): nested finished switches'
+]
+
+# After the contract fix.
+node .superpowers/sdd/2026-09-12-ios-practice-parity/task-1-r4-probes.cjs
+exit=0
+practice parity AST probes passed (9 valid fixtures, 40 rejected mutations)
+
+node scripts/practice-parity-smoke.cjs
+exit=1
+AssertionError [ERR_ASSERTION]: practice parity marker missing: 上一题
+
+npm run typecheck
+exit=0
+> ear-training-buddy-ios@1.0.0 typecheck
+> tsc --noEmit
+
+npm run test:core
+exit=0
+> ear-training-buddy-ios@1.0.0 test:core
+> node ./scripts/core-smoke.cjs
+核心冒烟测试通过：题目去重、和弦同时起音与难度比例、四句式旋律和音频渲染均正常。
+```
+
+Self-review: checked the full diff and both open findings against all new and retained fixtures. State-write ordering uses the same lexical symbols as the existing restoration contract, and ancestor checks inspect only the card's render path, leaving unrelated conditions in card content valid. The change is a structural guard for the declared handler/helper shape; it does not claim arbitrary control-flow or indirect side-effect execution analysis. No production files changed. The application parity smoke remains intentionally red on the genuine later-task `上一题` gap.

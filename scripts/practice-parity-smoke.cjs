@@ -69,7 +69,6 @@ function assertPracticeStateAndVolume(practice) {
     : node && ts.isPropertyAccessExpression(node) && node.name.text === 'current' && same(node.expression, snapshots) ? 'ref' : undefined;
   const previous = namedFunction('previous');
   assert.ok(previous, 'previous must be a real component handler');
-  assert.ok(!callsIn(previous).some((node) => same(node.expression, namedFunction('resetQuestionState')?.name)), 'previous must not reset the restored snapshot');
   const restoreCall = directCalls(previous).find((node) => previousIndex(node.arguments[0])
     && symbol(node.expression)?.valueDeclaration && ts.isFunctionDeclaration(symbol(node.expression).valueDeclaration));
   assert.ok(restoreCall, 'previous must call a restore helper with the current index - 1');
@@ -79,11 +78,20 @@ function assertPracticeStateAndVolume(practice) {
     .find((node) => node.initializer && ts.isElementAccessExpression(node.initializer)
       && collection(node.initializer.expression) && same(node.initializer.argumentExpression, target));
   assert.ok(snapshot, 'restore helper must bind the snapshot from questionSnapshots at the target index');
-  for (const [field, setter] of Object.entries({ answer: 'setAnswer', phase: 'setPhase', correct: 'setCorrect', playCount: 'setPlayCount', highlights: 'setHighlights' })) {
-    assert.ok(directCalls(restore).some((node) => same(node.expression, binding(setter)) && node.arguments.length === 1
+  const stateSetters = { answer: 'setAnswer', phase: 'setPhase', correct: 'setCorrect', playCount: 'setPlayCount', highlights: 'setHighlights' };
+  const restoreWrites = Object.entries(stateSetters).map(([field, setter]) => {
+    const write = directCalls(restore).find((node) => same(node.expression, binding(setter)) && node.arguments.length === 1
       && ts.isPropertyAccessExpression(node.arguments[0]) && same(node.arguments[0].expression, snapshot.name)
-      && node.arguments[0].name.text === field), `restore helper must call ${setter}(snapshot.${field})`);
-  }
+      && node.arguments[0].name.text === field);
+    assert.ok(write, `restore helper must call ${setter}(snapshot.${field})`);
+    assert.ok(!callsIn(restore).some((node) => node.pos >= write.end && same(node.expression, binding(setter))), `restore helper must not overwrite restored ${field}`);
+    return write;
+  });
+  const reset = namedFunction('resetQuestionState')?.name;
+  assert.ok(!callsIn(restore).some((node) => node.pos >= Math.min(...restoreWrites.map((write) => write.end))
+    && same(node.expression, reset)), 'restore helper must not reset restored snapshot state');
+  assert.ok(!callsIn(previous).some((node) => node.pos >= restoreCall.end
+    && [reset, ...Object.values(stateSetters).map(binding)].some((setter) => same(node.expression, setter))), 'previous must not reset or overwrite state after restoration');
   assert.ok(directCalls(restore).some((node) => same(node.expression, binding('setIndex')) && same(node.arguments[0], target))
     || directCalls(previous).some((node) => same(node.expression, binding('setIndex')) && previousIndex(node.arguments[0])), 'previous must update the current index to the restored previous index');
   assert.ok(childrenOf(screen).some((node) => {
@@ -146,6 +154,20 @@ function assertPracticeStateAndVolume(practice) {
     && isNative(card, 'View') && styled(card, 'card') && card.children.includes(insertion), 'volumeRow must be a direct ungated child of the practice card');
   const screenReturn = screen.body.statements.find((node) => ts.isReturnStatement(node) && node.expression);
   assert.ok(screenReturn && childrenOf(screenReturn).includes(card), 'volumeRow practice card must be rendered by the component');
+  let finishedSwitches = 0;
+  for (let child = card, parent = card.parent; parent !== screenReturn; child = parent, parent = parent.parent) {
+    if (ts.isConditionalExpression(parent)) {
+      const condition = unwrap(parent.condition);
+      assert.ok(++finishedSwitches === 1 && ts.isBinaryExpression(condition)
+        && condition.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+        && same(unwrap(condition.left), binding('phase')) && ts.isStringLiteral(unwrap(condition.right))
+        && unwrap(condition.right).text === 'finished' && child === parent.whenFalse,
+      'volumeRow ancestry must only use the finished/practice page switch');
+    } else {
+      assert.ok(ts.isJsxElement(parent) || ts.isJsxFragment(parent) || ts.isJsxExpression(parent) || ts.isParenthesizedExpression(parent),
+        'volumeRow practice card must not have an additional render gate');
+    }
+  }
   assert.ok(card.children.slice(0, card.children.indexOf(insertion)).some((node) => isNative(node, 'Pressable')
     && pressCalls(node).some((call) => same(call.expression, namedFunction('play')?.name))), 'volumeRow must follow the play control in the practice card');
 }
