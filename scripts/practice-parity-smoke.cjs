@@ -36,10 +36,11 @@ for (const forbidden of ['audioDiagnostic', 'operateAudio', 'jsapi', 'access den
   assert.ok(!renderedPaths.includes(forbidden), `forbidden rendered audio/debug text present: ${forbidden}`);
 }
 
-assert.match(practice, /function previous\s*\([\s\S]*?setIndex\(\(value\) => value - 1\)[\s\S]*?setAnswer\(/, 'previous-question handler must restore prior answer state');
+assert.match(practice, /function restorePracticeSnapshot\s*\(\s*snapshot[\s\S]*?setAnswer\(snapshot\.answer\)[\s\S]*?setPhase\(snapshot\.phase\)[\s\S]*?setCorrect\(snapshot\.correct\)[\s\S]*?setPlayCount\(snapshot\.playCount\)[\s\S]*?setHighlights\(snapshot\.highlights\)/, 'snapshot helper must restore answer, phase, correct, playCount, and highlights');
+assert.match(practice, /function previous\s*\([\s\S]*?const previousSnapshot = questionSnapshots\[index - 1\][\s\S]*?restorePracticeSnapshot\(previousSnapshot\)[\s\S]*?setIndex\(\(value\) => value - 1\)/, 'previous-question handler must look up and restore the prior indexed snapshot');
 assert.match(practice, /<Pressable\b[^>]*onPress=\{previous\}[^>]*>[\s\S]*?上一题[\s\S]*?<\/Pressable>/, '上一题 must be an actionable control wired to previous()');
-assert.ok(!/\{\(!compactPitchMode \|\| phase !== 'feedback'\) && <View[^>]*styles\.volumeRow/.test(practice), 'volume row must not be hidden by phase or mode');
-assert.match(practice, /<View style=\{\[styles\.volumeRow/, 'volume row must render in every practice state');
+assert.match(practice, /const volumeRow\s*=\s*<View[\s\S]*?styles\.volumeRow/, 'volume controls must be defined as one named render value');
+assert.match(practice, /<\/Pressable>\s*\{volumeRow\}/, 'named volume row must be inserted unconditionally after the play control');
 assert.match(practice, /<PianoKeyboard\b[^>]*\bvolume=\{volume\}[^>]*>/, 'PianoKeyboard must receive stored volume');
 
 const timedStaffTags = notation.match(/<TimedAnswerStaff\b[\s\S]*?\/>/g) || [];

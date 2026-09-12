@@ -47,3 +47,28 @@ npm run test:core
 exit=0
 核心冒烟测试通过：题目去重、和弦同时起音与难度比例、四句式旋律和音频渲染均正常。
 ```
+
+## Review fix round 2
+
+Strengthened the contract so later implementation cannot satisfy it with inert labels or a differently spelled conditional:
+
+- Previous-question restoration now requires `questionSnapshots[index - 1]` lookup, a `restorePracticeSnapshot` call path, and restoration of `answer`, `phase`, `correct`, `playCount`, and `highlights`.
+- Volume controls now require a named `volumeRow` render value containing the volume row and unconditional `{volumeRow}` insertion after the play control.
+
+Covering test file: `scripts/practice-parity-smoke.cjs`
+
+Exact commands and relevant outputs:
+
+```text
+node scripts/practice-parity-smoke.cjs
+exit=1
+AssertionError [ERR_ASSERTION]: practice parity marker missing: 上一题
+
+npm run typecheck
+exit=0
+tsc --noEmit
+
+npm run test:core
+exit=0
+核心冒烟测试通过：题目去重、和弦同时起音与难度比例、四句式旋律和音频渲染均正常。
+```
