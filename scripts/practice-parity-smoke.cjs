@@ -217,8 +217,14 @@ assert.match(practice, /function reviewPianoKey\(midi: number\) \{[\s\S]*?setHig
   'the practice screen must own manual note sound, highlight, and the 1.85-second cleanup');
 assert.match(practice, /function reviewPianoKey\(midi: number\) \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);/,
   'a repeated manual key tap must replace the earlier cleanup timer');
-assert.match(practice, /async function play\(\) \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);\s*manualKeyTimer\.current = null;\s*setHighlights\(\{\}\);/,
+assert.match(practice, /async function play\(\) \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);\s*manualKeyTimer\.current = null;[\s\S]*?setHighlights\(\{\}\);/,
   'starting question replay must immediately remove a manual-key highlight');
+assert.match(practice, /async function play\(\) \{[\s\S]*?manualKeyTimer\.current = null;[\s\S]*?stopQuestionAudio\(\);[\s\S]*?playQuestionAudio\(/,
+  'starting question replay must cancel an active or pending manual piano request before question audio begins');
+assert.match(practice, /function capturePracticeSnapshot\(\) \{[\s\S]*?snapshotPracticeHighlights\(phase, scoringQuestion, answer, correct, highlights\)[\s\S]*?highlights: snapshotHighlights/,
+  'leaving feedback while a manual key is highlighted must persist reconstructed grading colors, not the transient highlight');
+assert.match(practice, /playPianoNote\(midi, playbackVolume\)\.then\(\(result\) => \{ if \(result === 'failed'\) reportAudioFailure\(\); \}\)/,
+  'only real manual piano failures may show the retry message; cancellation is expected control flow');
 assert.match(practice, /const stopPlayback = useCallback\(\(\) => \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);\s*manualKeyTimer\.current = null;/,
   'navigation and lifecycle cleanup must clear a pending manual key highlight');
 assert.match(practice, /<PianoKeyboard\b[^>]*\bdisabled=\{phase !== 'feedback' \|\| playing \|\| preparing\}[^>]*\bonKeyPress=\{phase === 'feedback' \? reviewPianoKey : undefined\}/,
@@ -340,6 +346,13 @@ function pitchHarness() {
 
 const harness = pitchHarness();
 const { emptyExamAnswer, answerIsComplete } = harness.load('./src/core/exam-answer.ts');
+const { snapshotPracticeHighlights } = harness.load('./src/app/practice.tsx');
+assert.equal(typeof snapshotPracticeHighlights, 'function', 'practice feedback snapshots must expose the stable-highlight reconstruction used by navigation');
+assert.deepEqual(
+  snapshotPracticeHighlights('feedback', { type: 'single', midis: [61] }, { ...emptyExamAnswer(), pitches: [60] }, false, { 60: 'play', 61: 'correct' }),
+  { 60: 'wrong', 61: 'correct' },
+  'tapping a coloured review key then navigating away before 1.85 seconds must restore persistent wrong/correct feedback on return',
+);
 const questionCore = require('../src/core/legacy/question.js');
 const originalRandom = Math.random;
 let seed = 246813579;

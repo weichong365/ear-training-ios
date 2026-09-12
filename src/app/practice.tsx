@@ -109,6 +109,12 @@ function correctKeyHighlights(question: ExamQuestion) {
   return values;
 }
 
+export function snapshotPracticeHighlights(phase: Phase, question: ExamQuestion | null, answer: ExamAnswer, correct: boolean, highlights: Record<number, Highlight>) {
+  return (phase === 'feedback' && question
+    ? keyHighlights(question, answer, correct)
+    : Object.fromEntries(Object.entries(highlights).filter(([, value]) => value !== 'play'))) as PracticeQuestionSnapshot['highlights'];
+}
+
 function answerTitleFor(question: ExamQuestion) {
   if (question.type === 'intervalConnection') return '在谱面上叠写听到的和声音程连接';
   if (needsQuality(question) && !needsPitch(question)) return '选择你听到的和弦性质与转位';
@@ -275,6 +281,7 @@ export default function PracticeScreen() {
     if (!question || !scoringQuestion || playing || preparing || (phase !== 'feedback' && playCount >= maxPlays)) return;
     if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
     manualKeyTimer.current = null;
+    stopQuestionAudio();
     setHighlights({});
     setPreparing(true);
     setMessage('');
@@ -369,11 +376,11 @@ export default function PracticeScreen() {
       manualKeyTimer.current = null;
       setHighlights(feedbackHighlights);
     }, REVIEW_KEY_PLAYBACK_MS);
-    void playPianoNote(midi, playbackVolume).then((started) => { if (!started) reportAudioFailure(); });
+    void playPianoNote(midi, playbackVolume).then((result) => { if (result === 'failed') reportAudioFailure(); });
   }
 
   function capturePracticeSnapshot() {
-    const snapshotHighlights = Object.fromEntries(Object.entries(highlights).filter(([, value]) => value !== 'play')) as PracticeQuestionSnapshot['highlights'];
+    const snapshotHighlights = snapshotPracticeHighlights(phase, scoringQuestion, answer, correct, highlights);
     questionSnapshots.current[index] = { answer, phase: phase === 'finished' ? 'feedback' : phase, correct, playCount, highlights: snapshotHighlights };
   }
 

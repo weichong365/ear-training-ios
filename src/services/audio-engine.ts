@@ -10,6 +10,7 @@ import { NOTE_ASSETS, PIANO_NOTE_ASSETS } from '@/services/note-assets';
 type ParsedSample = { sampleRate: number; samples: Int16Array };
 type SampleBank = Record<number, ParsedSample>;
 type RenderResult = { arrayBuffer: ArrayBuffer; duration: number };
+export type PianoNotePlaybackResult = 'started' | 'cancelled' | 'failed';
 type PcmRenderer = {
   parsePcm16Wav(data: ArrayBuffer): ParsedSample;
   renderQuestionWav(question: PracticeQuestion, bank: SampleBank): RenderResult;
@@ -196,18 +197,18 @@ export function stopQuestionAudio() {
   renderingOrPlaying = false;
 }
 
-export async function playPianoNote(midi: number, volume = 0.78) {
+export async function playPianoNote(midi: number, volume = 0.78): Promise<PianoNotePlaybackResult> {
   const config = pianoPlaybackConfig(midi);
-  if (!config) return false;
+  if (!config) return 'failed';
   const moduleId = PIANO_NOTE_ASSETS[config.sampleMidi];
-  if (!moduleId) return false;
+  if (!moduleId) return 'failed';
   const generation = ++pianoPlaybackGeneration;
   try {
     const asset = Asset.fromModule(moduleId);
     await asset.downloadAsync();
-    if (generation !== pianoPlaybackGeneration) return false;
+    if (generation !== pianoPlaybackGeneration) return 'cancelled';
     const uri = asset.localUri || asset.uri;
-    if (!uri) return false;
+    if (!uri) return 'failed';
     stopPianoAudio();
     pianoPlayer = createAudioPlayer(uri, { updateInterval: 250 });
     pianoPlayer.volume = Math.max(0, Math.min(1, volume));
@@ -220,8 +221,8 @@ export async function playPianoNote(midi: number, volume = 0.78) {
       pianoPlayer = null;
       pianoCleanup = null;
     }, PIANO_NOTE_PLAYBACK_MS);
-    return true;
+    return 'started';
   } catch {
-    return false;
+    return generation !== pianoPlaybackGeneration ? 'cancelled' : 'failed';
   }
 }
