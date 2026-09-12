@@ -48,6 +48,28 @@ exit=0
 核心冒烟测试通过：题目去重、和弦同时起音与难度比例、四句式旋律和音频渲染均正常。
 ```
 
+## Review fix round 3
+
+Replaced the remaining restoration and volume regexes with TypeScript compiler-API AST contracts. The checks now require real function declarations/calls, indexed snapshot capture, all five state restorations, a concrete volume-row initializer with controls and value wiring, and exactly one ungated JSX insertion. No production code changed.
+
+Covering test file: `scripts/practice-parity-smoke.cjs`
+
+Exact commands and relevant outputs:
+
+```text
+node scripts/practice-parity-smoke.cjs
+exit=1
+AssertionError [ERR_ASSERTION]: practice parity marker missing: 上一题
+
+npm run typecheck
+exit=0
+tsc --noEmit
+
+npm run test:core
+exit=0
+核心冒烟测试通过：题目去重、和弦同时起音与难度比例、四句式旋律和音频渲染均正常。
+```
+
 ## Review fix round 2
 
 Strengthened the contract so later implementation cannot satisfy it with inert labels or a differently spelled conditional:
