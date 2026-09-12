@@ -591,9 +591,8 @@ function timedCheck(name, run) {
 const timedHarness = pitchHarness();
 const { TimedAnswerStaff, NotationStaff } = timedHarness.load('./src/components/notation-editor.tsx');
 for (const [meter, duration, count, primaryCount] of [
-  ['2/4', 0.5, 4, 2], ['4/4', 0.5, 8, 4], ['3/8', 1 / 3, 3, 1],
-  ['6/8', 1 / 3, 6, 2], ['3/8', 0.5, 3, 0], ['3/8', 0.25, 6, 3],
-  ['6/8', 0.5, 6, 2], ['4/4', 1 / 3, 12, 4],
+  ['2/4', 0.5, 4, 2], ['4/4', 0.5, 8, 4],
+  ['3/8', 0.25, 6, 3], ['6/8', 0.5, 6, 2],
 ]) {
   for (const continuation of [false, true]) timedCheck(`${meter}/${duration}/${continuation ? 'continuation' : 'first'} beams`, () => {
     const barOffset = continuation ? 2 : 0;
@@ -601,7 +600,26 @@ for (const [meter, duration, count, primaryCount] of [
     const render = timedHarness.renderComponent(TimedAnswerStaff, { events, meter: continuation ? '' : meter, capacityMeter: meter, keySignature: '', barOffset, barCount: 2, isFinalSystem: true, disabled: true, emptyText: '' });
     const primary = render.nodes.filter((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key));
     assert.equal(primary.length, primaryCount * 2, 'beams must stop at each beat and barline');
-    assert.equal(render.nodes.filter((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9').length, duration === 1 / 3 ? primaryCount * 2 : 0, 'each triplet beat needs its own numeral');
+    assert.equal(render.nodes.filter((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9').length, 0, 'ordinary beat fixtures must not emit tuplet numerals');
+    if (continuation) assert.ok(!render.nodes.some((node) => node.type === 'SvgText' && node.props.fontSize === '17'), 'continuation hides only the meter label');
+  });
+}
+
+for (const [meter, count, expectedBeams, expectedTuplets, expectedEndpoints] of [
+  ['4/4', 12, 4, 4, [[120.9, 154.233], [170.9, 204.233], [220.9, 254.233], [270.9, 304.233]]],
+  ['6/8', 9, 2, 2, [[120.9, 209.789], [232.011, 298.678]]],
+]) {
+  for (const continuation of [false, true]) timedCheck(`${meter} complete tuplet ${continuation ? 'continuation' : 'first'} groups`, () => {
+    const barOffset = continuation ? 2 : 0;
+    const events = Array.from({ length: count }, () => ({ midi: 69, duration: 1 / 3, barIndex: barOffset }));
+    assert.equal(events.reduce((sum, event) => sum + event.duration, 0), meter === '6/8' ? 3 : 4, 'tuplet fixture must fill the meter capacity');
+    const render = timedHarness.renderComponent(TimedAnswerStaff, { events, meter: continuation ? '' : meter, capacityMeter: meter, keySignature: '', barOffset, barCount: 1, isFinalSystem: true, disabled: true, emptyText: '' });
+    const primary = render.nodes.filter((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key));
+    const tuplets = render.nodes.filter((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9');
+    const rounded = (value) => Math.round(Number(value) * 1000) / 1000;
+    assert.equal(primary.length, expectedBeams, `${meter} must use meter-sized tuplet beam groups`);
+    assert.equal(tuplets.length, expectedTuplets, `${meter} must emit one independently counted numeral per meter group`);
+    assert.deepEqual(primary.map((beam) => [rounded(beam.props.x1), rounded(beam.props.x2)]), expectedEndpoints, `${meter} beam endpoints must identify exact group membership`);
     if (continuation) assert.ok(!render.nodes.some((node) => node.type === 'SvgText' && node.props.fontSize === '17'), 'continuation hides only the meter label');
   });
 }
@@ -634,15 +652,6 @@ timedCheck('header and notation anchors', () => {
   const flag = isolated.nodes.find((node) => node.type?.name === 'MusicFlag');
   assert.deepEqual([flag.props.stemX, flag.props.stemEndY, flag.props.beamCount, flag.props.direction], [164.4, 26, 1, 'up'], 'an unbeamed eighth note must attach its flag to the stem end');
 
-  const triplets = timedHarness.renderComponent(TimedAnswerStaff, {
-    ...base, meter: '3/8', capacityMeter: '3/8', keySignature: '',
-    events: Array.from({ length: 3 }, () => ({ midi: 69, duration: 1 / 3, barIndex: 0 })),
-  });
-  const rounded = (value) => Math.round(Number(value) * 1000) / 1000;
-  const beam = triplets.nodes.find((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key));
-  assert.deepEqual([rounded(beam.props.x1), rounded(beam.props.x2), beam.props.y1], [120.9, 159.567, 26], 'triplet beam must span the first and third stem anchors');
-  const tuplet = triplets.nodes.find((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9');
-  assert.deepEqual([rounded(tuplet.props.x), tuplet.props.y], [136.333, 22], 'triplet numeral must align with the middle note outside the beam');
 });
 
 timedCheck('barline and final-bar bounds', () => {
@@ -824,7 +833,7 @@ for (const compact of [false, true]) {
   assert.ok(blackHeight >= 44 && keybedHeight - blackHeight - 2 * whites[0].borderWidth >= 44, 'black and exposed white key hit depths must remain at least 44 pt');
 }
 
-console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 16 beam fixtures and 2 timed workflows checked)`);
+console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 12 beam fixtures and 2 timed workflows checked)`);
 
 async function flushAsyncEffects() {
   for (let count = 0; count < 12; count += 1) await Promise.resolve();
