@@ -61,6 +61,7 @@ export const PianoKeyboard = memo(function PianoKeyboard({
   endMidi?: number;
   compact?: boolean;
   disabled?: boolean;
+  volume?: number;
   highlights?: Record<number, Highlight>;
   onKeyPress?: (midi: number) => void;
 }) {

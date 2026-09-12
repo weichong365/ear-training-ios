@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   aggregatePracticeStats,
   normalizeAnswer,
@@ -7,6 +9,23 @@ const {
   normalizePracticeRecords,
   normalizeWrongRecords,
 } = require('../src/core/local-data-normalize.js');
+
+const root = path.resolve(__dirname, '..');
+const localData = fs.readFileSync(path.join(root, 'src/services/local-data.ts'), 'utf8');
+const practice = fs.readFileSync(path.join(root, 'src/app/practice.tsx'), 'utf8');
+
+assert.match(localData, /const ACTIVE_PRACTICE_KEY = 'ios_active_practice_v1';/, '练习进度必须使用独立的版本化存储键');
+for (const operation of ['savePracticeSession', 'getActivePracticeSession', 'clearActivePracticeSession']) {
+  assert.match(localData, new RegExp(`export async function ${operation}\\b`), `练习进度必须提供 ${operation}`);
+}
+assert.match(practice, /questionSnapshots(?:\.current)?\[targetIndex\]/, '恢复时必须按目标题号读取题目快照');
+assert.match(practice, /const snapshot = questionSnapshots(?:\.current)?\[targetIndex\]/, '已答题快照必须可恢复');
+assert.match(practice, /if \(!snapshot\)[\s\S]*?resetQuestionState\(\)/, '未答题快照必须恢复为空白作答状态');
+assert.match(practice, /submitting\.current/, '重复提交必须由提交锁保护');
+assert.match(practice, /setScore\(\(value\) => value \+ \(result \? 1 : 0\)\)/, '同一题重复提交不得重复累计分数');
+const submitBody = practice.slice(practice.indexOf('async function submit()'), practice.indexOf('function capturePracticeSnapshot()'));
+assert.equal((submitBody.match(/savePracticeResult\(/g) || []).length, 1, '每次提交只能保存一条练习记录');
+assert.match(localData, /findIndex\(\(item\) => item\.knowledgeKey === question\.knowledgeKey\)/, '错题本必须按知识点更新，不能重复插入');
 
 const answer = normalizeAnswer({ pitches: [60, null, '62'], events: null, choiceIndex: -1 });
 assert.equal(answer.pitches.length, 3);

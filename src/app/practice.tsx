@@ -14,7 +14,7 @@ import { answerIsComplete, CHORD_INVERSIONS, CHORD_QUALITY_NAMES, emptyExamAnswe
 import type { ExamQuestion } from '@/core/provinces';
 import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
 import { playPianoNote, playQuestionAudio, stopQuestionAudio } from '@/services/audio-engine';
-import { getAudioVolume, getPracticeProfile, getWrongRecords, removeWrongRecord, saveAudioVolume, savePracticeResult } from '@/services/local-data';
+import { clearActivePracticeSession, getActivePracticeSession, getAudioVolume, getPracticeProfile, getWrongRecords, removeWrongRecord, saveAudioVolume, savePracticeResult, savePracticeSession, type PracticeQuestionSnapshot, type PracticeSession } from '@/services/local-data';
 
 type Phase = 'ready' | 'answering' | 'feedback' | 'finished';
 type Highlight = 'correct' | 'wrong' | 'std';
@@ -127,12 +127,17 @@ export default function PracticeScreen() {
   const [reviewQuestion, setReviewQuestion] = useState<ExamQuestion | null>(null);
   const [reviewLoaded, setReviewLoaded] = useState(!wrongId);
   const [adaptiveProfile, setAdaptiveProfile] = useState<PracticeProfile | null>(null);
+  const [activePracticeSession, setActivePracticeSession] = useState<PracticeSession | null>(null);
+  const [practiceLoaded, setPracticeLoaded] = useState(Boolean(wrongId));
+  const resumeSession = activePracticeSession && activePracticeSession.mode === mode && activePracticeSession.tier === generateOptions.tier ? activePracticeSession : null;
   const questions = useMemo(() => {
+    if (!wrongId && !practiceLoaded) return [];
+    if (resumeSession) return resumeSession.questions;
     void sessionKey;
     if (wrongId) return reviewQuestion ? [reviewQuestion] : [];
     if (mode === 'adaptive' && !adaptiveProfile) return [];
     return generateQuestionSet(mode, mode === 'adaptive' ? 15 : 10, adaptiveProfile || {}, generateOptions);
-  }, [adaptiveProfile, generateOptions, mode, reviewQuestion, sessionKey, wrongId]);
+  }, [adaptiveProfile, generateOptions, mode, practiceLoaded, resumeSession, reviewQuestion, sessionKey, wrongId]);
   const [index, setIndex] = useState(0);
   const [answer, setAnswer] = useState<ExamAnswer>(emptyExamAnswer);
   const [phase, setPhase] = useState<Phase>('ready');
@@ -150,6 +155,9 @@ export default function PracticeScreen() {
   const submitting = useRef(false);
   const standardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionId = useRef(practiceSessionId());
+  const questionSnapshots = useRef<Array<PracticeQuestionSnapshot | undefined>>([]);
+  const restoredSessionId = useRef<string | null>(null);
+  const skipPracticeSave = useRef(false);
   const question = questions[index] as ExamQuestion | undefined;
   const scoringQuestion = question ? { ...question, id: `practice-${index}`, points: 1, sectionTitle: question.typeName } as ExamQuestion : null;
   const timed = scoringQuestion ? isTimedQuestion(scoringQuestion) : false;
@@ -162,6 +170,7 @@ export default function PracticeScreen() {
   const legacyQualityParts = answer.quality.split(' · ');
   const selectedChordQuality = legacyQualityParts[0] || '';
   const selectedChordInversion = answer.inversion || legacyQualityParts[1] || '';
+  const volumeRow = <View style={[styles.volumeRow, compactPitchMode && styles.compactVolumeRow]}><Text style={styles.volumeLabel}>音量</Text><Pressable accessibilityRole="button" accessibilityLabel="降低音量" onPress={() => changeVolume(volume - 10)} style={styles.volumeStep}><AppIcon name="minus" size={17} /></Pressable><View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: volume }} style={styles.volumeTrack}><View style={[styles.volumeFill, { width: `${volume}%` }]} /></View><Pressable accessibilityRole="button" accessibilityLabel="提高音量" onPress={() => changeVolume(volume + 10)} style={styles.volumeStep}><AppIcon name="plus" size={17} /></Pressable><Text style={styles.volumeValue}>{volume}%</Text></View>;
 
   useEffect(() => {
     if (!wrongId) return;
@@ -173,10 +182,46 @@ export default function PracticeScreen() {
   }, [wrongId]);
 
   useEffect(() => {
+    if (wrongId) return;
+    getActivePracticeSession()
+      .then(setActivePracticeSession)
+      .finally(() => setPracticeLoaded(true));
+  }, [wrongId]);
+
+  useEffect(() => {
     let cancelled = false;
     getAudioVolume().then((value) => { if (!cancelled) setVolume(value); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!resumeSession || restoredSessionId.current === resumeSession.sessionId) return;
+    restoredSessionId.current = resumeSession.sessionId;
+    skipPracticeSave.current = true;
+    questionSnapshots.current = resumeSession.snapshots;
+    sessionId.current = resumeSession.sessionId;
+    setScore(resumeSession.score);
+    restorePracticeSnapshot(resumeSession.index);
+  }, [resumeSession]);
+
+  useEffect(() => {
+    if (!practiceLoaded || wrongId || !questions.length || phase === 'finished') return;
+    if (skipPracticeSave.current) {
+      skipPracticeSave.current = false;
+      return;
+    }
+    capturePracticeSnapshot();
+    void savePracticeSession({
+      version: 1,
+      mode,
+      ...(generateOptions.tier ? { tier: generateOptions.tier } : {}),
+      questions,
+      snapshots: questionSnapshots.current,
+      index,
+      score,
+      sessionId: sessionId.current,
+    });
+  }, [answer, correct, generateOptions.tier, highlights, index, mode, phase, playCount, practiceLoaded, questions, score, wrongId]);
 
   useEffect(() => {
     if (mode !== 'adaptive') return;
@@ -292,6 +337,28 @@ export default function PracticeScreen() {
     void Haptics.notificationAsync(result ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error);
   }
 
+  function capturePracticeSnapshot() {
+    questionSnapshots.current[index] = { answer, phase: phase === 'finished' ? 'feedback' : phase, correct, playCount, highlights };
+  }
+
+  function restorePracticeSnapshot(targetIndex: number) {
+    const snapshot = questionSnapshots.current[targetIndex];
+    if (!snapshot) {
+      resetQuestionState();
+      setIndex(targetIndex);
+      return;
+    }
+    setAnswer(snapshot.answer);
+    setPhase(snapshot.phase);
+    setCorrect(snapshot.correct);
+    setPlayCount(snapshot.playCount);
+    setHighlights(snapshot.highlights);
+    setMessage('');
+    setPlaying(false);
+    setPreparing(false);
+    setIndex(targetIndex);
+  }
+
   function resetQuestionState() {
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
@@ -314,11 +381,26 @@ export default function PracticeScreen() {
     if (index >= questions.length - 1) {
       if (wrongId && correct) void removeWrongRecord(wrongId);
       setPhase('finished');
+      if (!wrongId) void clearActivePracticeSession();
+      return;
+    }
+    capturePracticeSnapshot();
+    if (questionSnapshots.current[index + 1]) {
+      restorePracticeSnapshot(index + 1);
       return;
     }
     resetQuestionState();
     setIndex((value) => value + 1);
     setAutoPlay(true);
+  }
+
+  function previous() {
+    if (index <= 0 || playing || preparing) return;
+    if (standardTimer.current) clearTimeout(standardTimer.current);
+    standardTimer.current = null;
+    stopQuestionAudio();
+    capturePracticeSnapshot();
+    restorePracticeSnapshot(index - 1);
   }
 
   function restart() {
@@ -328,12 +410,16 @@ export default function PracticeScreen() {
     setIndex(0);
     setScore(0);
     sessionId.current = practiceSessionId();
+    questionSnapshots.current = [];
+    restoredSessionId.current = null;
+    setActivePracticeSession(null);
     resetQuestionState();
     setSessionKey((value) => value + 1);
+    if (!wrongId) void clearActivePracticeSession();
   }
 
   if (!question || !scoringQuestion) {
-    const loading = !reviewLoaded || (mode === 'adaptive' && !adaptiveProfile);
+    const loading = !reviewLoaded || !practiceLoaded || (mode === 'adaptive' && !adaptiveProfile);
     return <View style={styles.loading}>{loading ? <><ActivityIndicator color={Brand.forest} /><Text style={styles.muted}>{!reviewLoaded ? '正在读取错题…' : '正在分析历史练习…'}</Text></> : <><AppIcon name="check" size={48} /><Text style={styles.title}>这道错题已不存在</Text><Pressable accessibilityRole="button" onPress={() => router.replace('/wrongbook')} style={styles.secondary}><Text style={styles.secondaryText}>返回错题复盘</Text></Pressable></>}</View>;
   }
 
@@ -354,7 +440,7 @@ export default function PracticeScreen() {
           <Pressable accessibilityRole="button" accessibilityLabel={playing || preparing ? '音频播放中' : phase === 'feedback' ? '回放正确答案' : phase === 'ready' ? '播放题目' : '再听一遍'} accessibilityState={{ disabled: playing || preparing || (phase !== 'feedback' && playCount >= maxPlays), busy: playing || preparing }} onPress={() => void play()} disabled={playing || preparing || (phase !== 'feedback' && playCount >= maxPlays)} style={({ pressed }) => [styles.playButton, compactPitchMode && styles.compactPlayButton, (playing || preparing) && styles.playing, pressed && styles.pressed]}>
             <View style={styles.playIcon}><AppIcon name={playing || preparing ? 'pause' : 'play'} size={20} color={Brand.textOnAccent} /></View><View style={styles.playCopy}><Text style={styles.playTitle}>{playing ? '播放中…' : phase === 'feedback' ? '回放答案' : phase === 'ready' ? '播放题目' : '再听一遍'}</Text>{!compactPitchMode && <Text style={styles.playSub}>{phase === 'feedback' ? '结合谱面与键盘复盘' : '先听题，再在五线谱上作答'}</Text>}</View><Text style={styles.replay}>{phase === 'feedback' ? '不限次数' : `剩余 ${Math.max(0, maxPlays - playCount)} 次`}</Text>
           </Pressable>
-          {(!compactPitchMode || phase !== 'feedback') && <View style={[styles.volumeRow, compactPitchMode && styles.compactVolumeRow]}><Text style={styles.volumeLabel}>音量</Text><Pressable accessibilityRole="button" accessibilityLabel="降低音量" onPress={() => changeVolume(volume - 10)} style={styles.volumeStep}><AppIcon name="minus" size={17} /></Pressable><View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: volume }} style={styles.volumeTrack}><View style={[styles.volumeFill, { width: `${volume}%` }]} /></View><Pressable accessibilityRole="button" accessibilityLabel="提高音量" onPress={() => changeVolume(volume + 10)} style={styles.volumeStep}><AppIcon name="plus" size={17} /></Pressable><Text style={styles.volumeValue}>{volume}%</Text></View>}
+          {volumeRow}
           {!!message && <Text accessibilityLiveRegion="polite" style={styles.error}>{message}</Text>}
           <View style={[styles.answerBlock, compactPitchMode && styles.compactAnswerBlock]}>
             <Text style={styles.answerTitle}>{answerTitleFor(scoringQuestion)}</Text>
@@ -385,13 +471,14 @@ export default function PracticeScreen() {
 
         <View style={[styles.keyboardCard, phase === 'feedback' && styles.keyboardOpen]}>
           <View style={styles.keyboardHead}><View><Text style={styles.keyboardTitle}>复盘钢琴</Text>{!compactPitchMode && <Text style={styles.keyboardSub}>{phase === 'feedback' ? '键盘已解锁，可自由弹奏核对音高' : '提交谱面答案后自动解锁'}</Text>}</View><Text style={[styles.keyboardState, phase === 'feedback' && styles.keyboardStateOpen]}>{phase === 'feedback' ? '已解锁' : '待解锁'}</Text></View>
-          <View><View aria-hidden={phase !== 'feedback'} accessibilityElementsHidden={phase !== 'feedback'} importantForAccessibility={phase !== 'feedback' ? 'no-hide-descendants' : 'auto'}><PianoKeyboard disabled={phase !== 'feedback' || playing} highlights={highlights} onKeyPress={phase === 'feedback' ? (midi) => { if (!replaying.current) void playPianoNote(midi, volume / 100); } : undefined} /></View>{phase !== 'feedback' && <View accessibilityRole="text" accessibilityLabel="复盘钢琴待解锁，提交答案后解锁" style={styles.keyboardLock}><View style={styles.lockIcon}><AppIcon name="lock" size={21} color={Brand.textOnAccent} /></View><Text style={styles.lockText}>提交答案后解锁</Text></View>}</View>
+          <View><View aria-hidden={phase !== 'feedback'} accessibilityElementsHidden={phase !== 'feedback'} importantForAccessibility={phase !== 'feedback' ? 'no-hide-descendants' : 'auto'}><PianoKeyboard disabled={phase !== 'feedback' || playing} highlights={highlights} volume={volume} onKeyPress={phase === 'feedback' ? (midi) => { if (!replaying.current) void playPianoNote(midi, volume / 100); } : undefined} /></View>{phase !== 'feedback' && <View accessibilityRole="text" accessibilityLabel="复盘钢琴待解锁，提交答案后解锁" style={styles.keyboardLock}><View style={styles.lockIcon}><AppIcon name="lock" size={21} color={Brand.textOnAccent} /></View><Text style={styles.lockText}>提交答案后解锁</Text></View>}</View>
         </View>
       </>}
     </ScrollView>
 
     {phase !== 'finished' && (phase === 'feedback' ? <View style={[styles.bottomActions, { paddingBottom: Math.max(10, insets.bottom) }]}>
-      <Pressable accessibilityRole="button" accessibilityState={{ disabled: playing || preparing }} disabled={playing || preparing} onPress={() => void play()} style={styles.secondarySmall}><Text style={styles.secondaryText}>回放答案</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ disabled: playing || preparing }} disabled={playing || preparing} onPress={next} style={styles.primarySmall}><Text style={styles.primaryText}>{index + 1 >= questions.length ? '查看结果' : '下一题'}</Text></Pressable>
+      {index > 0 && <Pressable accessibilityRole="button" accessibilityLabel="上一题" accessibilityState={{ disabled: playing || preparing }} disabled={playing || preparing} onPress={previous} style={styles.secondarySmall}><Text style={styles.secondaryText}>上一题</Text></Pressable>}
+      <Pressable accessibilityRole="button" accessibilityLabel="回放答案" accessibilityState={{ disabled: playing || preparing }} disabled={playing || preparing} onPress={() => void play()} style={styles.secondarySmall}><Text style={styles.secondaryText}>回放答案</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={index + 1 >= questions.length ? '查看结果' : '下一题'} accessibilityState={{ disabled: playing || preparing }} disabled={playing || preparing} onPress={next} style={styles.primarySmall}><Text style={styles.primaryText}>{index + 1 >= questions.length ? '查看结果' : '下一题'}</Text></Pressable>
     </View> : <View style={[styles.bottomBar, { paddingBottom: Math.max(10, insets.bottom) }]}>
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: !complete || phase !== 'answering' }} disabled={!complete || phase !== 'answering'} onPress={() => void submit()} style={[styles.submit, (!complete || phase !== 'answering') && styles.submitDisabled]}><Text style={styles.primaryText}>{phase === 'ready' ? '先播放题目' : complete ? '提交答案并解锁键盘' : '完成谱面后提交'}</Text></Pressable><Text style={styles.submitTip}>{phase === 'ready' ? '播放后即可在谱面上作答' : '提交后显示正确谱面，并解锁复盘钢琴'}</Text>
     </View>)}

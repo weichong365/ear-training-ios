@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { PracticeProfile, PracticeQuestion, PracticeType } from '@/core';
+import type { PracticeMode, PracticeProfile, PracticeQuestion, PracticeType } from '@/core';
 import { DEFAULT_AUDIO_VOLUME, parseStoredVolume } from '@/core/audio-settings';
 import type { ExamAnswer } from '@/core/exam-answer';
 import { PROVINCES, type ProvinceId, type ProvincePaper } from '@/core/provinces';
@@ -21,9 +21,11 @@ const RECORDS_KEY = 'ios_practice_records_v1';
 const WRONGS_KEY = 'ios_wrong_questions_v1';
 const ACTIVE_EXAM_KEY = 'ios_active_exam_v1';
 const EXAM_RESULTS_KEY = 'ios_exam_results_v1';
+const ACTIVE_PRACTICE_KEY = 'ios_active_practice_v1';
 const AUDIO_VOLUME_KEY = 'audio_volume';
 const PROVINCE_KEY = 'ios_selected_province_v1';
 let examSaveQueue: Promise<void> = Promise.resolve();
+let practiceSaveQueue: Promise<void> = Promise.resolve();
 
 export type PracticeRecord = {
   id: string;
@@ -65,6 +67,26 @@ export type ExamSession = {
   playCounts: Record<string, number>;
   unlockedIds: string[];
   currentIndex: number;
+  updatedAt: number;
+};
+
+export type PracticeQuestionSnapshot = {
+  answer: ExamAnswer;
+  phase: 'ready' | 'answering' | 'feedback';
+  correct: boolean;
+  playCount: number;
+  highlights: Record<number, 'correct' | 'wrong' | 'std'>;
+};
+
+export type PracticeSession = {
+  version: 1;
+  mode: PracticeMode;
+  tier?: 1 | 2 | 3;
+  questions: PracticeQuestion[];
+  snapshots: Array<PracticeQuestionSnapshot | undefined>;
+  index: number;
+  score: number;
+  sessionId: string;
   updatedAt: number;
 };
 
@@ -198,6 +220,47 @@ export async function removeWrongRecord(id: string) {
   await AsyncStorage.setItem(WRONGS_KEY, JSON.stringify(wrongs.filter((item) => item.id !== id)));
 }
 
+function normalizePracticeSession(value: unknown): PracticeSession | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const session = value as Partial<PracticeSession>;
+  if (session.version !== 1 || !Array.isArray(session.questions) || !session.questions.length || !Array.isArray(session.snapshots) || typeof session.mode !== 'string' || typeof session.sessionId !== 'string') return null;
+  const questions = session.questions.filter((question): question is PracticeQuestion => Boolean(question && typeof question === 'object' && typeof question.type === 'string'));
+  if (!questions.length) return null;
+  const snapshots = session.snapshots.map((snapshot) => snapshot && typeof snapshot === 'object' ? snapshot as PracticeQuestionSnapshot : undefined);
+  return {
+    version: 1,
+    mode: session.mode as PracticeMode,
+    ...(session.tier === 1 || session.tier === 2 || session.tier === 3 ? { tier: session.tier } : {}),
+    questions,
+    snapshots,
+    index: Math.max(0, Math.min(questions.length - 1, Math.floor(Number(session.index) || 0))),
+    score: Math.max(0, Math.floor(Number(session.score) || 0)),
+    sessionId: session.sessionId,
+    updatedAt: Number(session.updatedAt) || Date.now(),
+  };
+}
+
+export async function savePracticeSession(session: Omit<PracticeSession, 'updatedAt'>) {
+  const payload = JSON.stringify({ ...session, updatedAt: Date.now() });
+  practiceSaveQueue = practiceSaveQueue.catch(() => undefined).then(() => AsyncStorage.setItem(ACTIVE_PRACTICE_KEY, payload));
+  await practiceSaveQueue;
+}
+
+export async function getActivePracticeSession() {
+  await practiceSaveQueue.catch(() => undefined);
+  try {
+    const raw = await AsyncStorage.getItem(ACTIVE_PRACTICE_KEY);
+    return raw ? normalizePracticeSession(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearActivePracticeSession() {
+  await practiceSaveQueue.catch(() => undefined);
+  await AsyncStorage.removeItem(ACTIVE_PRACTICE_KEY);
+}
+
 export async function saveExamSession(session: ExamSession) {
   const payload = JSON.stringify({ ...session, updatedAt: Date.now() });
   examSaveQueue = examSaveQueue.catch(() => undefined).then(() => AsyncStorage.setItem(ACTIVE_EXAM_KEY, payload));
@@ -234,6 +297,6 @@ export async function getExamResults() {
 }
 
 export async function clearLocalPracticeData() {
-  await examSaveQueue.catch(() => undefined);
-  await AsyncStorage.multiRemove([RECORDS_KEY, WRONGS_KEY, ACTIVE_EXAM_KEY, EXAM_RESULTS_KEY]);
+  await Promise.all([examSaveQueue.catch(() => undefined), practiceSaveQueue.catch(() => undefined)]);
+  await AsyncStorage.multiRemove([RECORDS_KEY, WRONGS_KEY, ACTIVE_EXAM_KEY, ACTIVE_PRACTICE_KEY, EXAM_RESULTS_KEY]);
 }
