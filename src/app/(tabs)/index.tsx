@@ -1,56 +1,44 @@
-import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, type Href, useFocusEffect } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback, useMemo, useState } from 'react';
-import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/app-icon';
-import { HandIcon, type HandIconName } from '@/components/hand-icon';
-import { getProvincePracticeModules, PROVINCES, type ProvincePracticeModule } from '@/core/provinces';
+import { getProvincePracticeModules, hasDedicatedFramework, PROVINCES, type ProvincePracticeModule } from '@/core/provinces';
 import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
 import { getPracticeStats } from '@/services/local-data';
 import { useProvince } from '@/services/province-context';
 import { useSubscription } from '@/services/subscription';
 
-type GridItem = {
-  key: string;
-  name: string;
-  desc: string;
-  icon: HandIconName;
-  tone: 'mint' | 'accent' | 'coral' | 'amber';
-  onPress: () => void;
-};
+type HomeIconName = 'single-note' | 'triplet' | 'interval' | 'chord' | 'rhythm' | 'treble' | 'mixed' | 'target';
+type GridItem = { key: string; name: string; desc: string; icon: HomeIconName; onPress: () => void };
 
 const SUBSCRIBE_ROUTE = '/subscribe' as Href;
-const HERO_WAVE_HEIGHTS = [8, 16, 11, 20, 14, 24, 10, 18, 12];
-
-const QUICK_ITEMS: Omit<GridItem, 'onPress'>[] = [
-  { key: 'wrongbook', name: '错题复盘', desc: '强化薄弱点', icon: 'book', tone: 'coral' },
-  { key: 'stats', name: '练习统计', desc: '查看成长趋势', icon: 'stats', tone: 'amber' },
-];
+const HERO_WAVE_HEIGHTS = [17, 34, 24, 42, 30, 50, 22, 38, 26];
+const HOME_ICONS = {
+  'single-note': require('../../../assets/home-icons/single-note.png'),
+  triplet: require('../../../assets/home-icons/triplet.png'),
+  interval: require('../../../assets/home-icons/interval.png'),
+  chord: require('../../../assets/home-icons/chord.png'),
+  rhythm: require('../../../assets/home-icons/rhythm.png'),
+  treble: require('../../../assets/home-icons/treble.png'),
+  mixed: require('../../../assets/home-icons/mixed.png'),
+  target: require('../../../assets/home-icons/target.png'),
+} as const;
 
 export default function HomeScreen() {
   const { ready, configured, isActive } = useSubscription();
   const { provinceId } = useProvince();
   const [practiceStats, setPracticeStats] = useState({ todayCount: 0, todayAccuracy: 0 });
+  const province = useMemo(() => PROVINCES.find((item) => item.id === provinceId), [provinceId]);
+  const modules = useMemo(() => (provinceId ? getProvincePracticeModules(provinceId) : []), [provinceId]);
 
-  const modules = useMemo(
-    () => (provinceId ? getProvincePracticeModules(provinceId) : []),
-    [provinceId],
-  );
-  const provinceLabel = useMemo(
-    () => PROVINCES.find((province) => province.id === provinceId)?.label,
-    [provinceId],
-  );
   useFocusEffect(useCallback(() => {
     let mounted = true;
     getPracticeStats().then((stats) => {
-      if (!mounted) return;
-      setPracticeStats({
-        todayCount: stats.todayCount,
-        todayAccuracy: stats.todayAccuracy,
-      });
+      if (mounted) setPracticeStats({ todayCount: stats.todayCount, todayAccuracy: stats.todayAccuracy });
     });
     return () => { mounted = false; };
   }, []));
@@ -79,181 +67,69 @@ export default function HomeScreen() {
     router.push({ pathname: '/practice', params: { type: 'adaptive' } });
   }
 
-  function openMemberRoute(pathname: '/wrongbook' | '/stats') {
-    if (!ready || !isActive) router.push({ pathname: SUBSCRIBE_ROUTE, params: { reason: 'required' } } as Href);
-    else router.push(pathname);
-  }
-
   const gridItems: GridItem[] = [
-    ...modules.map((module) => ({
-      key: module.type,
-      name: module.name,
-      desc: module.desc,
-      icon: module.icon as HandIconName,
-      tone: module.tone,
-      onPress: () => openModule(module),
-    })),
-    { key: 'exam', name: '模拟考试', desc: '全国各省真题 · 电子卷面答题', icon: 'mixed', tone: 'accent', onPress: openExam },
+    ...modules.map((module) => ({ key: module.type, name: module.name, desc: module.desc, icon: module.icon as HomeIconName, onPress: () => openModule(module) })),
+    { key: 'exam', name: '模拟考试', desc: '全国各省真题 · 电子卷面答题', icon: 'mixed', onPress: openExam },
+    { key: 'adaptive', name: '智能强化', desc: '按薄弱题型生成专项练习', icon: 'target', onPress: openAdaptive },
   ];
 
-  function itemColors(tone: GridItem['tone']) {
-    if (tone === 'coral') return { tile: styles.iconCoral, icon: '#B98232' };
-    if (tone === 'amber') return { tile: styles.iconAmber, icon: '#C28B24' };
-    if (tone === 'mint') return { tile: styles.iconMint, icon: '#2e8b6f' };
-    return { tile: styles.iconAccent, icon: '#2e8b6f' };
-  }
-
-  const memberSummary = !ready
-    ? '正在同步订阅状态'
-    : !configured
-      ? '当前版本全部功能免费开放'
-      : isActive
-        ? '全部训练已解锁'
-        : '开通后解锁全部训练';
+  const memberTitle = !ready ? '正在同步' : !configured ? '免费开放' : isActive ? '会员权益' : '未开通会员';
+  const memberSummary = !ready ? '请稍候' : !configured ? '当前版本全部功能免费' : isActive ? '全部训练已解锁' : '开通后解锁全部训练';
   const memberAction = !ready ? '同步中' : !configured ? '免费开放' : isActive ? '会员有效' : '开通会员';
 
   return (
     <View style={styles.page}>
       <StatusBar style="light" />
-      <SafeAreaView edges={['top']} style={styles.safe}>
-        <View style={styles.nav}>
-          <Text style={styles.navTitle}>练耳搭子</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel={`当前省份${provinceLabel || '未选择'}，点击切换`} onPress={() => router.push('/province-select?switch=1')} style={styles.provinceChip}>
-            <Text style={styles.provinceChipText}>{provinceLabel || '选择省份'}</Text>
-            <AppIcon name="chevronDown" size={13} color="#FFFFFF" />
-          </Pressable>
-        </View>
-      </SafeAreaView>
-
+      <SafeAreaView edges={['top']} style={styles.safe}><View style={styles.nav}><Text style={styles.navTitle}>练耳搭子</Text></View></SafeAreaView>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <ImageBackground source={require('../../../assets/images/hero-piano-keys.jpg')} resizeMode="cover" style={styles.hero} imageStyle={styles.heroImage}>
-          <View pointerEvents="none" style={styles.heroWave}>
-            {HERO_WAVE_HEIGHTS.map((height, index) => <View key={index} style={[styles.heroWaveBar, { height }]} />)}
-          </View>
-          <View style={styles.heroContent}>
-            <View style={styles.heroBrand}>
-              <Text style={styles.heroTitle}>练耳搭子</Text>
-              <Text numberOfLines={1} style={styles.heroSub}>音乐艺考 · 视唱练耳专项训练</Text>
-            </View>
-            <View style={styles.heroData}>
-              <View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.todayCount}</Text><Text style={styles.metricLabel}>今日练习</Text></View>
-              <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,.28)', 'rgba(255,255,255,0)']} style={styles.heroDivider} />
-              <View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.todayAccuracy}%</Text><Text style={styles.metricLabel}>今日正确率</Text></View>
-            </View>
-          </View>
-        </ImageBackground>
-
+        <Pressable accessibilityRole="button" accessibilityLabel="切换练习省份" accessibilityHint={`当前为${province?.label || '未选择'}`} onPress={() => router.push('/province-select?switch=1')} style={({ pressed }) => [styles.provinceBar, pressed && styles.pressed]}>
+          <View style={styles.provinceCopy}><Text style={styles.provinceCaption}>当前练习按</Text><Text style={styles.provinceName}>{province?.label || '请选择省份'}</Text><Text style={styles.provinceCaption}>题型生成</Text>{!!province?.label && !hasDedicatedFramework(province.id) && <Text style={styles.provinceMeta}>通用模板</Text>}</View>
+          <View style={styles.provinceAction}><Text style={styles.provinceActionText}>切换</Text><AppIcon name="chevronRight" size={15} color={Brand.forest} /></View>
+        </Pressable>
+        <LinearGradient colors={['#12372f', '#23785f']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+          <View pointerEvents="none" style={styles.heroWave}>{HERO_WAVE_HEIGHTS.map((height, index) => <View key={index} style={[styles.heroWaveBar, { height }]} />)}</View>
+          <View style={styles.heroBrand}><Text style={styles.heroTitle}>练耳搭子</Text><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.86} style={styles.heroSub}>音乐艺考 · 听音练耳专项训练</Text></View>
+          <View style={styles.heroData}><View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.todayCount}</Text><Text style={styles.metricLabel}>今日练习</Text></View><LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,.28)', 'rgba(255,255,255,0)']} style={styles.heroDivider} /><View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.todayAccuracy}%</Text><Text style={styles.metricLabel}>今日正确率</Text></View></View>
+        </LinearGradient>
         <View style={styles.memberStatusBar}>
-          <View style={styles.memberStatusCopy}>
-            <Text style={styles.memberStatusTitle}>会员权益</Text>
-            <Text numberOfLines={1} style={styles.memberStatusMeta}>{memberSummary}</Text>
-          </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={memberAction} style={({ pressed }) => [styles.memberStatusButton, pressed && styles.pressed]} disabled={!ready || !configured} onPress={() => router.push(SUBSCRIBE_ROUTE)}>
-            <Text numberOfLines={1} style={styles.memberStatusButtonText}>{memberAction}</Text>
-          </Pressable>
+          <View style={styles.memberStatusCopy}><Text style={styles.memberStatusTitle}>{memberTitle}</Text><Text numberOfLines={1} style={styles.memberStatusMeta}>{memberSummary}</Text></View>
+          <Pressable accessibilityRole="button" accessibilityLabel={memberAction} disabled={!ready || !configured} onPress={() => router.push(SUBSCRIBE_ROUTE)} style={({ pressed }) => [styles.memberStatusButton, pressed && styles.pressed]}><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={styles.memberStatusButtonText}>{memberAction}</Text></Pressable>
         </View>
-
         <View style={styles.grid}>
-          {gridItems.map((item) => {
-            const colors = itemColors(item.tone);
-            return (
-              <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.name} accessibilityHint={item.desc} onPress={item.onPress} style={({ pressed }) => [styles.gridCard, pressed && styles.pressed]}>
-                <View style={[styles.modeIcon, colors.tile]}><HandIcon name={item.icon} size={30} color={colors.icon} /></View>
-                <View style={styles.modeCopy}><Text numberOfLines={2} style={styles.modeName}>{item.name}</Text><Text numberOfLines={2} style={styles.modeDesc}>{item.desc}</Text></View>
-                <AppIcon name="chevronRight" size={15} color="#75827e" />
-              </Pressable>
-            );
-          })}
+          {gridItems.map((item) => <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.name} accessibilityHint={item.desc} onPress={item.onPress} style={({ pressed }) => [styles.gridCard, pressed && styles.pressed]}>
+            <Image accessibilityElementsHidden source={HOME_ICONS[item.icon]} resizeMode="contain" style={styles.modeIcon} />
+            <View style={styles.modeCopy}><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={[styles.modeName, item.key === 'adaptive' && styles.adaptiveName]}>{item.name}</Text>{item.key === 'adaptive' && <Text numberOfLines={2} style={styles.adaptiveDesc}>{item.desc}</Text>}</View>
+            <AppIcon name="chevronRight" size={14} color="#6E9B7E" />
+          </Pressable>)}
         </View>
-
-        <Pressable accessibilityRole="button" accessibilityLabel="智能强化" accessibilityHint="根据历史错题开始个性化训练" onPress={openAdaptive} style={({ pressed }) => [styles.adaptiveCard, pressed && styles.pressed]}>
-          <View style={styles.targetIcon}><HandIcon name="target" size={30} color="#2e8b6f" /></View>
-          <View style={styles.adaptiveCopy}>
-            <View style={styles.adaptiveLine}><Text style={styles.adaptiveTitle}>智能强化</Text><Text style={styles.adaptiveTag}>个性推荐</Text></View>
-            <Text numberOfLines={1} style={styles.adaptiveDesc}>按薄弱题型生成专项试题训练</Text>
-          </View>
-          <AppIcon name="chevronRight" size={17} color="#75827e" />
-        </Pressable>
-
-        <View style={styles.quickRow}>
-          {QUICK_ITEMS.map((item) => {
-            const colors = itemColors(item.tone);
-            return (
-              <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.name} accessibilityHint={item.desc} onPress={() => openMemberRoute(item.key as '/wrongbook' | '/stats')} style={({ pressed }) => [styles.quickItem, pressed && styles.pressed]}>
-                <View style={[styles.quickIcon, colors.tile]}><HandIcon name={item.icon} size={30} color={colors.icon} /></View>
-                <View style={styles.quickCopy}><Text style={styles.quickTitle}>{item.name}</Text><Text style={styles.quickDesc}>{item.desc}</Text></View>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <Pressable accessibilityRole="button" accessibilityLabel="给学长提建议" onPress={() => router.push('/support')} style={({ pressed }) => [styles.suggestionButton, pressed && styles.pressed]}>
-          <AppIcon name="message" size={18} color={Brand.forest} />
-          <Text style={styles.suggestionText}>给学长提建议</Text>
-        </Pressable>
-
-        <Pressable accessibilityRole="button" accessibilityLabel="关于与音色版权" onPress={() => router.push('/about')} style={({ pressed }) => [styles.aboutButton, pressed && styles.pressed]}>
-          <AppIcon name="info" size={19} color={Brand.ink} />
-          <Text style={styles.aboutText}>关于与音色版权</Text>
-        </Pressable>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5ECD9' },
-  safe: { backgroundColor: '#202438' },
-  nav: { minHeight: 48, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
-  navTitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '800', letterSpacing: 0.4 },
-  provinceChip: { minHeight: TouchTarget, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 11, borderRadius: 22, backgroundColor: 'rgba(255,255,255,.14)' },
-  provinceChipText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
-  content: { paddingHorizontal: 10, paddingTop: 7, paddingBottom: 36, gap: 8 },
-  hero: { height: 110, overflow: 'hidden', borderRadius: 30, backgroundColor: '#0c0d0e' },
-  heroImage: { opacity: 1, borderRadius: 0 },
-  heroWave: { position: 'absolute', left: '42%', right: '4%', bottom: 0, height: 28, overflow: 'hidden', flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', opacity: 0.16, transform: [{ skewX: '-8deg' }] },
+  page: { flex: 1, backgroundColor: Brand.cream },
+  safe: { backgroundColor: Brand.forestDeep },
+  nav: { minHeight: 48, paddingVertical: 6, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  navTitle: { color: Brand.textOnAccent, fontSize: TypeScale.headline, fontWeight: '800', letterSpacing: 0.4 },
+  content: { flexGrow: 1, paddingHorizontal: 15, paddingTop: 12, paddingBottom: 20, gap: 12 },
+  provinceBar: { minHeight: 44, paddingHorizontal: 11, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 10, backgroundColor: Brand.ivory, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(31,111,91,.12)', ...Shadows.card },
+  provinceCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+  provinceCaption: { color: Brand.disabled, fontSize: 11 }, provinceName: { color: Brand.forest, fontSize: 13, fontWeight: '800' },
+  provinceMeta: { paddingHorizontal: 5, paddingVertical: 1, overflow: 'hidden', borderRadius: 4, color: Brand.success, backgroundColor: 'rgba(46,139,111,.10)', fontSize: 10, fontWeight: '700' },
+  provinceAction: { minHeight: TouchTarget, marginLeft: 8, flexDirection: 'row', alignItems: 'center', gap: 3 }, provinceActionText: { color: Brand.forest, fontSize: 13, fontWeight: '800' },
+  hero: { height: 95, paddingHorizontal: 16, overflow: 'hidden', borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', ...Shadows.raised },
+  heroWave: { position: 'absolute', left: '42%', right: '4%', bottom: 0, height: 40, overflow: 'hidden', flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', opacity: 0.16, transform: [{ skewX: '-8deg' }] },
   heroWaveBar: { width: 4, borderTopLeftRadius: 4, borderTopRightRadius: 4, backgroundColor: Brand.textOnAccent },
-  heroContent: { flex: 1, paddingHorizontal: 18, paddingBottom: 10, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  heroBrand: { flex: 1, minWidth: 0, paddingRight: 8 },
-  heroTitle: { color: '#1f6f5b', fontSize: 17, lineHeight: 22, fontWeight: '900', letterSpacing: -0.5, textShadowColor: 'transparent' },
-  heroSub: { marginTop: 3, color: '#1f6f5b', fontSize: 11, lineHeight: 15, fontWeight: '700' },
-  heroData: { zIndex: 1, width: 86, height: 42, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', borderRadius: 11, backgroundColor: 'rgba(20,22,20,.62)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(244,234,213,.34)' },
-  heroMetric: { flex: 1, alignItems: 'center' },
-  metricNumber: { color: '#FFFFFF', fontSize: TypeScale.subheadline, lineHeight: 18, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  metricLabel: { marginTop: 2, color: 'rgba(255,255,255,.74)', fontSize: 11, lineHeight: 14, fontWeight: '600' },
-  heroDivider: { width: 1.2, height: 34, marginHorizontal: 4 },
-  memberStatusBar: { minHeight: 64, paddingHorizontal: 10, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.control, backgroundColor: Brand.ivory, borderWidth: StyleSheet.hairlineWidth, borderColor: Brand.border },
-  memberStatusCopy: { flex: 1, minWidth: 0, paddingLeft: 10 },
-  memberStatusTitle: { color: Brand.forest, fontSize: TypeScale.footnote, lineHeight: 17, fontWeight: '800' },
-  memberStatusMeta: { marginTop: 2, color: '#5F6F65', fontSize: 11, lineHeight: 15 },
-  memberStatusButton: { flex: 0, width: '44%', maxWidth: 210, minWidth: 132, marginRight: 10, minHeight: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest },
-  memberStatusButtonText: { color: Brand.textOnAccent, fontSize: TypeScale.footnote, fontWeight: '800' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
-  gridCard: { width: '48.6%', minHeight: 112, padding: 12, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, backgroundColor: '#ffffff', ...Shadows.card },
-  modeIcon: { width: 48, height: 48, flexShrink: 0, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  iconMint: { backgroundColor: '#DCEFE3' },
-  iconAccent: { backgroundColor: '#E4F0E8' },
-  iconCoral: { backgroundColor: '#F5E4C9' },
-  iconAmber: { backgroundColor: '#F8E7A9' },
-  modeCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
-  modeName: { color: '#191C19', fontSize: TypeScale.footnote, lineHeight: 17, fontWeight: '900' },
-  modeDesc: { marginTop: 3, color: '#75827e', fontSize: 11, lineHeight: 15 },
-  adaptiveCard: { minHeight: 75, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, borderWidth: 1, borderColor: '#B9DCCA', backgroundColor: '#E3F2E8' },
-  targetIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
-  adaptiveCopy: { flex: 1, minWidth: 0, marginLeft: 10 },
-  adaptiveLine: { flexDirection: 'row', alignItems: 'center' },
-  adaptiveTitle: { color: '#1f6f5b', fontSize: TypeScale.footnote, fontWeight: '900' },
-  adaptiveTag: { marginLeft: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden', color: '#2e8b6f', backgroundColor: '#e2f2ec', fontSize: 11, fontWeight: '700' },
-  adaptiveDesc: { marginTop: 3, color: '#75827e', fontSize: 11, lineHeight: 15 },
-  quickRow: { flexDirection: 'row', gap: 8 },
-  quickItem: { flex: 1, minHeight: 72, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, backgroundColor: '#ffffff', ...Shadows.card },
-  quickIcon: { width: 48, height: 48, flexShrink: 0, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  quickCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
-  quickTitle: { color: '#191C19', fontSize: TypeScale.footnote, lineHeight: 17, fontWeight: '900' },
-  quickDesc: { marginTop: 3, color: '#75827e', fontSize: 11, lineHeight: 15 },
-  suggestionButton: { minHeight: 48, flexDirection: 'row', gap: 7, alignSelf: 'center', marginTop: 1, paddingHorizontal: 24, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1.5, borderColor: '#1f6f5b', backgroundColor: '#ffffff' },
-  suggestionText: { color: '#1f6f5b', fontSize: TypeScale.footnote, fontWeight: '800' },
-  aboutButton: { minHeight: TouchTarget, flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 7, paddingHorizontal: 14 },
-  aboutText: { color: '#66756C', fontSize: TypeScale.caption },
-  pressed: { opacity: 0.72 },
+  heroBrand: { zIndex: 1, flexShrink: 1, minWidth: 0, paddingRight: 8 }, heroTitle: { color: Brand.textOnAccent, fontSize: 22, lineHeight: 25, fontWeight: '800', letterSpacing: 0.5 },
+  heroSub: { marginTop: 7, color: 'rgba(235,250,244,.84)', fontSize: 11.5, lineHeight: 15, fontWeight: '600', letterSpacing: 0.5 },
+  heroData: { zIndex: 1, flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 12 }, heroMetric: { minWidth: 48, alignItems: 'center' },
+  metricNumber: { color: Brand.textOnAccent, fontSize: 20, lineHeight: 23, fontWeight: '800', fontVariant: ['tabular-nums'] }, metricLabel: { marginTop: 4, color: 'rgba(235,250,244,.72)', fontSize: 10, lineHeight: 13 }, heroDivider: { width: 1.2, height: 34 },
+  memberStatusBar: { minHeight: 44, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', borderRadius: 9, backgroundColor: Brand.ivory, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(31,111,91,.10)' },
+  memberStatusCopy: { flex: 1, minWidth: 0, paddingLeft: 4, flexDirection: 'row', alignItems: 'baseline', gap: 5 }, memberStatusTitle: { color: Brand.forest, fontSize: 12, fontWeight: '800' }, memberStatusMeta: { color: '#5F6F65', fontSize: 11 },
+  memberStatusButton: { width: '40%', minHeight: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest }, memberStatusButtonText: { color: Brand.textOnAccent, fontSize: 12, fontWeight: '800' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', alignContent: 'flex-start', justifyContent: 'space-between', rowGap: 12 },
+  gridCard: { width: '48.4%', minHeight: 96, paddingHorizontal: 8, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', borderRadius: 11, backgroundColor: Brand.ivory, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(31,111,91,.12)', ...Shadows.card },
+  modeIcon: { width: 48, height: 48, flexShrink: 0 }, modeCopy: { flex: 1, minWidth: 0, marginLeft: 7 }, modeName: { color: Brand.ink, fontSize: 15, lineHeight: 19, fontWeight: '800' }, adaptiveName: { color: Brand.forest }, adaptiveDesc: { marginTop: 3, color: Brand.success, fontSize: 9, lineHeight: 12 },
+  pressed: { opacity: 0.76, transform: [{ scale: 0.98 }] },
 });

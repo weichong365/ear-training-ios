@@ -51,6 +51,7 @@
     "doctor": "npx expo-doctor",
     "test:core": "node ./scripts/core-smoke.cjs",
     "test:practice-parity": "node ./scripts/practice-parity-smoke.cjs",
+    "test:home-parity": "node ./scripts/home-parity-smoke.cjs",
     "test:provinces": "node ./scripts/province-smoke.cjs",
     "test:answers": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON ./scripts/answer-smoke.mjs",
     "test:storage": "node ./scripts/local-data-smoke.cjs",
