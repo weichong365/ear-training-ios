@@ -22,7 +22,7 @@ var PROVINCE_FRAMEWORKS = {
         { key: 'single', title: '单音', count: 5, repeats: 3, points: 5, cue: 'standardTone', answerMode: 'staff' },
         { key: 'group', title: '旋律音组：三音组、五音组', count: 4, repeats: 3, points: 4, cue: 'standardTone', groupSizes: [3, 3, 5, 5], answerMode: 'staff' },
         { key: 'interval', title: '旋律音程与和声音程', count: 4, repeats: 3, points: 4, cue: 'standardTone', melodicCount: 2, harmonicCount: 2, answerMode: 'staff' },
-        { key: 'connection', title: '和声音程连接', count: 1, repeats: 3, points: 5, cue: 'standardTone', intervalCount: 5, answerMode: 'staff' },
+        { key: 'connection', title: '音程连接', count: 1, repeats: 3, points: 5, cue: 'standardTone', intervalCount: 5, answerMode: 'staff' },
         { key: 'chord', title: '和弦', count: 5, repeats: 3, points: 5, cue: 'standardTone', answerMode: 'staff' },
         { key: 'rhythm', title: '听写节奏', count: 1, repeats: 3, points: 3, cue: 'countIn', bars: 4, systems: 2, answerMode: 'rhythmStaff' },
         { key: 'melody', title: '听写单声部旋律', count: 1, repeats: 4, points: 4, cue: 'standardTone+countIn', bars: 8, systems: 4, answerMode: 'melodyStaff' }
@@ -75,7 +75,7 @@ var PROVINCE_FRAMEWORKS = {
           key: 'interval', title: '听写旋律音程与和声音程', count: 8, repeats: 3, points: 14, cue: 'standardTone',
           melodicCount: 2, harmonicCount: 6, answerMode: 'mixed', qualityRequired: true,
           items: [
-            { key: 'intervalQuality', title: '听辨音程的性质', count: 4, repeats: 3, points: 6, cue: 'standardTone', melodicCount: 2, harmonicCount: 2, answerMode: 'choiceFill', qualityRequired: true },
+            { key: 'intervalQuality', title: '听记音程的性质', count: 4, repeats: 3, points: 6, cue: 'standardTone', melodicCount: 2, harmonicCount: 2, answerMode: 'choiceFill', qualityRequired: true },
             { key: 'intervalPitch', title: '听写音程的音高', count: 4, repeats: 3, points: 8, cue: 'standardTone', melodicCount: 0, harmonicCount: 4, answerMode: 'staff' }
           ]
         },

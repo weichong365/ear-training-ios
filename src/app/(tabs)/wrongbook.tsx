@@ -43,7 +43,7 @@ export default function WrongbookScreen() {
 
         <Text style={styles.listTitle}>按题型归类</Text>
         {groups.map((group, groupIndex) => {
-          const isOpen = expanded[group.type] ?? groupIndex === 0;
+          const isOpen = expanded[group.type] ?? false;
           return (
             <View key={group.type} style={styles.group}>
               <View style={styles.groupHead}>

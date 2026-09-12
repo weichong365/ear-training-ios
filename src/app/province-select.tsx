@@ -82,7 +82,7 @@ export default function ProvinceSelectScreen() {
                       <Text style={styles.cardName}>{province.label}</Text>
                       {!province.dedicated && <Text style={styles.genericTag}>通用模板</Text>}
                     </View>
-                    <AppIcon name={provinceId === province.id ? 'check' : 'chevronRight'} size={15} color="#2D7C59" />
+                    <AppIcon name={provinceId === province.id ? 'check' : 'chevronRight'} size={15} color="#2e8b6f" />
                   </View>
                   <Text numberOfLines={2} style={styles.cardSummary}>{province.summary}</Text>
                 </Pressable>

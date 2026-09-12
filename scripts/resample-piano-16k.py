@@ -1,6 +1,6 @@
 """
 把钢琴采样库从 20kHz 统一重采样到 16kHz，以压缩小程序主包体积。
-比率 5:4（20000 -> 16000），线性插值；输出 29120 样本（1.82s），
+比率 5:4（20000 -> 16000），线性插值；输出 29120 样本（包内 1.82s），
 规格保持 mono / PCM16。一次性处理两端目录：
   - ios-app/assets/audio/piano/  （iOS App，27 个）
   - assets/audio/piano/          （小程序，27 个）
@@ -12,6 +12,7 @@ import os
 
 SRC_RATE = 20000
 DST_RATE = 16000
+TARGET_LEN = 29120
 
 
 def read_pcm(path):
@@ -60,15 +61,16 @@ def write_wav(path, samples):
 
 def resample(src):
     n = len(src)
-    out_n = round(n * DST_RATE / SRC_RATE)
     out = []
-    for j in range(out_n):
+    for j in range(TARGET_LEN):
         pos = j * SRC_RATE / DST_RATE  # 源位置（20000/16000 = 1.25）
         i0 = int(pos)
         frac = pos - i0
         i1 = i0 + 1
-        if i1 >= n:
-            v = src[min(i0, n - 1)]
+        if i0 >= n:
+            v = 0
+        elif i1 >= n:
+            v = src[i0]
         else:
             v = src[i0] * (1 - frac) + src[i1] * frac
         out.append(v)

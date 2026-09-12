@@ -112,7 +112,7 @@ function verifySampleQuality(sample, file) {
   const { samples, sampleRate } = sample;
   const duration = samples.length / sampleRate;
   const checks = [
-    [Math.abs(duration - 1.85) <= 0.01 + Number.EPSILON, `duration ${duration.toFixed(5)}s; expected 1.85 ±0.01s`],
+    [duration >= 1.80 && duration <= 1.86, `duration ${duration.toFixed(5)}s; expected 1.80~1.86s (包内 1.82s 或完整 1.85s 均可)`],
     [samples.every(Number.isFinite), 'PCM contains non-finite values'],
     [Math.abs(samples.reduce((sum, value) => sum + value / 32768, 0) / samples.length) <= 0.005, 'DC offset exceeds 0.5% full scale'],
     [samples.every((value) => value > -32768 && value < 32767), 'PCM clips at full scale'],

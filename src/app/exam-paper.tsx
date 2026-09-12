@@ -124,7 +124,7 @@ function ExamQuestionCard({ question, index, answer, unlocked, playCount, active
     {showSection && <View style={styles.sectionDivider}><Text style={styles.sectionDividerText}>{question.sectionTitle}</Text></View>}
     <View style={[styles.paperQuestion, result?.correct && styles.paperCorrect, result && !result.correct && styles.paperWrong]}>
       <View style={styles.questionHead}>
-        <View style={styles.questionHeadCopy}><Text style={styles.questionTitle}>{index + 1}. {question.typeName}</Text><Text style={styles.questionInstruction}>{question.choice ? '听辨后选择与音响一致的答案' : isTimedQuestion(question) ? '选择拍号、调号和时值后，在对应小节写谱' : '在五线谱上写出你听到的答案'}</Text></View>
+        <View style={styles.questionHeadCopy}><Text style={styles.questionTitle}>{index + 1}. {question.typeName}</Text><Text style={styles.questionInstruction}>{question.choice ? '听记后选择与音响一致的答案' : isTimedQuestion(question) ? '选择拍号、调号和时值后，在对应小节写谱' : '在五线谱上写出你听到的答案'}</Text></View>
         <Text style={styles.points}>{question.points} 分</Text>
       </View>
 
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
   sectionDivider: { marginTop: 8, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 4, backgroundColor: PAPER.ink },
   sectionDividerText: { color: '#FFFFFF', fontSize: TypeScale.subheadline, fontWeight: '900', fontFamily: Fonts.serif },
   paperQuestion: { padding: 14, gap: 12, borderRadius: 4, borderWidth: 1, borderColor: PAPER.line, backgroundColor: PAPER.bg },
-  paperCorrect: { borderColor: '#2E7D5B', backgroundColor: '#F1F8F4' },
+  paperCorrect: { borderColor: '#2e8b6f', backgroundColor: '#e2f2ec' },
   paperWrong: { borderColor: '#C0392B', backgroundColor: '#FBF0EE' },
   questionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   questionHeadCopy: { flex: 1, paddingRight: 8 },
@@ -367,11 +367,11 @@ const styles = StyleSheet.create({
   choiceList: { gap: 9 },
   choiceOption: { minHeight: 52, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 4, borderWidth: 1.5, borderColor: PAPER.line, backgroundColor: PAPER.bg },
   choiceActive: { borderColor: PAPER.ink, backgroundColor: '#F2F2F2' },
-  choiceCorrect: { borderColor: '#2E7D5B', backgroundColor: '#F1F8F4' },
+  choiceCorrect: { borderColor: '#2e8b6f', backgroundColor: '#e2f2ec' },
   choiceWrong: { borderColor: '#C0392B', backgroundColor: '#FBF0EE' },
   choiceLabel: { width: 25, height: 25, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#EFEFEF', borderWidth: 1, borderColor: PAPER.line },
   choiceLabelActive: { backgroundColor: PAPER.ink, borderColor: PAPER.ink },
-  choiceLabelCorrect: { backgroundColor: '#2E7D5B', borderColor: '#2E7D5B' },
+  choiceLabelCorrect: { backgroundColor: '#2e8b6f', borderColor: '#2e8b6f' },
   choiceLabelWrong: { backgroundColor: '#C0392B', borderColor: '#C0392B' },
   choiceLabelText: { color: PAPER.ink, fontSize: TypeScale.caption, fontWeight: '900' },
   choiceLabelTextActive: { color: '#FFFFFF' },

@@ -120,6 +120,7 @@ export default function SubscribeScreen() {
           <Text style={styles.activeBody}>
             {expiresAt ? `${willRenew ? '下一续订日' : '当前使用期截止'}：${formatDate(expiresAt)}` : '感谢你支持练耳搭子'}
           </Text>
+          {!isTrial ? <Text style={styles.renewalTip}>续费后剩余天数会从当前剩余天数往上叠加。</Text> : null}
         </View>
         <Pressable accessibilityRole="button" onPress={continueToTarget} style={styles.primaryButton}><Text style={styles.primaryText}>继续训练</Text></Pressable>
         <Pressable accessibilityRole="button" onPress={manage} style={styles.secondaryButton}><Text style={styles.secondaryText}>管理 Apple 订阅</Text></Pressable>
@@ -246,5 +247,6 @@ const styles = StyleSheet.create({
   activeMark: { width: 62, height: 62, alignItems: 'center', justifyContent: 'center', borderRadius: 31, backgroundColor: '#FFFFFF' },
   activeTitle: { marginTop: 16, color: Brand.textOnAccent, fontSize: TypeScale.title2, fontWeight: '900' },
   activeBody: { marginTop: 8, color: Brand.textOnAccentMuted, fontSize: TypeScale.footnote },
+  renewalTip: { marginTop: 10, color: '#E8CB73', fontSize: TypeScale.caption, lineHeight: 18 },
   manageHint: { color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' },
 });

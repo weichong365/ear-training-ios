@@ -3,7 +3,7 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-na
 import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
 
 const SECTIONS = [
-  ['一、服务内容', '练耳搭子提供单音、音程、和弦、节奏、旋律听辨，全国各省真题框架模拟考试，以及错题与练习统计等数字内容服务。'],
+  ['一、服务内容', '练耳搭子提供单音、音程、和弦、节奏、旋律听记，全国各省真题框架模拟考试，以及错题与练习统计等数字内容服务。'],
   ['二、免费试用', '符合 Apple 条件的新订阅用户可享受 App Store Connect 所显示期限的免费试用。开始试用时即建立自动续订订阅，但在免费期结束前不会收费。每个订阅组的试用资格由 Apple 判定。'],
   ['三、自动续订与扣款', '试用或当前订阅期结束前至少 24 小时，如未取消，Apple 将按购买页面显示的价格和周期自动续订，并从你的 Apple ID 付款账户扣款。实际价格、币种和税费以购买确认页为准。'],
   ['四、取消与管理', '你可以随时在 iPhone“设置—Apple ID—订阅”或本 App 的“管理 Apple 订阅”入口关闭自动续订。取消后，在当前试用或已付费周期结束前仍可使用全部功能。'],

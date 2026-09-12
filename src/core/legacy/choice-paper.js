@@ -382,7 +382,7 @@ function buildHenan(framework) {
   for (let index = 0; index < 4; index++) {
     addStaffQuestion(first, create, {
       sectionTitle: matchTitle,
-      title: `单音听辨 ${index + 1}`,
+      title: `单音听记 ${index + 1}`,
       pointKey: 'single', points: 5, repeatCount: 2,
       audio: generate('single')
     });
@@ -392,31 +392,31 @@ function buildHenan(framework) {
     const audio = take((question) => question.examSection === 'noteGroup' && question.groupSize === size, `${size}音组`);
     addStaffQuestion(first, create, {
       sectionTitle: matchTitle,
-      title: `旋律音组听辨 ${index + 1}`,
+      title: `旋律音组听记 ${index + 1}`,
       pointKey: 'noteGroup', points: 5, repeatCount: 2, audio
     });
   });
 
   const melodicPitch = take((question) => question.examSection === 'interval' && !question.harmonic, '旋律音程');
   addStaffQuestion(first, create, {
-    sectionTitle: matchTitle, title: '旋律音程听辨', pointKey: 'melodicIntervalPitch',
+    sectionTitle: matchTitle, title: '旋律音程听记', pointKey: 'melodicIntervalPitch',
     points: 5, repeatCount: 2, audio: melodicPitch
   });
   const melodicQuality = take((question) => question.examSection === 'interval' && !question.harmonic, '旋律音程性质');
   addTextQuestion(first, create, {
-    sectionTitle: matchTitle, title: '旋律音程性质听辨', pointKey: 'melodicIntervalQuality',
+    sectionTitle: matchTitle, title: '旋律音程性质听记', pointKey: 'melodicIntervalQuality',
     points: 5, repeatCount: 2, audio: melodicQuality,
     correctText: melodicQuality.intervalName, textPool: INTERVAL_NAMES
   });
 
   const harmonicPitch = take((question) => question.examSection === 'interval' && question.harmonic, '和声音程');
   addStaffQuestion(first, create, {
-    sectionTitle: matchTitle, title: '和声音程听辨', pointKey: 'harmonicIntervalPitch',
+    sectionTitle: matchTitle, title: '和声音程听记', pointKey: 'harmonicIntervalPitch',
     points: 5, repeatCount: 2, audio: harmonicPitch
   });
   const harmonicQuality = take((question) => question.examSection === 'interval' && question.harmonic, '和声音程性质');
   addTextQuestion(first, create, {
-    sectionTitle: matchTitle, title: '和声音程性质听辨', pointKey: 'harmonicIntervalQuality',
+    sectionTitle: matchTitle, title: '和声音程性质听记', pointKey: 'harmonicIntervalQuality',
     points: 5, repeatCount: 2, audio: harmonicQuality,
     correctText: harmonicQuality.intervalName, textPool: INTERVAL_NAMES
   });
@@ -424,13 +424,13 @@ function buildHenan(framework) {
   for (let index = 0; index < 3; index++) {
     const audio = take((question) => question.examSection === 'chord', '和弦');
     addStaffQuestion(first, create, {
-      sectionTitle: matchTitle, title: `和弦听辨 ${index + 1}`, pointKey: 'chordPitch',
+      sectionTitle: matchTitle, title: `和弦听记 ${index + 1}`, pointKey: 'chordPitch',
       points: 5, repeatCount: 2, audio
     });
   }
   const chord = take((question) => question.examSection === 'chord', '和弦性质');
   addTextQuestion(first, create, {
-    sectionTitle: matchTitle, title: '和弦性质听辨', pointKey: 'chordQuality',
+    sectionTitle: matchTitle, title: '和弦性质听记', pointKey: 'chordQuality',
     points: 5, repeatCount: 2, audio: chord,
     correctText: chordQuality(chord), textPool: CHORD_NAMES
   });
@@ -439,7 +439,7 @@ function buildHenan(framework) {
     const audio = generate('rhythm');
     addStaffQuestion(second, create, {
       sectionTitle: mismatchTitle,
-      title: `节奏听辨 ${index + 1}（选出不一致项）`,
+      title: `节奏听记 ${index + 1}（选出不一致项）`,
       pointKey: 'rhythmMismatch', points: 5, repeatCount: 2, audio,
       mutator: mutateRhythmQuestion
     });
@@ -448,7 +448,7 @@ function buildHenan(framework) {
     const audio = generate('melody');
     addStaffQuestion(second, create, {
       sectionTitle: mismatchTitle,
-      title: `旋律听辨 ${index + 1}（选出不一致项）`,
+      title: `旋律听记 ${index + 1}（选出不一致项）`,
       pointKey: 'melodyMismatch', points: 5, repeatCount: 2, audio,
       mutator: mutateMelodyQuestion
     });

@@ -10,6 +10,7 @@ type LocalDataNormalizer = {
   normalizeWrongRecords(value: unknown): WrongRecord[];
   normalizeExamSession(value: unknown): ExamSession | null;
   normalizeExamResults(value: unknown): ExamResultRecord[];
+  aggregatePracticeStats(records: PracticeRecord[]): PracticeStats;
 };
 
 // 纯函数兼容层同时供 Node 回归脚本执行；不额外引入运行时依赖。
@@ -31,6 +32,20 @@ export type PracticeRecord = {
   createdAt: number;
   sessionId?: string;
   modeName?: string;
+};
+
+export type PracticeStats = {
+  sessions: number;
+  totalQuestions: number;
+  accuracy: number;
+  accuracyTrend: number | null;
+  streak: number;
+  trend7day: { label: string; total: number; correct: number; accuracy: number; isToday: boolean }[];
+  todayCount: number;
+  todayAccuracy: number;
+  byType: Record<string, { attempts: number; correct: number; wrong: number; accuracy: number; errorRate: number }>;
+  wrongByType: Record<string, { attempts: number; correct: number; wrong: number; accuracy: number; errorRate: number }>;
+  recent: { id: string; modeName: string; createdAt: number; total: number; correct: number; accuracy: number }[];
 };
 
 export type WrongRecord = {
@@ -77,12 +92,17 @@ async function readList<T>(key: string): Promise<T[]> {
   }
 }
 
+function canonicalPracticeType(type: PracticeQuestion['type']): PracticeType {
+  return (type === 'intervalConnection' ? 'connection' : type) as PracticeType;
+}
+
 export async function savePracticeResult(question: PracticeQuestion, correct: boolean, context: { sessionId?: string; modeName?: string } = {}) {
   const now = Date.now();
+  const normalizedType = canonicalPracticeType(question.type);
   const records = await readList<PracticeRecord>(RECORDS_KEY);
   records.unshift({
     id: `r_${now}_${Math.random().toString(36).slice(2, 7)}`,
-    type: question.type as PracticeType,
+    type: normalizedType,
     correct,
     createdAt: now,
     sessionId: context.sessionId,
@@ -106,7 +126,7 @@ export async function savePracticeResult(question: PracticeQuestion, correct: bo
       wrongs.unshift({
         id: `w_${now}_${Math.random().toString(36).slice(2, 7)}`,
         knowledgeKey: question.knowledgeKey,
-        type: question.type as PracticeType,
+        type: normalizedType,
         typeName: question.typeName,
         answerText: question.answerText,
         errorCount: 1,
@@ -120,6 +140,10 @@ export async function savePracticeResult(question: PracticeQuestion, correct: bo
 
 export async function getPracticeRecords() {
   return normalizeLocalData.normalizePracticeRecords(await readList<unknown>(RECORDS_KEY));
+}
+
+export async function getPracticeStats(): Promise<PracticeStats> {
+  return normalizeLocalData.aggregatePracticeStats(await getPracticeRecords());
 }
 
 export async function getAudioVolume() {

@@ -4,7 +4,7 @@
  * 输入：G3-A5 每个半音一份定音 PCM16 样本 + 题目数据
  * 输出：一段连续的单声道 PCM16 WAV。播放阶段不再移调、解码或逐音符调度。
  */
-// 钢琴采样统一为 16kHz，进一步压缩主包体积（16kHz 对听辨足够）。
+// 钢琴采样统一为 16kHz，进一步压缩主包体积（16kHz 对听记足够）。
 const SAMPLE_RATE = 16000;
 const STANDARD_MIDI = 69;
 const STANDARD_START = 0.08;
@@ -74,8 +74,8 @@ function parsePcm16Wav(data) {
   return { sampleRate: SAMPLE_RATE, samples: new Int16Array(pcmBuffer) };
 }
 
-function addNote(events, midi, start, duration, velocity = 0.86) {
-  events.push({ type: 'note', midi, start, duration: Math.max(0.06, duration), velocity });
+function addNote(events, midi, start, duration, velocity = 0.86, release = RELEASE_SECONDS) {
+  events.push({ type: 'note', midi, start, duration: Math.max(0.06, duration), velocity, release });
 }
 
 function buildQuestionTimeline(question) {
@@ -90,8 +90,8 @@ function buildQuestionTimeline(question) {
 
   switch (question.type) {
     case 'single':
-      addNote(events, question.midis[0], QUESTION_START, 1.4, 0.94);
-      end = QUESTION_START + 1.55;
+      addNote(events, question.midis[0], QUESTION_START, 1.77, 0.94);
+      end = QUESTION_START + 1.92;
       break;
     case 'interval':
       if (question.harmonic) {
@@ -109,10 +109,14 @@ function buildQuestionTimeline(question) {
       end = QUESTION_START + question.chords.length * 1.12 + 0.15;
       break;
     case 'chord':
-      // 和弦听辨必须是柱式和弦：所有采样写入完全相同的起始帧。
+      // 和弦听记必须是柱式和弦：所有采样写入完全相同的起始帧。
       // 旧逻辑每个音错开 35ms，会在真机上听成轻微琶音。
-      question.midis.forEach((midi) => addNote(events, midi, QUESTION_START, 1.7, 0.58));
-      end = QUESTION_START + 1.95;
+      // 不同音高的钢琴采样自然衰减时长差异很大（高音约 0.5s、低音约 1.8s 才衰减完），
+      // 若按采样自然衰减混音，低音会拖尾、高音提前消失，听成“尾音参差”。
+      // 因此把持续时长收敛到 1.3s（此时绝大多数和弦音仍可闻），并统一 0.3s release 渐隐，
+      // 让所有音在同一时刻平滑结束，保证“同时开始、同时结束”。
+      question.midis.forEach((midi) => addNote(events, midi, QUESTION_START, 1.3, 0.58, 0.3));
+      end = QUESTION_START + 1.7;
       break;
     case 'melody': {
       const beatSeconds = 60 / question.bpm;
@@ -135,17 +139,29 @@ function buildQuestionTimeline(question) {
       let cursor = 0.22;
       const numerator = Number(question.meterNumerator) || 4;
       const denominator = Number(question.meterDenominator) || 4;
-      const countInCount = denominator === 8 && numerator === 6 ? 2 : numerator;
-      const countInStep = denominator === 8 ? (numerator === 6 ? 1.5 : 0.5) : 1;
+      const countInCount = denominator === 8 && numerator === 6 ? 6 : numerator;
+      const countInStep = denominator === 8 ? 0.5 : 1;
       for (let index = 0; index < countInCount; index++) {
-        events.push({ type: 'click', start: cursor, accent: index === 0 });
+        const accent = denominator === 8 && numerator === 6 ? (index === 0 || index === 3) : index === 0;
+        events.push({ type: 'click', start: cursor, accent });
         cursor += beatSeconds * countInStep;
       }
-      question.beats.forEach((beat) => {
-        const duration = Math.abs(beat) * beatSeconds;
-        if (beat > 0) addNote(events, STANDARD_MIDI, cursor, Math.min(0.78, duration * 0.84), 0.84);
-        cursor += duration;
-      });
+      const sourceEvents = Array.isArray(question.rhythmEvents)
+        ? question.rhythmEvents.reduce((all, bar) => all.concat(bar), [])
+        : question.beats.map((beat) => ({ duration: Math.abs(beat), rest: beat < 0, tieToNext: false }));
+      for (let index = 0; index < sourceEvents.length; index++) {
+        const source = sourceEvents[index];
+        let beats = Math.abs(Number(source.duration) || 0);
+        if (!source.rest) {
+          while (sourceEvents[index].tieToNext && sourceEvents[index + 1] && !sourceEvents[index + 1].rest) {
+            index++;
+            beats += Math.abs(Number(sourceEvents[index].duration) || 0);
+          }
+          const duration = beats * beatSeconds;
+          addNote(events, STANDARD_MIDI, cursor, Math.max(0.16, duration * 0.94), 0.84);
+        }
+        cursor += beats * beatSeconds;
+      }
       end = cursor + 0.3;
       break;
     }
@@ -157,11 +173,12 @@ function buildQuestionTimeline(question) {
 }
 
 function mixNote(output, sample, event) {
+  const release = Math.max(0.02, Number(event.release) || RELEASE_SECONDS);
   const startFrame = Math.max(0, Math.round(event.start * SAMPLE_RATE));
-  const requestedFrames = Math.round((event.duration + RELEASE_SECONDS) * SAMPLE_RATE);
+  const requestedFrames = Math.round((event.duration + release) * SAMPLE_RATE);
   const frames = Math.min(sample.length, requestedFrames, output.length - startFrame);
   if (frames <= 0) return;
-  const releaseFrames = Math.min(frames, Math.round(RELEASE_SECONDS * SAMPLE_RATE));
+  const releaseFrames = Math.min(frames, Math.round(release * SAMPLE_RATE));
   const releaseStart = frames - releaseFrames;
   for (let index = 0; index < frames; index++) {
     const envelope = index < releaseStart ? 1 : (frames - index) / Math.max(1, releaseFrames);
@@ -171,9 +188,9 @@ function mixNote(output, sample, event) {
 
 function mixClick(output, event) {
   const startFrame = Math.max(0, Math.round(event.start * SAMPLE_RATE));
-  const frames = Math.min(Math.round(0.05 * SAMPLE_RATE), output.length - startFrame);
+  const frames = Math.min(Math.round(0.08 * SAMPLE_RATE), output.length - startFrame);
   const frequency = event.accent ? 1760 : 1180;
-  const amplitude = event.accent ? 0.42 : 0.3;
+  const amplitude = event.accent ? 0.68 : 0.5;
   for (let index = 0; index < frames; index++) {
     const envelope = Math.pow(1 - index / frames, 3);
     const phase = 2 * Math.PI * frequency * index / SAMPLE_RATE;
@@ -231,10 +248,21 @@ function renderQuestionWav(question, bank) {
   };
 }
 
+function renderNoteWav(sample, options = {}) {
+  if (!sample || !sample.samples) throw new Error('定音采样未准备完成');
+  const duration = Math.max(0.08, Number(options.duration) || 1.77);
+  const release = Math.max(0.02, Number(options.release) || RELEASE_SECONDS);
+  const velocity = Math.max(0, Math.min(1, Number(options.velocity) || 0.94));
+  const output = new Float32Array(Math.ceil((duration + release) * SAMPLE_RATE));
+  mixNote(output, sample.samples, { start: 0, duration, release, velocity });
+  return { arrayBuffer: encodePcm16Wav(output), duration: duration + release };
+}
+
 module.exports = {
   SAMPLE_RATE,
   parsePcm16Wav,
   buildQuestionTimeline,
   renderQuestionWav,
+  renderNoteWav,
   encodePcm16Wav
 };

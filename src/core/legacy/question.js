@@ -1,51 +1,55 @@
-/**
- * 出题器：单音、音程听辨、和弦、节奏、旋律听辨
- */
+
+
 const {
   INTERVALS, CHORDS,
   randInt, shuffle, byLevel, midiToName
 } = require('./theory');
+const { RHYTHM_BANK_2025 } = require('./rhythm-bank-2025');
 
-// 60 套模拟卷的完整考点作为唯一出题标准。数值 3 仅用于兼容旧知识点键和历史记录，
-// 不再代表面向用户的难度等级。
+
 const EXAM_STANDARD_LEVEL = 3;
 
-// 出题音域统一为 G3-A5（真题范围），所有题型与难度档共用。
+
 const RANGE = {
   1: { low: 55, high: 81 },
   2: { low: 55, high: 81 },
   3: { low: 55, high: 81 }
 };
 
-// 离线钢琴采样库的物理音域边界（note-assets.ts 内置 G3-A5 共 27 个精确采样）。
-// 所有题型产出的 MIDI 必须落在此范围内，否则渲染时抛「缺少 MIDI xx 定音采样」。
-const SAMPLE_MIDI_MIN = 55; // G3
-const SAMPLE_MIDI_MAX = 81; // A5
 
-// 变化音（黑键）占比策略：所有题型统一「变化音占比更小」，自然音为主。
-// CHROMATIC_RATIO_LOW：低变化音（进阶档），CHROMATIC_RATIO_SOME：中低变化音（冲刺档，仍以自然音为主）。
+const SAMPLE_MIDI_MIN = 55;
+const SAMPLE_MIDI_MAX = 81;
+
+
 const CHROMATIC_RATIO_LOW = 0.15;
 const CHROMATIC_RATIO_SOME = 0.30;
 
-// NATURAL_PCS：自然音级（白键）的 MIDI 音级集合。
+
 const NATURAL_PCS = [0, 2, 4, 5, 7, 9, 11];
 
-// 和弦根音允许的音级集合：C 大调 / G 大调 / F 大调 / a 小调 自然音级的并集。
-// 即除 C♯(1)/D♯(3)/G♯(8) 外的 9 个音级。
-const CHORD_ROOT_PCS = [0, 2, 4, 5, 6, 7, 9, 10, 11];
 
-// 后缀升号拼写表（与 pitch-spelling 的 defaultPitchSpelling 一致）：C#4 而非 #C4。
+const SINGLE_ALTERED_POOL = [61, 63, 66, 68, 70, 73, 75, 78, 80];
+
+
+const CHORD_ROOT_PCS = [0, 2, 4, 5, 7, 9, 11];
+
+
+const CHORD_ROOT_SPELLING = { 0: 'C', 2: 'D', 4: 'E', 5: 'F', 7: 'G', 9: 'A', 11: 'B' };
+
+
+const SPELL_LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const SPELL_LETTER_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+const SPELL_NATURAL_PCS = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+
 const SHARP_SPELLING_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-/** MIDI -> 音名拼写（升号后缀，如 C#4）。 */
+
 function midiToSpelling(midi) {
   return `${SHARP_SPELLING_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
 }
 
-/**
- * 按变化音策略从 [low, high] 抽取一个音：
- * 'natural' 仅自然音 / 'low' 少量变化音(≈15%) / 'some' 中低变化音(≈30%，仍以自然音为主) / 'any' 全半音均匀。
- */
+
 function pickChromaticNote(chromatic, low, high) {
   if (chromatic === 'natural') return pickNatural(low, high);
   if (chromatic === 'any') return randInt(low, high);
@@ -58,79 +62,76 @@ function pickChromaticNote(chromatic, low, high) {
   return blacks.length ? blacks[randInt(0, blacks.length - 1)] : pickNatural(low, high);
 }
 
-/** 和弦根音：限定在 C/G/F 大调 + a 小调 的音级集合内（排除 C♯/D♯/G♯）。 */
-function pickChordRoot(low, high) {
+
+function pickChordRoot(low, high, excludePcs) {
   const candidates = [];
   for (let midi = low; midi <= high; midi++) {
-    if (CHORD_ROOT_PCS.includes(midi % 12)) candidates.push(midi);
+    const pc = midi % 12;
+    if (CHORD_ROOT_PCS.includes(pc) && !(excludePcs && excludePcs.includes(pc))) candidates.push(midi);
+  }
+  if (!candidates.length) {
+    for (let midi = low; midi <= high; midi++) {
+      if (CHORD_ROOT_PCS.includes(midi % 12)) candidates.push(midi);
+    }
   }
   return candidates[randInt(0, candidates.length - 1)];
 }
-// 单音听记的扩充分层：音域统一 G3-A5，仅变化音占比随难度小幅变化（变化音始终占少数）。
+
 const SINGLE_TIERS = {
-  1: { low: 55, high: 81, chromatic: 'natural' }, // 入门：仅自然音
-  2: { low: 55, high: 81, chromatic: 'low' },     // 进阶：少量变化音
-  3: { low: 55, high: 81, chromatic: 'some' }     // 冲刺：自然音为主 + 少量变化音
+  1: { low: 55, high: 81, chromatic: 'natural' },
+  2: { low: 55, high: 81, chromatic: 'low' },
+  3: { low: 55, high: 81, chromatic: 'some' }
 };
 
-// 音组听记的扩充分层：音域统一 G3-A5，仅变化音占比随难度小幅变化。
-// 三音组/五音组均从 [low, high] 随机抽取、相邻跨度≤八度、组内不重复，变化音始终占少数。
+
 const GROUP_TIERS = {
-  1: { low: 55, high: 81, chromatic: 'natural' }, // 入门：仅自然音
-  2: { low: 55, high: 81, chromatic: 'low' },     // 进阶：少量变化音
-  3: { low: 55, high: 81, chromatic: 'some' }     // 冲刺：自然音为主 + 少量变化音
+  1: { low: 55, high: 81, chromatic: 'natural' },
+  2: { low: 55, high: 81, chromatic: 'low' },
+  3: { low: 55, high: 81, chromatic: 'some' }
 };
 
-// 音程听记的扩充分层：音程种类(半音数集合) + 根音音域 + 变化音策略。
-// semitones 直接对应 INTERVALS 的半音数，粒度比 level 更细、可独立指定。
-// 入门→冲刺 依次纳入更不协和、更难辨的音程，变化音占比始终更小（自然音为主）。
+
 const INTERVAL_TIERS = {
-  1: { semitones: [2, 4, 5, 7, 12], low: 55, high: 81, chromatic: 'natural' },        // 入门：大二/大三/纯四/纯五/纯八，仅自然音根音
-  2: { semitones: [2, 3, 4, 5, 7, 8, 9, 12], low: 55, high: 81, chromatic: 'low' },   // 进阶：+小三/小六/大六，少量变化音根音
-  3: { semitones: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], low: 55, high: 81, chromatic: 'some' } // 冲刺：全 12 种(含增四/七度)，自然音为主+少量变化音根音
+  1: { semitones: [2, 4, 5, 7, 12], low: 55, high: 81, chromatic: 'natural' },
+  2: { semitones: [2, 3, 4, 5, 7, 8, 9, 12], low: 55, high: 81, chromatic: 'low' },
+  3: { semitones: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], low: 55, high: 81, chromatic: 'some' }
 };
 
-// 和弦听记的扩充分层：仅 大三/小三/减三/增三 四种三和弦 × 原位/第一转位/第二转位。
-// 任何三和弦的根音都限定在 C/G/F 大调 + a 小调 的音级集合（pickChordRoot，排除 C♯/D♯/G♯）。
-// 入门→冲刺 依次纳入更不协和、更难辨的和弦与转位；音域统一 G3-A5。
+
 const CHORD_TIERS = {
-  1: { qualities: ['major', 'minor'], inversions: [0], low: 55, high: 81, chromatic: 'natural' },        // 入门：大三/小三、原位
-  2: { qualities: ['major', 'minor', 'dim', 'aug'], inversions: [0, 1, 2], low: 55, high: 81, chromatic: 'low' }, // 进阶：+减三/增三、含第一/第二转位
-  3: { qualities: ['major', 'minor', 'dim', 'aug'], inversions: [0, 1, 2], low: 55, high: 81, chromatic: 'some' } // 冲刺：全四型三和弦 × 三转位
+  1: { qualities: ['major', 'minor'], inversions: [0], low: 55, high: 81, chromatic: 'natural' },
+  2: { qualities: ['major', 'minor', 'dim', 'aug'], inversions: [0, 1, 2], low: 55, high: 81, chromatic: 'low' },
+  3: { qualities: ['major', 'minor', 'dim', 'aug'], inversions: [0, 1, 2], low: 55, high: 81, chromatic: 'some' }
 };
 
-// 节奏听记的扩充分层：拍号(meters) + 时值复杂度(level) + 休止符(allowRest) + 速度(bpm)。
-// level 对应 EXAM_BAR_PATTERNS 的难度档：1 基本时值(四分/八分/二分) / 2 +附点·切分·休止 / 3 +十六分·三连音·复杂休止。
-// 入门→冲刺 逐步纳入更难拍号与更细时值，并放开休止符。默认（模拟考试、专项练习）
-// 仍沿用 EXAM_STANDARD_LEVEL=3 全量时值，仅在省份/难度明确指定 tier 时才启用分层。
+
 const RHYTHM_TIERS = {
-  1: { level: 1, meters: ['2/4', '3/4', '4/4'], allowRest: false, bpm: 66 },          // 入门：简单拍、基本时值、无休止
-  2: { level: 2, meters: ['2/4', '3/4', '4/4', '6/8'], allowRest: true, bpm: 76 },    // 进阶：+6/8、附点/切分、含休止
-  3: { level: 3, meters: ['2/4', '3/4', '4/4', '3/8', '6/8'], allowRest: true, bpm: 86 } // 冲刺：全拍号、十六分/三连音/复杂休止
+  1: { level: 1, meters: ['2/4', '3/4', '4/4'], allowRest: true, bpm: 66 },
+  2: { level: 2, meters: ['2/4', '3/4', '4/4', '6/8'], allowRest: true, bpm: 76 },
+  3: { level: 3, meters: ['2/4', '3/4', '4/4', '3/8', '6/8'], allowRest: true, bpm: 86 }
 };
 
-// 旋律听记的扩充分层：调号(keys) + 拍号(meters) + 时值复杂度(level) + 变化音(chromatic) + 休止符(allowRest) + 速度(bpm)。
-// level 对应 EXAM_BAR_PATTERNS 的难度档（与节奏听记共用同一套节奏型库）；
-// keys 为调号池（C=无升降，G/F=一升一降，a=a 小调无调号），用既有 keySignature 记谱约定。
-// chromatic: 'natural' 仅调号内变化音(F♯/B♭)；'some' 额外注入一个调外半音经过音(♯，避开终止式与调号音)。
-// 默认（模拟考试、专项练习）仍沿用 EXAM_STANDARD_LEVEL=3 与 pickMelodyKey/pickExamMeter，
-// 仅在省份/难度明确指定 tier 时才启用分层。
+// PCM 渲染器统一按“四分音符长度”计算：3/8 的 ♪=96 等于内部 ♩=48；
+// 6/8 的附点四分音符=52 等于内部 ♩=78。
+function rhythmPlaybackBpm(meterId, fallback = 72) {
+  return { '2/4': 64, '4/4': 60, '3/8': 48, '6/8': 78 }[meterId] || fallback;
+}
+
+
 const MELODY_TIERS = {
-  1: { keys: ['C'], meters: ['2/4', '3/4', '4/4'], level: 1, chromatic: 'natural', allowRest: false, bpm: 70 },          // 入门：无升降、简单拍、基本时值、无休止
-  2: { keys: ['C', 'G', 'F', 'a'], meters: ['2/4', '3/4', '4/4', '6/8'], level: 2, chromatic: 'natural', allowRest: true, bpm: 78 }, // 进阶：一升一降 + a 小调、+6/8、附点/切分、含休止
-  3: { keys: ['C', 'G', 'F', 'a'], meters: ['2/4', '3/4', '4/4', '3/8', '6/8'], level: 3, chromatic: 'some', allowRest: true, bpm: 86 } // 冲刺：全拍号、十六分/三连音、含调外变化音
+  1: { keys: ['C'], meters: ['2/4', '3/4', '4/4'], level: 1, chromatic: 'natural', allowRest: false, bpm: 70 },
+  2: { keys: ['C', 'G', 'F'], meters: ['2/4', '3/4', '4/4', '6/8'], level: 2, chromatic: 'natural', allowRest: true, bpm: 78 },
+  3: { keys: ['C', 'G', 'F'], meters: ['2/4', '3/4', '4/4', '3/8', '6/8'], level: 3, chromatic: 'some', allowRest: true, bpm: 86 }
 };
 
-// 和声连接听记（江西卷特有）的扩充分层：整条连接内每个音程的种类(半音数集合) + 根音音域 + 变化音策略。
-// 江西卷卷面即「和声音程连接」，整条连接始终为和声音程；分层难度梯度与 INTERVAL_TIERS 一致，
-// 入门→冲刺 依次纳入更不协和、更难辨的音程，变化音占比始终更小（自然音为主）。
+
 const CONNECTION_TIERS = {
-  1: { semitones: [2, 4, 5, 7, 12], low: 55, high: 81, chromatic: 'natural' },        // 入门：大二/大三/纯四/纯五/纯八，仅自然音根音
-  2: { semitones: [2, 3, 4, 5, 7, 8, 9, 12], low: 55, high: 81, chromatic: 'low' },   // 进阶：+小三/小六/大六，少量变化音根音
-  3: { semitones: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], low: 55, high: 81, chromatic: 'some' } // 冲刺：全 12 种(含增四/七度)，自然音为主+少量变化音根音
+  1: { semitones: [2, 4, 5, 7, 12], low: 55, high: 81, chromatic: 'natural' },
+  2: { semitones: [2, 3, 4, 5, 7, 8, 9, 12], low: 55, high: 81, chromatic: 'low' },
+  3: { semitones: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], low: 55, high: 81, chromatic: 'some' }
 };
 
-/** 拍值 -> 时值名称 */
+
 const DUR_NAMES = {
   4: '全音符', 3: '附点二分', 2: '二分', 1.5: '附点四分',
   1: '四分', 0.75: '附点八分', 0.5: '八分', 0.25: '十六分'
@@ -144,7 +145,7 @@ function beatsLabel(beats, max = 8) {
   return names.join(' ') + (beats.length > max ? ' …' : '');
 }
 
-/** 从 [low, high] 音域中抽取一个自然音（白键）。 */
+
 function pickNatural(low, high) {
   const candidates = [];
   for (let midi = low; midi <= high; midi++) {
@@ -153,21 +154,19 @@ function pickNatural(low, high) {
   return candidates[randInt(0, candidates.length - 1)];
 }
 
-/**
- * 单音听辨。
- * options.range 覆盖音域 { low, high }；
- * options.chromatic 控制变化音：'natural' 仅自然音 / 'low' 少量变化音 / 'some' 自然音为主 / 'any' 全半音。
- * 不传 options 时保持音域 G3-A5，变化音默认少量（更小占比），不影响既有试卷音域。
- */
+
 function genSingle(difficulty, options = {}) {
   const fallback = RANGE[difficulty] || RANGE[3];
   const range = options.range || fallback;
   const chromatic = options.chromatic || 'low';
   const { low, high } = range;
-  const midi = pickChromaticNote(chromatic, low, high);
+
+  const midi = hasExamValue(options.midi)
+    ? Number(options.midi)
+    : pickChromaticNote(chromatic, low, high);
   return {
     type: 'single',
-    typeName: '单音听辨',
+    typeName: '单音听记',
     midis: [midi],
     answer: midi,
     answerText: midiToName(midi),
@@ -176,20 +175,45 @@ function genSingle(difficulty, options = {}) {
   };
 }
 
-/**
- * 音程听辨：harmonic=true 和声音程（任意顺序），false 旋律音程（按顺序）。
- * options.tier 一键套用「音程种类 + 根音音域 + 变化音」分层；也可单独指定
- * semitones(音程半音数集合)/range(根音音域)/chromatic(根音变化音)。
- * 不传 options 时保持历史行为（byLevel 全量音程、C4-A5 全半音随机根音）。
- */
+
+function genSingleSet(count, alteredCount, options = {}) {
+  const standard = EXAM_STANDARD_LEVEL;
+  const { low, high } = options.range || RANGE[standard] || RANGE[3];
+  const alteredSafe = Math.max(0, Math.min(count, alteredCount));
+  const naturalPool = [];
+  for (let m = low; m <= high; m++) if (NATURAL_PCS.includes(m % 12)) naturalPool.push(m);
+  const alteredPool = SINGLE_ALTERED_POOL.filter((m) => m >= low && m <= high);
+  const used = new Set();
+  const take = (pool) => {
+    const avail = pool.filter((m) => !used.has(m));
+    if (!avail.length) return null;
+    const m = avail[randInt(0, avail.length - 1)];
+    used.add(m);
+    return m;
+  };
+  const out = [];
+  for (let i = 0; i < count - alteredSafe; i++) {
+    const m = take(naturalPool);
+    if (m == null) throw new Error('单音自然音池不足');
+    out.push(genSingle(standard, { ...options, midi: m }));
+  }
+  for (let i = 0; i < alteredSafe; i++) {
+    const m = take(alteredPool);
+    if (m == null) throw new Error('单音变化音池不足');
+    out.push(genSingle(standard, { ...options, midi: m }));
+  }
+  return shuffle(out);
+}
+
+
 function genInterval(difficulty, forcedHarmonic = null, options = {}) {
-  // 专项训练按 60 套试卷加入三音组、五音组；综合卷传入 forcedHarmonic，仍保持原有固定结构。
+
   if (forcedHarmonic === null && Math.random() < 0.36) {
     return genNoteGroup(difficulty, Math.random() < 0.58 ? 3 : 5);
   }
   const tier = hasExamValue(options.tier) ? (INTERVAL_TIERS[options.tier] || INTERVAL_TIERS[1]) : null;
 
-  // 音程种类：tier 指定 semitones 集合 > options.semitones 单独指定 > 默认 byLevel 全量。
+
   let pool;
   if (tier) {
     pool = INTERVALS.filter((i) => tier.semitones.includes(i.semitones));
@@ -200,23 +224,23 @@ function genInterval(difficulty, forcedHarmonic = null, options = {}) {
   }
   const target = pool[randInt(0, pool.length - 1)];
 
-  // 根音音域：默认沿用真题 RANGE，tier / options.range 可覆盖；rootHigh 保证音程不越界。
+
   const range = options.range || (tier ? { low: tier.low, high: tier.high } : RANGE[difficulty]);
   const { low, high } = range;
   const rootHigh = Math.max(low, high - target.semitones);
 
-  // 根音变化音：'natural' 仅白键根音 / 'low' 少量黑键 / 'some' 自然音为主 / 'any' 全半音（默认少量）。
+
   const chromatic = hasExamValue(options.chromatic) ? options.chromatic : (tier ? tier.chromatic : 'low');
   const root = pickChromaticNote(chromatic, low, rootHigh);
 
   const harmonic = typeof forcedHarmonic === 'boolean'
     ? forcedHarmonic
-    : Math.random() < 0.4; // 常规训练中 40% 为和声音程
+    : Math.random() < 0.4;
   const midis = [root, root + target.semitones];
 
   return {
     type: 'interval',
-    typeName: harmonic ? '和声音程听辨' : '旋律音程听辨',
+    typeName: harmonic ? '和声音程听记' : '旋律音程听记',
     midis,
     harmonic,
     intervalName: target.name,
@@ -231,18 +255,112 @@ function genInterval(difficulty, forcedHarmonic = null, options = {}) {
   };
 }
 
-/** 转位名称 */
+
 const INVERSION_NAMES = ['原位', '第一转位', '第二转位', '第三转位'];
 
-/** 和弦转位：将最低 inv 个音移高八度 */
+
 function invertOffsets(offsets, inv) {
   const arr = offsets.slice();
   for (let i = 0; i < inv; i++) arr.push(arr.shift() + 12);
   return arr;
 }
 
-// 专项和弦训练以大、小三和弦及原位为主；增、减和弦与转位继续保留，
-// 但不再像原先那样等概率出现，避免一组练习连续堆叠高难考点。
+
+function rootSpellingName(root) {
+  return CHORD_ROOT_SPELLING[((root % 12) + 12) % 12] || midiToName(root).replace(/\d+$/, '');
+}
+
+
+function spellChord(root, offsets, inversion) {
+  const count = offsets.length;
+  const rootLetter = (CHORD_ROOT_SPELLING[((root % 12) + 12) % 12] || 'C')[0];
+  const rootLetterIndex = SPELL_LETTER_INDEX[rootLetter];
+  const voiced = invertOffsets(offsets, inversion);
+  const spellings = [];
+  for (let i = 0; i < count; i++) {
+    const toneIndex = (i + inversion) % count;
+    const letter = SPELL_LETTERS[(rootLetterIndex + 2 * toneIndex) % 7];
+    const naturalPc = SPELL_NATURAL_PCS[letter];
+    const midi = root + voiced[i];
+    const midiPc = ((midi % 12) + 12) % 12;
+    let diff = midiPc - naturalPc;
+    if (diff > 6) diff -= 12;
+    if (diff < -6) diff += 12;
+    const acc = diff === 1 ? '#' : diff === -1 ? 'b' : diff === 2 ? '##' : diff === -2 ? 'bb' : '';
+
+    spellings.push(`${letter}${acc}${Math.floor((midi - diff) / 12) - 1}`);
+  }
+  return spellings;
+}
+
+
+function spellingsToChordName(spellings) {
+  if (!Array.isArray(spellings) || spellings.length < 3 || spellings.length > 4) return null;
+  const parsed = spellings.map((s) => {
+    const m = String(s || '').match(/^([A-G])(#{1,2}|b{1,2})?(-?\d+)$/);
+    if (!m) return null;
+    const letter = m[1];
+    const accStr = m[2] || '';
+    const acc = accStr.startsWith('b') ? -accStr.length : accStr.length;
+    const octave = Number(m[3]);
+    const naturalPc = SPELL_NATURAL_PCS[letter];
+    const midi = (octave + 1) * 12 + naturalPc + acc;
+    return { letter, letterIdx: SPELL_LETTER_INDEX[letter], midi, accStr };
+  });
+  if (parsed.some((p) => !p)) return null;
+  const sorted = parsed.slice().sort((a, b) => a.midi - b.midi);
+  const size = sorted.length;
+  const letterIdxs = sorted.map((p) => p.letterIdx);
+
+  const CHORD_STRUCTURES = {
+    major:    { offsets: [0, 4, 7], letters: [0, 2, 4], name: '大三' },
+    minor:    { offsets: [0, 3, 7], letters: [0, 2, 4], name: '小三' },
+    aug:      { offsets: [0, 4, 8], letters: [0, 2, 4], name: '增三' },
+    dim:      { offsets: [0, 3, 6], letters: [0, 2, 4], name: '减三' },
+    dom7:     { offsets: [0, 4, 7, 10], letters: [0, 2, 4, 6], name: '属七' },
+    maj7:     { offsets: [0, 4, 7, 11], letters: [0, 2, 4, 6], name: '大七' },
+    min7:     { offsets: [0, 3, 7, 10], letters: [0, 2, 4, 6], name: '小七' },
+    halfdim7: { offsets: [0, 3, 6, 10], letters: [0, 2, 4, 6], name: '半减七' },
+    dim7:     { offsets: [0, 3, 6, 9],  letters: [0, 2, 4, 6], name: '减七' },
+    minmaj7:  { offsets: [0, 3, 7, 11], letters: [0, 2, 4, 6], name: '小大七' }
+  };
+  for (const chordId in CHORD_STRUCTURES) {
+    const struct = CHORD_STRUCTURES[chordId];
+    if (struct.offsets.length !== size) continue;
+    for (let candidate = 0; candidate < size; candidate++) {
+      const rootMidi = sorted[candidate].midi;
+      const rootLetterIdx = letterIdxs[candidate];
+      let match = true;
+      for (let i = 1; i < size; i++) {
+        const idx = (candidate + i) % size;
+        const expectedOffset = struct.offsets[i];
+        const expectedLetter = (rootLetterIdx + struct.letters[i]) % 7;
+        let midiDiff = sorted[idx].midi - rootMidi;
+        while (midiDiff < 0) midiDiff += 12;
+        while (midiDiff >= 12) midiDiff -= 12;
+        if (midiDiff !== expectedOffset || letterIdxs[idx] !== expectedLetter) { match = false; break; }
+      }
+      if (match) {
+
+        const lowLetterRel = ((letterIdxs[0] - rootLetterIdx) % 7 + 7) % 7;
+        const inversion = struct.letters.indexOf(lowLetterRel);
+        if (inversion < 0) continue;
+
+        const ce = sorted[candidate];
+        return {
+          rootName: ce.letter + ce.accStr,
+          chordId,
+          chordName: struct.name,
+          inversion,
+          inversionName: INVERSION_NAMES[inversion]
+        };
+      }
+    }
+  }
+  return null;
+}
+
+
 const PRACTICE_CHORD_QUALITY_WEIGHTS = [
   { id: 'major', weight: 42 },
   { id: 'minor', weight: 38 },
@@ -265,12 +383,7 @@ function weightedValue(items) {
   return Object.prototype.hasOwnProperty.call(fallback, 'value') ? fallback.value : fallback.id;
 }
 
-/**
- * 和弦听辨：覆盖大、小、增、减三和弦及三种位置，专项练习采用基础考点优先权重。
- * options.tier 一键套用「和弦种类 + 转位 + 根音音域」分层；也可单独指定
- * qualities(和弦 id 集合)/inversions(转位集合)/range(根音音域)。
- * 根音统一限定 C/G/F 大调 + a 小调 的音级集合（pickChordRoot）。
- */
+
 function genChord(difficulty, options = {}) {
   const tier = hasExamValue(options.tier) ? (CHORD_TIERS[options.tier] || CHORD_TIERS[1]) : null;
   const explicit = tier || Array.isArray(options.qualities) || Array.isArray(options.inversions)
@@ -281,7 +394,7 @@ function genChord(difficulty, options = {}) {
   let range;
 
   if (explicit) {
-    // 分层/显式指定模式：直接按选项构建，覆盖默认权重。
+
     let pool;
     if (tier) pool = CHORDS.filter((c) => tier.qualities.includes(c.id));
     else if (Array.isArray(options.qualities) && options.qualities.length) pool = CHORDS.filter((c) => options.qualities.includes(c.id));
@@ -292,14 +405,14 @@ function genChord(difficulty, options = {}) {
     if (tier) inversions = tier.inversions;
     else if (Array.isArray(options.inversions) && options.inversions.length) inversions = options.inversions;
     else inversions = [0, 1, 2];
-    // 三和弦仅 3 个音，最多第二转位；七和弦才允许第三转位。
+
     inversions = inversions.filter((inv) => inv < target.offsets.length);
     if (!inversions.length) inversions = [0];
     inversion = inversions[randInt(0, inversions.length - 1)];
 
     range = options.range || (tier ? { low: tier.low, high: tier.high } : RANGE[difficulty]);
   } else {
-    // 默认：专项训练基础考点优先权重（保持历史行为）。
+
     const triads = CHORDS.filter((chord) => chord.group === 'triad');
     const basicPool = triads.filter((chord) => chord.id === 'major' || chord.id === 'minor');
     const weightedTargetId = difficulty === 1 ? '' : weightedValue(PRACTICE_CHORD_QUALITY_WEIGHTS);
@@ -314,43 +427,48 @@ function genChord(difficulty, options = {}) {
   const voiced = invertOffsets(target.offsets, inversion);
   const maxOffset = Math.max(...voiced);
   const rootHigh = Math.max(low, high - maxOffset);
-  // 和弦根音统一限定 C/G/F 大调 + a 小调 的音级集合（排除 C♯/D♯/G♯），不再按黑键比例随机。
-  const root = pickChordRoot(low, rootHigh);
+
+  const root = target.id === 'aug'
+    ? pickChordRoot(low, rootHigh, [11])
+    : pickChordRoot(low, rootHigh);
   const midis = voiced.map((o) => root + o);
+  const spellings = spellChord(root, target.offsets, inversion);
   const size = target.offsets.length;
+  const rootName = rootSpellingName(root);
 
   return {
     type: 'chord',
-    typeName: size === 4 ? '七和弦听辨' : '和弦听辨',
+    typeName: size === 4 ? '七和弦听记' : '和弦听记',
     midis,
+    spellings,
     rootPc: root % 12,
-    rootName: midiToName(root).replace(/\d+$/, ''),
+    rootName,
     chordName: target.name,
     chordSymbol: target.symbol,
     inversion,
     inversionName: INVERSION_NAMES[inversion],
     chordSize: size,
     answer: [root % 12, target.name, inversion],
-    answerText: `${midiToName(root).replace(/\d+$/, '')}${target.name}和弦 · ${INVERSION_NAMES[inversion]}`,
+    answerText: `${rootName}${target.name}和弦 · ${INVERSION_NAMES[inversion]}`,
     knowledgeKey: `chord:${target.id}:${inversion}`,
     hint: size === 4 ? '听七和弦后，在五线谱同一谱格中叠写四个音' : '听三和弦后，在五线谱同一谱格中叠写三个音'
   };
 }
 
-/* ---------------- 节奏：程序化生成 ---------------- */
 
-// 1 拍节奏单元
+
+
 const CELLS_1 = [[1], [0.5, 0.5]];
-// 1 拍复杂节奏单元
+
 const CELLS_1_MID = [...CELLS_1, [0.25, 0.25, 0.5], [0.5, 0.25, 0.25], [0.25, 0.25, 0.25, 0.25]];
-// 2 拍单元
+
 const CELLS_2 = {
   1: [[2], [1, 1], [1, 0.5, 0.5], [0.5, 0.5, 1]],
   2: [[2], [1, 1], [1.5, 0.5], [0.5, 1.5], [1, 0.5, 0.5], [0.5, 0.5, 1], [0.5, 0.5, 0.5, 0.5], [1, -1], [-0.5, 0.5, 1]],
   3: [[2], [1.5, 0.5], [0.5, 1.5], [1, 0.5, 0.5], [0.5, 0.25, 0.25, 1], [1, 0.25, 0.25, 0.5], [0.5, 0.5, 0.5, 0.5], [0.25, 0.25, 0.25, 0.25, 1], [1, -0.5, 0.5], [-0.5, 0.5, 0.5, 0.5], [0.5, -0.5, 0.5, 0.5]]
 };
 
-/** 生成一小节（4 拍）：优先 2 拍单元 ×2，或 2+1+1 组合 */
+
 function genBar(difficulty) {
   const use2 = Math.random() < 0.55;
   if (use2) {
@@ -367,7 +485,7 @@ function genBar(difficulty) {
   return Math.random() < 0.5 ? [...two, ...c1, ...c2] : [...c1, ...c2, ...two];
 }
 
-/** 生成指定小节数的节奏型（负时值表示休止，末尾小节给长音收束） */
+
 function genRhythmBars(difficulty, barCount = 8) {
   const bars = [];
   for (let bar = 0; bar < barCount; bar++) {
@@ -384,11 +502,20 @@ function flattenBars(bars) {
   return bars.reduce((out, bar) => out.concat(bar), []);
 }
 
+function rhythmSymbolKinds(beats) {
+  const kinds = new Set();
+  for (const b of beats) {
+    const value = Math.round(Math.abs(b) * 1000);
+    kinds.add(b < 0 ? -value : value);
+  }
+  return kinds.size;
+}
+
 function rhythmKey(beats) {
   return beats.join(',');
 }
 
-/** 从正确答案只改动少量小节，构造更有区分度的近似干扰项 */
+
 function mutateRhythmBars(source, difficulty) {
   const bars = source.map((bar) => bar.slice());
   const mutableCount = Math.max(1, bars.length - 1);
@@ -408,7 +535,7 @@ function mutateRhythmBars(source, difficulty) {
   return bars;
 }
 
-/** 节奏听辨：指定小节数，4 个谱面选项 */
+
 function genRhythmQuestion(difficulty, barCount = 8) {
   const targetBars = genRhythmBars(difficulty, barCount);
   const target = flattenBars(targetBars);
@@ -423,7 +550,7 @@ function genRhythmQuestion(difficulty, barCount = 8) {
       options.push(cand);
     }
   }
-  // 极端随机碰撞时兜底，保证始终有四个选项。
+
   while (options.length < 4) {
     const cand = flattenBars(genRhythmBars(difficulty, barCount));
     const key = cand.join(',');
@@ -437,10 +564,10 @@ function genRhythmQuestion(difficulty, barCount = 8) {
 
   return {
     type: 'rhythm',
-    typeName: '节奏听辨',
+    typeName: '节奏听记',
     beats: target,
     bpm: difficulty === 1 ? 70 : difficulty === 2 ? 80 : 92,
-    options: shuffled.map((x) => x.b), // 4 个节奏型（拍值数组）
+    options: shuffled.map((x) => x.b),
     answer: answerIndex,
     answerText: `选项 ${'ABCD'[answerIndex]}（${beatsLabel(target)}）`,
     barCount,
@@ -450,37 +577,32 @@ function genRhythmQuestion(difficulty, barCount = 8) {
 }
 
 function genRhythm(difficulty, options = {}) {
-  const question = genExamRhythm(difficulty, 4, '', options);
+  const question = genExamRhythm(difficulty, 6, '', { ...options, useBank: true });
   return {
     ...question,
-    typeName: '节奏听辨',
+    typeName: '节奏听记',
     repeatCount: 3,
-    hint: '辨认拍号，并在五线谱上写出四小节节奏'
+    hint: '辨认拍号，并在五线谱上写出六小节节奏'
   };
 }
 
-/* ---------------- 旋律：8 小节、按序听辨音高 ---------------- */
+
 
 const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
-const MINOR_SCALE = [0, 2, 3, 5, 7, 8, 10]; // 自然小调（a 小调无调号，与 C 大调同调号）
 const MELODY_KEYS = {
   C: { id: 'C', name: 'C 大调', tonic: 60, scale: MAJOR_SCALE, letters: ['C', 'D', 'E', 'F', 'G', 'A', 'B'], altered: '' },
   G: { id: 'G', name: 'G 大调', tonic: 67, scale: MAJOR_SCALE, letters: ['G', 'A', 'B', 'C', 'D', 'E', 'F'], altered: '#' },
-  F: { id: 'F', name: 'F 大调', tonic: 65, scale: MAJOR_SCALE, letters: ['F', 'G', 'A', 'B', 'C', 'D', 'E'], altered: 'b' },
-  a: { id: 'a', name: 'a 小调', tonic: 69, scale: MINOR_SCALE, letters: ['A', 'B', 'C', 'D', 'E', 'F', 'G'], altered: '' }
+  F: { id: 'F', name: 'F 大调', tonic: 65, scale: MAJOR_SCALE, letters: ['F', 'G', 'A', 'B', 'C', 'D', 'E'], altered: 'b' }
 };
 
-// 每组轮廓都是完整的八小节四句式：A（1-2）—A′（3-4）—B（5-6）—A″（7-8）。
-// 第 4 小节落在属音形成半终止，第 8 小节级进回到主音形成完全终止。
+
 const MELODY_CONTOURS = [
   [[0, 1, 2, 4, 3, 2], [2, 3, 4, 3, 2, 1], [0, 1, 2, 4, 3, 2], [3, 2, 1, 4], [4, 5, 6, 5, 4, 3], [3, 4, 5, 4, 3, 2], [2, 3, 4, 2, 1], [2, 1, 0, 0]],
   [[2, 1, 0, 1, 2, 3], [4, 3, 2, 1, 2], [2, 3, 4, 5, 4, 2], [3, 2, 1, 4], [4, 6, 5, 4, 3], [3, 5, 4, 3, 2], [2, 4, 3, 2, 1], [2, 1, 0, 0]],
   [[4, 3, 2, 1, 2], [0, 1, 2, 3, 4], [4, 5, 6, 5, 4], [3, 2, 1, 4], [2, 3, 4, 5, 3], [4, 3, 2, 1], [0, 2, 4, 2, 1], [2, 1, 0, 0]]
 ];
 
-// 四句式旋律模板。每一组都遵循 A—A′—B—A″：第二句保留主题开头但
-// 改变后半句，第三句进入较高音区形成高潮，第四句只再现主题特征而不做
-// 整小节复制。句尾音级由下方的终止式逻辑统一收束。
+
 const FOUR_PHRASE_MELODY_TEMPLATES = [
   [
     [[0, 1, 2, 4, 3, 2], [2, 3, 4, 3, 1, 2]],
@@ -527,7 +649,7 @@ const MELODY_PHRASE_INFO = [
   { name: '第四句', role: '收束', cadenceDegree: 0 }
 ];
 
-// 句尾都从相邻音级进入终止音，避免随机轮廓在小节末突然跳进目标音。
+
 const MELODY_CADENCE_APPROACHES = [
   [1, 2],
   [3, 4],
@@ -548,7 +670,7 @@ const MELODY_REST_RHYTHMS = {
 
 function pickMelodyKey(difficulty) {
   if (difficulty === 1) return MELODY_KEYS.C;
-  const choices = difficulty === 2 ? ['C', 'C', 'G', 'F', 'a'] : ['C', 'G', 'G', 'F', 'F', 'a', 'a'];
+  const choices = difficulty === 2 ? ['C', 'C', 'G', 'F'] : ['C', 'G', 'G', 'F', 'F'];
   return MELODY_KEYS[choices[randInt(0, choices.length - 1)]];
 }
 
@@ -561,9 +683,9 @@ function degreeNote(key, degree, alter = 0) {
   const keyShift = keyAccidental === '#' ? 1 : keyAccidental === 'b' ? -1 : 0;
   const diatonicMidi = key.tonic + octaveShift * 12 + scale[scaleIndex];
   const midi = diatonicMidi + alter;
-  // alter 为调外临时变音（±1 半音），拼写用显式升/降号；默认 0 保持调号内拼写。
+
   const accidental = alter !== 0 ? (alter > 0 ? '#' : 'b') : keyAccidental;
-  // 八度按「自然音名」推导（diatonicMidi - keyShift），避免 B♯/C♭ 跨八度时算错八度号。
+
   const octave = Math.floor((diatonicMidi - keyShift) / 12) - 1;
   return { midi, spelling: `${letter}${accidental}${octave}` };
 }
@@ -608,14 +730,14 @@ function phraseContour(template, phrase, phraseIndex, barNumber) {
 function smoothMelodyDegrees(values) {
   const result = values.map((degree) => Math.max(0, Math.min(7, degree)));
   for (let index = 1; index < result.length; index++) {
-    // 等距抽样偶尔会把同一音级复制成相邻两音，改成邻音可明显增强流动感。
+
     if (result[index] === result[index - 1]) {
       const next = values[index + 1];
       const preferred = Number.isFinite(next) && next < result[index] ? -1 : 1;
       const candidate = result[index] + preferred;
       result[index] = candidate >= 0 && candidate <= 7 ? candidate : result[index] - preferred;
     }
-    // 控制为七度以内，并让过大的轮廓转折先经过中间音级。
+
     const leap = result[index] - result[index - 1];
     if (Math.abs(leap) > 4) result[index] = result[index - 1] + Math.sign(leap) * 4;
   }
@@ -637,28 +759,23 @@ function applyPhraseCadence(degrees, phraseIndex) {
   return result;
 }
 
-/** 判断某音级是否为调号内变化音（G 调 F♯ / F 调 B♭）。 */
+
 function isKeyAccidentalDegree(key, degree) {
   const scaleIndex = ((degree % 7) + 7) % 7;
   const letter = key.letters[scaleIndex];
   return (key.id === 'G' && letter === 'F') || (key.id === 'F' && letter === 'B');
 }
 
-/**
- * 在乐句内部挑选一个可注入「调外半音经过音」的发声位。
- * 规则：跳过主题起音(index 0)与句尾级进终止(最后 2 音)；
- * 跳过 MI/TI 级（升半音后即下一自然音，非真正变化音）与调号内变化音级。
- * 返回 -1 表示本句没有安全注入位。
- */
+
 function pickChromaticSlot(key, degrees, soundingCount) {
-  const maxSlot = soundingCount - 3; // 保留主题起音 + 句尾级进终止
+  const maxSlot = soundingCount - 3;
   if (maxSlot < 1) return -1;
   const candidates = [];
   for (let index = 1; index <= maxSlot; index++) {
     const degree = degrees[index];
     const scaleIndex = ((degree % 7) + 7) % 7;
-    if (scaleIndex === 2 || scaleIndex === 6) continue; // MI/TI：升半音=下一自然音
-    if (isKeyAccidentalDegree(key, degree)) continue;   // 避免与调号音重号
+    if (scaleIndex === 2 || scaleIndex === 6) continue;
+    if (isKeyAccidentalDegree(key, degree)) continue;
     candidates.push(index);
   }
   return candidates.length ? candidates[randInt(0, candidates.length - 1)] : -1;
@@ -690,15 +807,14 @@ function pickRhythmVariation(pool, source, excluded = []) {
 
 function buildPhraseRhythmBars(level, meter, barCount, phrases, allowRest = null) {
   const bars = genExamBars(level, meter, barCount, allowRest);
-  // 两小节一句时，后续乐句沿用第一句的节奏密度，但使用变化节奏，避免
-  // A′ 和 A″ 变成机械复制；B 句使用对比节奏并把听觉重心推向高潮。
+
   if (barCount >= 8) {
     const pool = examPatterns(meter, level);
-    const openingPool = pool.filter((bar) => bar[0] > 0);
+    const openingPool = pool.filter((bar) => bar[0] > 0 && bar.filter((duration) => duration > 0).length >= 2);
     const opening = (openingPool.length ? openingPool[randInt(0, openingPool.length - 1)] : pool[0]).slice();
-    const response = pickRhythmVariation(pool, opening);
-    const development = pickRhythmVariation(pool, response, [opening]);
-    const returnBar = pickRhythmVariation(pool, opening, [response]);
+    const response = pickRhythmVariation(openingPool, opening);
+    const development = pickRhythmVariation(openingPool, response, [opening]);
+    const returnBar = pickRhythmVariation(openingPool, opening, [response]);
     bars[phrases[0].startBar - 1] = opening;
     bars[phrases[1].startBar - 1] = response;
     bars[phrases[2].startBar - 1] = development;
@@ -743,7 +859,7 @@ function genMelody(difficulty) {
   rhythmBars.forEach((rhythm, barIndex) => {
     const soundingCount = rhythm.filter((duration) => duration > 0).length;
     const degrees = fitContour(contours[barIndex], soundingCount);
-    // 采用一升/一降调时，让调号中的变化音实际出现在对比乐句中。
+
     if (barIndex === 4 && (key.id === 'G' || key.id === 'F') && degrees.length) {
       degrees[Math.floor(degrees.length / 2)] = key.id === 'G' ? 6 : 3;
     }
@@ -755,7 +871,7 @@ function genMelody(difficulty) {
         answer.push(lastNote.midi);
         answerSpellings.push(lastNote.spelling);
       }
-      // 休止事件保留占位音高，使 durs / midis / spellings 始终严格对齐。
+
       durs.push(duration);
       midis.push(lastNote.midi);
       spellings.push(lastNote.spelling);
@@ -767,7 +883,7 @@ function genMelody(difficulty) {
   const restCount = durs.filter((duration) => duration < 0).length;
   return {
     type: 'melody',
-    typeName: '旋律听辨',
+    typeName: '旋律听记',
     midis,
     durs,
     spellings,
@@ -781,54 +897,54 @@ function genMelody(difficulty) {
     melodicStructure: 'A-A′-B-A″',
     restCount,
     knowledgeKey: `melody:d${difficulty}:key${key.id}:rest${restCount}:span${span <= 5 ? 'narrow' : span <= 9 ? 'medium' : 'wide'}`,
-    hint: '听 8 小节旋律，按顺序在键盘上听辨音高；不考点击节奏'
+    hint: '听 8 小节旋律，按顺序在键盘上听记音高；不考点击节奏'
   };
 }
 
-/* ---------------- 综合训练：按统考真题固定组卷 ---------------- */
+
 
 const MIXED_EXAM_COUNT = 21;
 
 const NOTE_GROUP_SIZE_NAMES = { 3: '三', 4: '四', 5: '五' };
 
-/**
- * 真题音组：连续播放并要求按原顺序复现，复用旋律音程的键盘答题交互。
- * 三音组/五音组从统一音域 [low, high]（G3-A5）随机抽取 size 个音：
- * 相邻音跨度不超过八度、组内不重复、变化音占比更小（自然音为主）。
- * options.tier 一键套用「音域 + 变化音」分层；也可单独指定 range/chromatic。
- */
+
 function genNoteGroup(difficulty, size, options = {}) {
   const sizeName = NOTE_GROUP_SIZE_NAMES[size] || String(size);
   const tier = hasExamValue(options.tier) ? (GROUP_TIERS[options.tier] || GROUP_TIERS[3]) : null;
   const range = options.range || (tier ? { low: tier.low, high: tier.high } : RANGE[difficulty]);
-  const chromatic = hasExamValue(options.chromatic) ? options.chromatic : (tier ? tier.chromatic : 'low');
   const { low, high } = range;
 
-  // 组内不重复 + 相邻跨度 ≤ 八度：从当前音 ±12 半音窗口内抽取下一个音。
-  const midis = [];
-  const used = new Set();
-  let attempts = 0;
-  while (midis.length < size && attempts++ < size * 400) {
-    let midi;
-    if (midis.length === 0) {
-      midi = pickChromaticNote(chromatic, low, high);
-    } else {
-      const prev = midis[midis.length - 1];
-      const lo = Math.max(low, prev - 12);
-      const hi = Math.min(high, prev + 12);
-      midi = pickChromaticNote(chromatic, lo, hi);
+  const naturalPool = [];
+  for (let m = low; m <= high; m++) if (NATURAL_PCS.includes(m % 12)) naturalPool.push(m);
+  const alteredPool = SINGLE_ALTERED_POOL.filter((m) => m >= low && m <= high);
+
+
+  const alteredPos = Math.random() < 0.25 ? randInt(0, size - 1) : -1;
+  const MAX_STEP = 9;
+
+  let midis = null;
+  for (let attempt = 0; attempt < 500 && !midis; attempt++) {
+    const seq = [];
+    const used = new Set();
+    let ok = true;
+    for (let i = 0; i < size && ok; i++) {
+      const pool = i === alteredPos ? alteredPool : naturalPool;
+      const prev = seq.length ? seq[seq.length - 1] : null;
+      const avail = pool.filter((m) => !used.has(m) && (prev == null || Math.abs(m - prev) <= MAX_STEP));
+      if (!avail.length) { ok = false; break; }
+      const m = avail[randInt(0, avail.length - 1)];
+      used.add(m);
+      seq.push(m);
     }
-    if (used.has(midi)) continue;
-    used.add(midi);
-    midis.push(midi);
+    if (ok) midis = seq;
   }
-  if (midis.length < size) throw new Error(`无法生成 ${size} 音组（音域内可选音不足）`);
+  if (!midis) throw new Error(`无法生成 ${size} 音组（音域内可选音不足）`);
 
   const labels = midis.map(midiToSpelling);
 
   return {
     type: 'interval',
-    typeName: `${sizeName}音组听辨`,
+    typeName: `${sizeName}音组听记`,
     midis,
     spellings: labels,
     harmonic: false,
@@ -843,7 +959,7 @@ function genNoteGroup(difficulty, size, options = {}) {
   };
 }
 
-/** 真题第 3 题固定为前两个旋律音程、后两个和声音程。options 透传给 genInterval。 */
+
 function genExamInterval(difficulty, harmonic, options = {}) {
   const question = genInterval(difficulty, harmonic, options);
   return {
@@ -855,16 +971,13 @@ function genExamInterval(difficulty, harmonic, options = {}) {
   };
 }
 
-/** 五个和声音程连续出现，和 60 套试卷的第 4 大题（江西「和声音程连接」）一致。
- *  options 可为数字（旧签名 intervalCount）或对象：{ tier, intervalCount, semitones, range, chromatic }。
- *  tier 一键套用「音程种类 + 根音音域 + 变化音」分层；显式 semitones/range/chromatic 可单独覆盖。
- *  整条连接始终为和声音程（江西卷面约定），不传任何 options 时保持历史全量音程行为。 */
+
 function genIntervalConnection(difficulty, options = {}) {
   const opts = typeof options === 'number' ? { intervalCount: options } : (options || {});
   const intervalCount = examCount(opts.intervalCount, 5);
   const tier = hasExamValue(opts.tier) ? (CONNECTION_TIERS[opts.tier] || CONNECTION_TIERS[1]) : null;
 
-  // 每个音程的约束：tier 指定 semitones 集合 > options 单独指定 > 默认 byLevel 全量。
+
   const intervalOptions = {};
   if (tier) {
     intervalOptions.semitones = tier.semitones;
@@ -906,11 +1019,11 @@ function genIntervalConnection(difficulty, options = {}) {
   };
 }
 
-/** 综合卷使用大、小、增、减三和弦及三种位置；options 可套用 CHORD_TIERS 分层（仅四种三和弦），或单独指定 qualities/inversions/range。 */
+
 function genExamChord(difficulty, options = {}) {
   const tier = hasExamValue(options.tier) ? (CHORD_TIERS[options.tier] || CHORD_TIERS[1]) : null;
 
-  // 和弦种类池：tier > options.qualities > 默认（难度 1 仅大/小，否则全三和弦）。
+
   let pool;
   if (tier) pool = CHORDS.filter((c) => tier.qualities.includes(c.id));
   else if (Array.isArray(options.qualities) && options.qualities.length) pool = CHORDS.filter((c) => options.qualities.includes(c.id));
@@ -922,38 +1035,44 @@ function genExamChord(difficulty, options = {}) {
   }
   const target = pool[randInt(0, pool.length - 1)];
 
-  // 转位集合：tier > options.inversions > 默认（难度 1 仅原位，否则 0-2）。
+
   let inversions;
   if (tier) inversions = tier.inversions;
   else if (Array.isArray(options.inversions) && options.inversions.length) inversions = options.inversions;
   else inversions = difficulty === 1 ? [0] : [0, 1, 2];
-  // 三和弦最多第二转位；七和弦才允许第三转位。
+
   inversions = inversions.filter((inv) => inv < target.offsets.length);
   if (!inversions.length) inversions = [0];
   const inversion = inversions[randInt(0, inversions.length - 1)];
 
-  // 根音音域：rootHigh 保证转位后最高音不越界；根音统一限定 C/G/F 大调 + a 小调 音级。
+
   const range = options.range || (tier ? { low: tier.low, high: tier.high } : RANGE[difficulty]);
   const { low, high } = range;
   const voiced = invertOffsets(target.offsets, inversion);
   const maxOffset = Math.max(...voiced);
   const rootHigh = Math.max(low, high - maxOffset);
-  const root = pickChordRoot(low, rootHigh);
+
+  const root = target.id === 'aug'
+    ? pickChordRoot(low, rootHigh, [11])
+    : pickChordRoot(low, rootHigh);
   const midis = voiced.map((offset) => root + offset);
+  const spellings = spellChord(root, target.offsets, inversion);
   const size = target.offsets.length;
+  const rootName = rootSpellingName(root);
   return {
     type: 'chord',
     typeName: size === 4 ? '七和弦听写' : '三和弦听写',
     midis,
+    spellings,
     rootPc: root % 12,
-    rootName: midiToName(root).replace(/\d+$/, ''),
+    rootName,
     chordName: target.name,
     chordSymbol: target.symbol,
     inversion,
     inversionName: INVERSION_NAMES[inversion],
     chordSize: size,
     answer: midis,
-    answerText: `${midiToName(root).replace(/\d+$/, '')}${target.name}和弦 · ${INVERSION_NAMES[inversion]}`,
+    answerText: `${rootName}${target.name}和弦 · ${INVERSION_NAMES[inversion]}`,
     examSection: 'chord',
     examPoints: 1,
     repeatCount: 3,
@@ -962,6 +1081,40 @@ function genExamChord(difficulty, options = {}) {
   };
 }
 
+// 60 套参考答案共用一个全局抽题袋；前 60 次不重复，第 61 次重新洗牌。
+const RHYTHM_BANK = RHYTHM_BANK_2025;
+const RHYTHM_META = RHYTHM_BANK.map(function (record) { return record.meter; });
+let _rhythmQueue = [];
+
+function _shuffleArr(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = randInt(0, i);
+    const value = arr[i];
+    arr[i] = arr[j];
+    arr[j] = value;
+  }
+  return arr;
+}
+
+function pickFromRhythmBank() {
+  if (_rhythmQueue.length === 0) {
+    _rhythmQueue = _shuffleArr(RHYTHM_BANK.map(function (_, index) { return index; }));
+  }
+  const record = RHYTHM_BANK[_rhythmQueue.shift()];
+  const events = record.bars.map(function (bar) {
+    return bar.map(function (item) { return { ...item }; });
+  });
+  const bars = events.map(function (bar) {
+    return bar.map(function (item) { return item.rest ? -item.duration : item.duration; });
+  });
+  return {
+    id: record.id,
+    sourcePaper: record.sourcePaper,
+    meter: record.meter,
+    events,
+    bars,
+  };
+}
 const EXAM_METERS = [
   { id: '2/4', numerator: 2, denominator: 4, beatsPerBar: 2 },
   { id: '3/4', numerator: 3, denominator: 4, beatsPerBar: 3 },
@@ -972,28 +1125,28 @@ const EXAM_METERS = [
 
 const EXAM_BAR_PATTERNS = {
   '2/4': {
-    1: [[1, 1], [0.5, 0.5, 1], [1, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
+    1: [[1, 1], [0.5, 0.5, 1], [1, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5], [1.5, 0.5], [0.5, 1.5], [1, -1], [-0.5, 0.5, 1], [0.5, -0.5, 0.5, 0.5], [0.75, 0.5, 0.75], [0.5, 0.75, 0.75]],
     2: [[1.5, 0.5], [0.5, 1.5], [1, -0.5, 0.5], [-0.5, 0.5, 1], [0.5, 0.25, 0.25, 1]],
     3: [[0.25, 0.25, 0.25, 0.25, 1], [1 / 3, 1 / 3, 1 / 3, 1], [0.5, -0.25, 0.25, 0.5, 0.5]]
   },
   '3/4': {
-    1: [[1, 1, 1], [0.5, 0.5, 1, 1], [1, 0.5, 0.5, 1], [1, 1, 0.5, 0.5]],
+    1: [[1, 1, 1], [0.5, 0.5, 1, 1], [1, 0.5, 0.5, 1], [1, 1, 0.5, 0.5], [2, 1], [1, 2], [1.5, 0.5, 1], [1, -1, 1], [0.5, -0.5, 1, 1]],
     2: [[1.5, 0.5, 1], [1, 1.5, 0.5], [1, -0.5, 0.5, 1], [0.5, 0.5, 0.5, 0.5, 1]],
     3: [[1 / 3, 1 / 3, 1 / 3, 1, 1], [0.25, 0.25, 0.5, 1, 1], [1, 0.5, -0.5, 0.5, 0.5]]
   },
   '4/4': {
-    1: [[1, 1, 1, 1], [0.5, 0.5, 1, 1, 1], [1, 1, 0.5, 0.5, 1]],
-    2: [[1.5, 0.5, 1, 1], [1, -0.5, 0.5, 1, 1], [0.5, 0.5, 1.5, 0.5, 1]],
+    1: [[1, 1, 1, 1], [0.5, 0.5, 1, 1, 1], [1, 1, 0.5, 0.5, 1], [1.5, 0.5, 1, 1], [1, 1, 1.5, 0.5], [0.5, 0.5, 0.5, 0.5, 1, 1], [1, -1, 1, 1], [0.5, -0.5, 1, 1, 1], [2, 1, 1], [0.75, 0.75, 0.5, 1, 1], [0.75, 0.5, 0.75, 1, 1]],
+    2: [[1.5, 0.5, 1, 1], [1, -0.5, 0.5, 1, 1], [0.5, 0.5, 1.5, 0.5, 1], [0.25, 0.25, 0.25, 0.25, 1, 1, 1], [0.25, 0.25, 0.5, 1, 1, 1]],
     3: [[1 / 3, 1 / 3, 1 / 3, 1, 1, 1], [0.25, 0.25, 0.5, 1, 1, 1], [1, 0.5, -0.5, 0.5, 0.5, 1]]
   },
   '3/8': {
-    1: [[0.5, 0.5, 0.5], [0.75, 0.25, 0.5], [0.5, 0.75, 0.25]],
+    1: [[0.5, 0.5, 0.5], [0.75, 0.25, 0.5], [0.5, 0.75, 0.25], [-0.5, 0.5, 0.5]],
     2: [[0.5, 0.25, 0.25, 0.5], [0.25, 0.25, 0.5, 0.5], [-0.25, 0.25, 0.5, 0.5]],
-    3: [[0.25, 0.25, 0.25, 0.25, 0.5], [0.5, -0.25, 0.25, 0.5]]
+    3: [[0.25, 0.25, 0.25, 0.25, 0.5], [0.5, -0.25, 0.25, 0.5], [-0.75, 0.25, 0.5], [-0.75, 0.5, 0.25]]
   },
   '6/8': {
     1: [[1.5, 1.5], [0.5, 0.5, 0.5, 1.5], [1.5, 0.5, 0.5, 0.5]],
-    2: [[0.75, 0.25, 0.5, 1.5], [0.5, 0.25, 0.25, 0.5, 1.5], [1.5, -0.5, 0.5, 0.5]],
+    2: [[0.75, 0.25, 0.5, 1.5], [0.5, 0.25, 0.25, 0.5, 1.5], [1.5, -0.5, 0.5, 0.5], [-0.75, 0.25, 0.5, 1.5], [-0.75, 0.5, 0.25, 1.5]],
     3: [[0.25, 0.25, 0.5, 0.5, 0.5, 1], [0.5, -0.25, 0.25, 0.5, 0.5, 1]]
   }
 };
@@ -1003,7 +1156,7 @@ function pickExamMeter(difficulty) {
   return pool[randInt(0, pool.length - 1)];
 }
 
-/** 从指定拍号 id 集合中随机取一个拍号；集合为空或全非法时回退到入门拍号池。 */
+
 function pickMeterFromPool(meterIds) {
   const meters = (meterIds || [])
     .map((id) => EXAM_METERS.find((item) => item.id === id))
@@ -1012,7 +1165,7 @@ function pickMeterFromPool(meterIds) {
   return meters[randInt(0, meters.length - 1)];
 }
 
-/** 从指定调号 id 集合中随机取一个调号；集合为空或全非法时回退到难度默认调号。 */
+
 function pickKeyFromPool(keyIds, difficulty) {
   const keys = (keyIds || [])
     .map((id) => MELODY_KEYS[id])
@@ -1028,30 +1181,48 @@ function examPatterns(meter, difficulty) {
     .concat(difficulty >= 3 ? groups[3] : []);
 }
 
-function genExamBars(difficulty, meter, barCount, allowRest = null) {
+function genExamBars(difficulty, meter, barCount, allowRest = null, minKinds = 0) {
   let pool = examPatterns(meter, difficulty);
-  // allowRest=false 时过滤掉含休止符（负时值）的节奏型；过滤后为空则回退全量池。
+
   if (allowRest === false) {
     const noRest = pool.filter((pattern) => pattern.every((duration) => duration > 0));
     if (noRest.length) pool = noRest;
   }
-  const bars = [];
-  for (let index = 0; index < barCount; index++) {
-    if (index === barCount - 1) {
-      bars.push(meter.denominator === 8 ? [meter.beatsPerBar] : meter.beatsPerBar === 4 ? [2, 2] : [meter.beatsPerBar]);
-    } else {
-      bars.push(pool[randInt(0, pool.length - 1)].slice());
+  const build = () => {
+    const bars = [];
+    const used = new Set();
+    for (let index = 0; index < barCount; index++) {
+      if (index === barCount - 1) {
+        bars.push(meter.denominator === 8 ? [meter.beatsPerBar] : meter.beatsPerBar === 4 ? [2, 2] : [meter.beatsPerBar]);
+      } else {
+        let chosen = null;
+        for (let tries = 0; tries < 200 && !chosen; tries++) {
+          const candidate = pool[randInt(0, pool.length - 1)];
+          const key = candidate.join(',');
+          if (!used.has(key)) { chosen = candidate; used.add(key); }
+        }
+        if (!chosen) { chosen = pool[randInt(0, pool.length - 1)]; used.add(chosen.join(',')); }
+        bars.push(chosen.slice());
+      }
     }
+    return bars;
+  };
+
+  if (minKinds <= 0) return build();
+  for (let attempt = 0; attempt < 600; attempt++) {
+    const bars = build();
+    if (rhythmSymbolKinds(flattenBars(bars)) >= minKinds) return bars;
   }
-  return bars;
+  return build();
 }
 
 function genExamRhythm(difficulty, barCount = 4, forcedMeterId = '', options = {}) {
   const tier = hasExamValue(options.tier) ? (RHYTHM_TIERS[options.tier] || RHYTHM_TIERS[3]) : null;
-  // 时值复杂度：tier > options.level > 默认 difficulty（真题统一为 level 3）。
+
   const level = tier ? tier.level : (hasExamValue(options.level) ? options.level : difficulty);
-  // 拍号：显式 forcedMeterId > options.meters/tier.meters 拍号池 > 默认 pickExamMeter。
+
   let meter;
+  let bars = null;
   if (forcedMeterId) {
     meter = EXAM_METERS.find((item) => item.id === forcedMeterId) || pickExamMeter(difficulty);
   } else if (tier) {
@@ -1061,11 +1232,29 @@ function genExamRhythm(difficulty, barCount = 4, forcedMeterId = '', options = {
   } else {
     meter = pickExamMeter(difficulty);
   }
-  // 休止符：tier > options.allowRest > 默认不过滤（null）。
+
   const allowRest = tier ? tier.allowRest : (hasExamValue(options.allowRest) ? options.allowRest : null);
-  // 速度：tier > options.bpm > 默认按 difficulty 递减。
-  const bpm = tier ? tier.bpm : (hasExamValue(options.bpm) ? options.bpm : (difficulty === 1 ? 70 : difficulty === 2 ? 78 : 86));
-  const bars = genExamBars(level, meter, barCount, allowRest);
+
+  const useBank = hasExamValue(options.useBank) ? options.useBank : false;
+  let rhythmEvents = null;
+  let sourcePaper = null;
+  if (useBank) {
+    // 从 60 套真题节奏题库抽取（60 次内不重复，用尽自动重新洗牌）。
+    // 题库原题拍号优先于省份卷面默认值，保证节奏与参考答案不被改写。
+    const picked = pickFromRhythmBank();
+    if (picked) {
+      bars = picked.bars;
+      rhythmEvents = picked.events;
+      sourcePaper = picked.sourcePaper;
+      barCount = bars.length;
+      const pickedMeter = EXAM_METERS.find((m) => m.id === picked.meter);
+      if (pickedMeter) meter = pickedMeter;
+    }
+  }
+  if (!bars) bars = genExamBars(level, meter, barCount, allowRest);
+  // 重新按新 meter 计算 bpm（题库拍号可能不同）
+  const configuredBpm = tier ? tier.bpm : (hasExamValue(options.bpm) ? options.bpm : (difficulty === 1 ? 70 : difficulty === 2 ? 78 : 86));
+  const bpm = rhythmPlaybackBpm(meter.id, configuredBpm);
   const beats = flattenBars(bars);
   return {
     type: 'rhythm',
@@ -1075,6 +1264,8 @@ function genExamRhythm(difficulty, barCount = 4, forcedMeterId = '', options = {
     answer: beats,
     answerText: `${meter.id} 拍 · ${beatsLabel(beats)}`,
     bars,
+    rhythmEvents,
+    sourcePaper,
     barCount,
     meter: meter.id,
     meterNumerator: meter.numerator,
@@ -1085,7 +1276,7 @@ function genExamRhythm(difficulty, barCount = 4, forcedMeterId = '', options = {
     examPoints: 3,
     repeatCount: 3,
     knowledgeKey: `exam-rhythm:d${difficulty}:meter${meter.id}:min${Math.min(...beats.map(Math.abs))}`,
-    hint: '先选择时值或休止符，再在谱面上依次写入四小节节奏'
+    hint: '先选择时值或休止符，再在谱面上依次写入 ' + barCount + ' 小节节奏'
   };
 }
 
@@ -1094,7 +1285,7 @@ function genExamMelody(difficulty, barCount = 8, forcedMeterId = '', forcedKeySi
   const forcedKeyId = typeof forcedKeySignature === 'string'
     ? forcedKeySignature.replace(/\s+/g, '').replace('大调', '').toUpperCase()
     : forcedKeySignature && forcedKeySignature.id;
-  // 调号：显式 forcedKeySignature > tier.keys / options.keys 调号池 > 难度默认调号。
+
   const key = forcedKeyId
     ? (MELODY_KEYS[forcedKeyId] || pickMelodyKey(difficulty))
     : tier
@@ -1102,7 +1293,7 @@ function genExamMelody(difficulty, barCount = 8, forcedMeterId = '', forcedKeySi
       : Array.isArray(options.keys) && options.keys.length
         ? pickKeyFromPool(options.keys, difficulty)
         : pickMelodyKey(difficulty);
-  // 拍号：显式 forcedMeterId > tier.meters / options.meters 拍号池 > 难度默认拍号。
+
   let meter;
   if (forcedMeterId) {
     meter = EXAM_METERS.find((item) => item.id === forcedMeterId) || pickExamMeter(difficulty);
@@ -1113,13 +1304,13 @@ function genExamMelody(difficulty, barCount = 8, forcedMeterId = '', forcedKeySi
   } else {
     meter = pickExamMeter(difficulty);
   }
-  // 时值复杂度：tier.level > options.level > 默认 difficulty（真题统一 level 3）。
+
   const level = tier ? tier.level : (hasExamValue(options.level) ? options.level : difficulty);
-  // 变化音：tier.chromatic > options.chromatic > 默认 'natural'（仅调号内变化音，保持历史行为）。
+
   const chromatic = tier ? tier.chromatic : (hasExamValue(options.chromatic) ? options.chromatic : 'natural');
-  // 休止符：tier.allowRest > options.allowRest > 默认不过滤（null）。
+
   const allowRest = tier ? tier.allowRest : (hasExamValue(options.allowRest) ? options.allowRest : null);
-  // 速度：tier.bpm > options.bpm > 默认按 difficulty 递增。
+
   const bpm = tier ? tier.bpm : (hasExamValue(options.bpm) ? options.bpm : (difficulty === 1 ? 70 : difficulty === 2 ? 78 : 86));
   const phraseTemplate = FOUR_PHRASE_MELODY_TEMPLATES[randInt(0, FOUR_PHRASE_MELODY_TEMPLATES.length - 1)];
   const phrases = buildMelodyPhrasePlan(barCount);
@@ -1129,7 +1320,7 @@ function genExamMelody(difficulty, barCount = 8, forcedMeterId = '', forcedKeySi
   const spellings = [];
   const answer = [];
   const answerSpellings = [];
-  // 调外变化音注入位：仅在「呼应句」内部选一个安全发声位，避开主题起音与终止式。
+
   const chromaticBar = chromatic === 'some' ? phrases[1].startBar - 1 : -1;
   let chromaticCount = 0;
 
@@ -1141,7 +1332,7 @@ function genExamMelody(difficulty, barCount = 8, forcedMeterId = '', forcedKeySi
     const contour = phraseContour(phraseTemplate, phrase, phraseIndex, barNumber);
     let degrees = smoothMelodyDegrees(fitContour(contour, soundingCount));
     const atPhraseEnd = barNumber === phrase.endBar;
-    // 一升/一降调的变化音安排在第三句高潮的内部，不占用句尾的级进终止。
+
     if (phraseIndex === 2 && barNumber === phrase.startBar && (key.id === 'G' || key.id === 'F') && degrees.length > 1) {
       const cadenceSlots = atPhraseEnd
         ? Math.min(degrees.length, MELODY_CADENCE_APPROACHES[phraseIndex].length)
@@ -1149,8 +1340,7 @@ function genExamMelody(difficulty, barCount = 8, forcedMeterId = '', forcedKeySi
       const expressiveSlots = Math.max(1, degrees.length - cadenceSlots);
       degrees[Math.min(expressiveSlots - 1, Math.floor(expressiveSlots / 2))] = key.id === 'G' ? 6 : 3;
     }
-    // 每句最后两至三个音都按相邻音级解决：第一句开放，第二句落属音，
-    // 第三句回落蓄势，第四句以 2—1—主音完成收束。
+
     if (atPhraseEnd && degrees.length) degrees = applyPhraseCadence(degrees, phraseIndex);
     const chromaticSlot = barIndex === chromaticBar ? pickChromaticSlot(key, degrees, soundingCount) : -1;
     let degreeIndex = 0;
@@ -1200,15 +1390,11 @@ function genExamMelody(difficulty, barCount = 8, forcedMeterId = '', forcedKeySi
     examPoints: 4,
     repeatCount: 4,
     knowledgeKey: `exam-melody:d${difficulty}:key${key.id}:meter${meter.id}`,
-    hint: `按第一句、第二句、第三句、第四句听辨，再写入${barCount}小节旋律`
+    hint: `按第一句、第二句、第三句、第四句听记，再写入${barCount}小节旋律`
   };
 }
 
-/**
- * 60 套模拟卷统一顺序：5 单音 → 2 三音组 → 2 五音组 →
- * 2 旋律音程 → 2 和声音程 → 1 组五连接 → 5 三和弦 →
- * 1 个四小节节奏 → 1 个八小节旋律，共 21 个作答单元、30 分。
- */
+
 function generateExamMixed() {
   const standard = EXAM_STANDARD_LEVEL;
   const questions = [];
@@ -1224,9 +1410,10 @@ function generateExamMixed() {
       questions.push(question);
     }
   };
-  appendUnique(5, () => ({
-    ...genSingle(standard), examSection: 'single', examPoints: 1, repeatCount: 3
-  }), (question) => `single:${question.midis[0]}`);
+
+  genSingleSet(5, 1).forEach((question) => {
+    questions.push({ ...question, examSection: 'single', examPoints: 1, repeatCount: 3 });
+  });
   appendUnique(2, () => ({
     ...genNoteGroup(standard, 3), examPoints: 0.5, repeatCount: 3
   }), practiceQuestionKey);
@@ -1238,7 +1425,7 @@ function generateExamMixed() {
   appendUnique(2, () => genExamInterval(standard, true), intervalKey);
   questions.push(genIntervalConnection(standard));
   appendUnique(5, () => genExamChord(standard), practiceQuestionKey);
-  questions.push(genExamRhythm(standard));
+  questions.push(genExamRhythm(standard, 6, '', { useBank: true }));
   questions.push(genExamMelody(standard));
   return questions.map((question, index) => ({
     ...question,
@@ -1306,15 +1493,18 @@ function withExamSectionMeta(question, section, item, itemCount) {
       ? title
       : question.typeName;
 
-  // bars 与题目内实际节奏数组同名，因此卷面规格使用 exam* 字段保存。
-  if (hasExamValue(bars)) out.examBars = Number(bars);
+
+  if (hasExamValue(bars)) out.examBars = question.type === 'rhythm' ? 6 : Number(bars);
   if (hasExamValue(systems)) {
     out.systems = Number(systems);
     out.examSystems = Number(systems);
   }
   if (hasExamValue(meter)) {
-    out.meter = meter;
-    out.examMeter = meter;
+    const resolvedMeter = question.type === 'rhythm' && question.sourcePaper
+      ? question.meter
+      : meter;
+    out.meter = resolvedMeter;
+    out.examMeter = resolvedMeter;
   }
   if (hasExamValue(keySignature)) {
     out.keySignature = keySignature;
@@ -1343,10 +1533,7 @@ function configuredItems(section) {
   return Array.isArray(section.items) && section.items.length ? section.items : null;
 }
 
-/**
- * 按省份卷面 sections 生成真题结构。题型数据与界面结构分离，
- * 便于各省份共用同一套五线谱作答组件。
- */
+
 function generateExamFromSections(sections) {
   const standard = EXAM_STANDARD_LEVEL;
   const result = {
@@ -1374,7 +1561,7 @@ function generateExamFromSections(sections) {
     if (key === 'single') {
       const count = examCount(section.count, 1);
       const singleOptions = {};
-      // 省份卷面可用 tier（1/2/3）一键套用音域+变化音分层，也可单独指定 range/chromatic。
+
       if (hasExamValue(section.tier)) {
         const tier = SINGLE_TIERS[section.tier] || SINGLE_TIERS[1];
         singleOptions.range = { low: tier.low, high: tier.high };
@@ -1396,7 +1583,7 @@ function generateExamFromSections(sections) {
         })
         : [3];
       const count = examCount(section.count, sizes.length);
-      // 省份卷面可用 tier（1/2/3）一键套用「音域 + 变化音」分层，也可单独指定 range/chromatic。
+
       const groupOptions = {};
       if (hasExamValue(section.tier)) groupOptions.tier = section.tier;
       if (hasExamValue(section.range)) groupOptions.range = section.range;
@@ -1426,7 +1613,7 @@ function generateExamFromSections(sections) {
         harmonicCount = requestedTotal - melodicCount;
       }
       const total = melodicCount + harmonicCount;
-      // 省份卷面可用 tier（1/2/3）一键套用「音程种类+根音音域+变化音」分层，也可单独指定 semitones/range/chromatic。
+
       const intervalOptions = {};
       if (hasExamValue(section.tier)) intervalOptions.tier = section.tier;
       if (Array.isArray(section.semitones) && section.semitones.length) intervalOptions.semitones = section.semitones;
@@ -1442,7 +1629,7 @@ function generateExamFromSections(sections) {
     }
 
     if (key === 'connection' || key === 'intervalConnection') {
-      // 省份卷面可用 tier（1/2/3）一键套用「音程种类+根音音域+变化音」分层，也可单独指定 semitones/range/chromatic。
+
       const connOptions = { intervalCount: examCount(section.intervalCount, 5) };
       if (hasExamValue(section.tier)) connOptions.tier = section.tier;
       if (Array.isArray(section.semitones) && section.semitones.length) connOptions.semitones = section.semitones;
@@ -1455,7 +1642,7 @@ function generateExamFromSections(sections) {
 
     if (key === 'chord' || key === 'chordQuality' || key === 'chordPitch') {
       const count = examCount(section.count, 1);
-      // 省份卷面可用 tier（1/2/3）一键套用「和弦种类+转位+根音音域+变化音」分层，也可单独指定 qualities/inversions/range/chromatic。
+
       const chordOptions = {};
       if (hasExamValue(section.tier)) chordOptions.tier = section.tier;
       if (Array.isArray(section.qualities) && section.qualities.length) chordOptions.qualities = section.qualities;
@@ -1476,17 +1663,18 @@ function generateExamFromSections(sections) {
     if (key === 'rhythm') {
       const items = configuredItems(section);
       const count = items ? items.length : examCount(section.count, 1);
-      // 省份卷面可用 tier（1/2/3）一键套用「拍号+时值复杂度+休止符+速度」分层，也可单独指定 level/meters/allowRest/bpm。
+
       const rhythmOptions = {};
       if (hasExamValue(section.tier)) rhythmOptions.tier = section.tier;
       if (hasExamValue(section.level)) rhythmOptions.level = section.level;
       if (Array.isArray(section.meters) && section.meters.length) rhythmOptions.meters = section.meters;
       if (hasExamValue(section.allowRest)) rhythmOptions.allowRest = section.allowRest;
       if (hasExamValue(section.bpm)) rhythmOptions.bpm = section.bpm;
+      rhythmOptions.useBank = true;
       appendUniqueExamQuestions(result.rhythmQuestions, seen.rhythm, count, (index) => {
         const item = items ? items[index] : null;
         const spec = item || section;
-        const bars = examCount(spec.bars, examCount(section.bars, 4));
+        const bars = Math.max(6, examCount(spec.bars, examCount(section.bars, 4)));
         const meter = spec.meter || section.meter || '';
         return withExamSectionMeta(genExamRhythm(standard, bars, meter, rhythmOptions), section, item, count);
       }, practiceQuestionKey, '节奏');
@@ -1496,8 +1684,7 @@ function generateExamFromSections(sections) {
     if (key === 'melody') {
       const items = configuredItems(section);
       const count = items ? items.length : examCount(section.count, 1);
-      // 省份卷面可用 tier（1/2/3）一键套用「调号+拍号+时值复杂度+变化音+休止+速度」分层，
-      // 也可单独指定 keys/meters/level/chromatic/allowRest/bpm。
+
       const melodyOptions = {};
       if (hasExamValue(section.tier)) melodyOptions.tier = section.tier;
       if (Array.isArray(section.keys) && section.keys.length) melodyOptions.keys = section.keys;
@@ -1528,7 +1715,7 @@ function generateExamFromSections(sections) {
   return result;
 }
 
-/** 广西统考卷面：5 单音、4 音组、4 音程、4 和弦、4 小节节奏、4 小节旋律。 */
+
 function generateExamGuangxi() {
   const standard = EXAM_STANDARD_LEVEL;
   const questions = [];
@@ -1551,12 +1738,12 @@ function generateExamGuangxi() {
   appendUnique(2, () => ({ ...genExamInterval(standard, false), examPoints: 0.5 }), intervalKey);
   appendUnique(2, () => ({ ...genExamInterval(standard, true), examPoints: 0.5 }), intervalKey);
   appendUnique(4, () => ({ ...genExamChord(standard), examPoints: 0.75 }), practiceQuestionKey);
-  questions.push({ ...genExamRhythm(standard, 8), examPoints: 5, repeatCount: 4 });
+  questions.push({ ...genExamRhythm(standard, 8, '', { useBank: true }), examPoints: 5, repeatCount: 4 });
   questions.push({ ...genExamMelody(standard, 8), barCount: 8, examPoints: 13.5, repeatCount: 6 });
   return questions.map((question, index) => ({ ...question, examOrder: index + 1, examTotal: questions.length }));
 }
 
-/** 江苏卷面结构：音组、音程与和弦题量更大，节奏和旋律各有两套指定拍号。 */
+
 function generateExamJiangsu() {
   const standard = EXAM_STANDARD_LEVEL;
   const unique = (count, factory, keyFactory) => {
@@ -1576,10 +1763,8 @@ function generateExamJiangsu() {
     .concat(unique(4, () => ({ ...genExamInterval(standard, true), examPoints: 2 }), intervalKey));
   const chords = unique(6, () => ({ ...genExamChord(standard), examPoints: 3, repeatCount: 3 }), practiceQuestionKey);
   const makeRhythm = (meterId) => {
-    const meter = EXAM_METERS.find((item) => item.id === meterId);
-    const bars = genExamBars(standard, meter, 4);
-    const beats = flattenBars(bars);
-    return { ...genExamRhythm(standard), bars, beats, answerBeats: beats, barCount: 4, meter: meter.id, meterNumerator: meter.numerator, meterDenominator: meter.denominator, beatsPerBar: meter.beatsPerBar, examPoints: 12, repeatCount: 4 };
+    const question = genExamRhythm(standard, 6, meterId, { useBank: true });
+    return { ...question, examPoints: 12, repeatCount: 4 };
   };
   const rhythmQuestions = [makeRhythm('2/4'), makeRhythm('3/4')];
   const melodyQuestions = [
@@ -1593,13 +1778,13 @@ function genPracticeMelody(difficulty, options = {}) {
   const question = genExamMelody(difficulty, 8, '', '', options);
   return {
     ...question,
-    typeName: '旋律听辨',
+    typeName: '旋律听记',
     repeatCount: 4,
     hint: '辨认拍号与调号，按四个两小节乐句写出八小节单声部旋律'
   };
 }
 
-/** 专项·单音：把 tier（1/2/3）换算成「音域 + 变化音」分层后交给 genSingle。 */
+
 function genPracticeSingle(difficulty, options = {}) {
   const opts = { ...options };
   if (hasExamValue(opts.tier)) {
@@ -1610,7 +1795,7 @@ function genPracticeSingle(difficulty, options = {}) {
   return genSingle(difficulty, opts);
 }
 
-/** 专项·旋律音组：随机三/四/五音组，复用真题音组的键盘顺序作答。 */
+
 function genPracticeGroup(difficulty, options = {}) {
   const sizes = [3, 4, 5];
   const size = sizes[randInt(0, sizes.length - 1)];
@@ -1618,18 +1803,18 @@ function genPracticeGroup(difficulty, options = {}) {
   return { ...question, repeatCount: 3 };
 }
 
-/** 专项·音程：保持 forcedHarmonic 为空，允许 options.tier 分层。 */
+
 function genPracticeInterval(difficulty, options = {}) {
   return genInterval(difficulty, null, options);
 }
 
-/** 专项·和声音程连接：五个和声音程连续出现（江西卷面）。 */
+
 function genPracticeConnection(difficulty, options = {}) {
   const question = genIntervalConnection(difficulty, options);
   return { ...question, repeatCount: 3 };
 }
 
-/** 专项·和弦性质：听和弦只写性质（qualityFill，无音高作答）。 */
+
 function genPracticeChordQuality(difficulty, options = {}) {
   const question = genExamChord(difficulty, options);
   question.chordTaskType = 'chordQuality';
@@ -1640,7 +1825,7 @@ function genPracticeChordQuality(difficulty, options = {}) {
   return question;
 }
 
-/** 专项·和弦音高：听和弦只写音高（staff，无性质作答）。 */
+
 function genPracticeChordPitch(difficulty, options = {}) {
   const question = genExamChord(difficulty, options);
   question.chordTaskType = 'chordPitch';
@@ -1661,11 +1846,10 @@ const GENERATORS = {
   melody: genPracticeMelody
 };
 
-// 智能强化只针对五大核心题型（单音/音程/和弦/节奏/旋律），
-// 新增的专项题型由省份专项练习入口直达，不进入智能强化的加权循环。
+
 const ADAPTIVE_TYPES = ['single', 'interval', 'chord', 'rhythm', 'melody'];
 
-/** 按真题统一标准生成一题；options 可带 tier 等分层参数。 */
+
 function generate(type, options = {}) {
   if (!GENERATORS[type]) throw new Error(`未知题型: ${type}`);
   return GENERATORS[type](EXAM_STANDARD_LEVEL, options);
@@ -1689,14 +1873,11 @@ function weightedType(types, profile = {}) {
   return types[types.length - 1];
 }
 
-/**
- * 练习题去重键：同一专项练习中，答案和关键题型参数完全一致才视为重复。
- * 和声音程/和弦按同时发声的音高集合比较，避免只是音符顺序不同却重复出现。
- */
+
 function practiceQuestionKey(question) {
   let midis;
   if (Array.isArray(question.chords)) {
-    // 和声音程连接：每组内排序、组间保序，避免只是组内顺序不同却重复。
+
     midis = question.chords.map((chord) => chord.slice().sort((a, b) => a - b)).flat();
   } else {
     midis = (question.midis || []).slice();
@@ -1714,14 +1895,37 @@ function practiceQuestionKey(question) {
   });
 }
 
-/** 按真题统一标准生成一组题。 */
+function genChordSet(count, type, options = {}) {
+  const opts = { ...options }; delete opts.tier;
+  const n5 = Math.floor(count * .5), n3 = Math.floor(count * .3);
+  const invs = shuffle([].concat(new Array(n5).fill(0), new Array(n3).fill(1), new Array(count - n5 - n3).fill(2)));
+  const gen = GENERATORS[type], used = new Set(), out = [];
+  for (const inv of invs) {
+    const o = { ...opts, qualities: [Math.random() < .3 ? (Math.random() < .6 ? 'dim' : 'aug') : (Math.random() < .5 ? 'major' : 'minor')], inversions: [inv] };
+    let q = null;
+    for (let a = 0; a < 400 && !q; a++) {
+      const c = gen(EXAM_STANDARD_LEVEL, o), k = practiceQuestionKey(c);
+      if (!used.has(k)) { used.add(k); q = c; }
+    }
+    out.push(q || gen(EXAM_STANDARD_LEVEL, o));
+  }
+  return out;
+}
+
+
 function generateSet(type, count = 10, profile = {}, options = {}) {
   const questions = [];
   if (type === 'mixed') {
     return generateExamMixed();
   }
+  if (type === 'single') {
+
+    const alteredCount = count <= 5 ? 1 : (Math.random() < 0.5 ? 1 : 2);
+    return genSingleSet(count, alteredCount, options);
+  }
+  if (type.startsWith('chord')) return genChordSet(count, type, options);
   if (type === 'adaptive') {
-    // 先覆盖每个题型，再把剩余题量倾斜给错率较高的模块。
+
     const seen = new Set();
     const append = (question) => {
       const key = practiceQuestionKey(question);
@@ -1736,7 +1940,7 @@ function generateSet(type, count = 10, profile = {}, options = {}) {
     while (questions.length < count && attempts++ < maxAttempts) {
       append(generate(weightedType(ADAPTIVE_TYPES, profile)));
     }
-    // 极端随机碰撞时轮询所有题型继续找题，但绝不以重复题凑数。
+
     attempts = 0;
     while (questions.length < count && attempts++ < maxAttempts) {
       append(generate(ADAPTIVE_TYPES[attempts % ADAPTIVE_TYPES.length]));
@@ -1746,7 +1950,7 @@ function generateSet(type, count = 10, profile = {}, options = {}) {
     }
     return shuffle(questions);
   }
-  // 专项练习一组题不允许重复。单音题的键就是 MIDI，因此 10 题一定是 10 个不同音高。
+
   const seen = new Set();
   let attempts = 0;
   const maxAttempts = Math.max(100, count * 80);
@@ -1774,6 +1978,7 @@ module.exports = {
   genPracticeConnection,
   genPracticeChordQuality,
   genPracticeChordPitch,
+  spellingsToChordName,
   MIXED_EXAM_COUNT,
   EXAM_METERS,
   EXAM_STANDARD_LEVEL,
@@ -1784,5 +1989,9 @@ module.exports = {
   RHYTHM_TIERS,
   MELODY_TIERS,
   CONNECTION_TIERS,
-  NATURAL_PCS
+  NATURAL_PCS,
+  RHYTHM_BANK,
+  RHYTHM_META,
+  pickFromRhythmBank,
+  rhythmPlaybackBpm
 };

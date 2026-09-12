@@ -1,5 +1,13 @@
-const PRACTICE_TYPES = new Set(['single', 'interval', 'chord', 'rhythm', 'melody']);
+// 与 core/index.ts 的 PracticeType 对齐；连接题的题目 type 为 intervalConnection，
+// 统一归一化为 connection，保证统计 / 错题本 / 智能强化按同一题型键聚合。
+const PRACTICE_TYPES = new Set(['single', 'group', 'interval', 'connection', 'chord', 'chordQuality', 'chordPitch', 'rhythm', 'melody']);
+const PRACTICE_TYPE_ALIASES = { intervalConnection: 'connection' };
 const ACCIDENTALS = new Set(['none', 'sharp', 'flat', 'natural']);
+
+function canonicalType(type) {
+  const value = String(type || '');
+  return PRACTICE_TYPE_ALIASES[value] || value;
+}
 
 function object(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -17,11 +25,12 @@ function normalizePracticeRecords(value) {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
     const record = object(entry);
-    if (!record || !text(record.id) || !PRACTICE_TYPES.has(record.type) || typeof record.correct !== 'boolean') return [];
+    const type = canonicalType(record && record.type);
+    if (!record || !text(record.id) || !PRACTICE_TYPES.has(type) || typeof record.correct !== 'boolean') return [];
     return [{
       ...record,
       id: record.id,
-      type: record.type,
+      type,
       correct: record.correct,
       createdAt: number(record.createdAt),
       ...(text(record.sessionId) ? { sessionId: record.sessionId } : {}),
@@ -35,7 +44,7 @@ function normalizeWrongRecords(value) {
   return value.flatMap((entry) => {
     const record = object(entry);
     const question = object(record?.question);
-    const type = record?.type;
+    const type = canonicalType(record?.type);
     if (!record || !question || !text(record.id) || !text(record.knowledgeKey) || !PRACTICE_TYPES.has(type)) return [];
     const typeName = text(record.typeName, text(question.typeName, type));
     const answerText = text(record.answerText, text(question.answerText));
@@ -165,7 +174,137 @@ function normalizeExamResults(value) {
   });
 }
 
+/**
+ * 练习统计聚合。与微信端 services/db.js 的 aggregate() 对齐，
+ * 输入为「每题一条」的 PracticeRecord[]，输出首页 / 统计页所需的全部聚合字段。
+ */
+function aggregatePracticeStats(records) {
+  const list = Array.isArray(records) ? records : [];
+  const totalQuestions = list.length;
+  const totalCorrect = list.filter((record) => record && record.correct === true).length;
+  const overallAccuracy = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+
+  const dateKey = (t) => {
+    const d = new Date(Number(t));
+    if (!Number.isFinite(d.getTime())) return null;
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  };
+
+  // 每日聚合
+  const dailyMap = new Map();
+  list.forEach((record) => {
+    const key = dateKey(record.createdAt);
+    if (!key) return;
+    const cur = dailyMap.get(key) || { total: 0, correct: 0 };
+    cur.total += 1;
+    if (record.correct === true) cur.correct += 1;
+    dailyMap.set(key, cur);
+  });
+
+  // 题型聚合
+  const byType = {};
+  list.forEach((record) => {
+    const type = record.type || 'unknown';
+    const target = byType[type] || { attempts: 0, correct: 0, wrong: 0 };
+    target.attempts += 1;
+    if (record.correct === true) target.correct += 1;
+    target.wrong = target.attempts - target.correct;
+    byType[type] = target;
+  });
+  Object.keys(byType).forEach((type) => {
+    const item = byType[type];
+    item.accuracy = item.attempts ? Math.round((item.correct / item.attempts) * 100) : 0;
+    item.errorRate = 100 - item.accuracy;
+  });
+
+  // 近 7 天每日正确率（今天为 index 6）
+  const trend7day = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayLabels = ['一', '二', '三', '四', '五', '六', '今'];
+  for (let i = 6; i >= 0; i--) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - (6 - i));
+    const key = dateKey(day.getTime());
+    const d = dailyMap.get(key) || { total: 0, correct: 0 };
+    trend7day.push({
+      label: dayLabels[i],
+      total: d.total,
+      correct: d.correct,
+      accuracy: d.total ? Math.round((d.correct / d.total) * 100) : 0,
+      isToday: i === 6,
+    });
+  }
+  const todayCount = trend7day[0].total;
+  const todayAccuracy = trend7day[0].accuracy;
+
+  // 连续练习天数（今天没记录不算断）
+  const practiceDays = new Set();
+  list.forEach((record) => {
+    const key = dateKey(record.createdAt);
+    if (key) practiceDays.add(key);
+  });
+  let streak = 0;
+  for (let i = 0; i < 365; i++) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - i);
+    const key = dateKey(day.getTime());
+    if (practiceDays.has(key)) streak += 1;
+    else if (i === 0) continue;
+    else break;
+  }
+
+  // 整体正确率趋势：整体 vs 前 6 天（不含今天）
+  let prevTotal = 0;
+  let prevCorrect = 0;
+  for (let i = 0; i < trend7day.length - 1; i++) {
+    prevTotal += trend7day[i].total;
+    prevCorrect += trend7day[i].correct;
+  }
+  const prevAccuracy = prevTotal ? Math.round((prevCorrect / prevTotal) * 100) : null;
+  const accuracyTrend = prevAccuracy === null ? null : overallAccuracy - prevAccuracy;
+
+  // 会话数：按 sessionId（无 sessionId 时按记录 id）去重
+  const sessionBuckets = new Map();
+  list.forEach((record) => {
+    const key = record.sessionId || record.id || '';
+    if (!key) return;
+    const bucket = sessionBuckets.get(key) || [];
+    bucket.push(record);
+    sessionBuckets.set(key, bucket);
+  });
+  const sessions = sessionBuckets.size;
+
+  // 最近练习（按会话聚合）
+  const recent = Array.from(sessionBuckets.values()).map((bucket) => {
+    const correct = bucket.filter((record) => record.correct === true).length;
+    return {
+      id: bucket[0].sessionId || bucket[0].id,
+      modeName: bucket[0].modeName || bucket[0].type,
+      createdAt: Math.max(...bucket.map((record) => record.createdAt)),
+      total: bucket.length,
+      correct,
+      accuracy: Math.round((correct / bucket.length) * 100),
+    };
+  }).sort((a, b) => b.createdAt - a.createdAt).slice(0, 10);
+
+  return {
+    sessions,
+    totalQuestions,
+    accuracy: overallAccuracy,
+    accuracyTrend,
+    streak,
+    trend7day,
+    todayCount,
+    todayAccuracy,
+    byType,
+    wrongByType: byType,
+    recent,
+  };
+}
+
 module.exports = {
+  aggregatePracticeStats,
   normalizeAnswer,
   normalizeExamResults,
   normalizeExamSession,

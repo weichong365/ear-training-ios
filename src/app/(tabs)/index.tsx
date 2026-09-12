@@ -9,7 +9,7 @@ import { AppIcon } from '@/components/app-icon';
 import { HandIcon, type HandIconName } from '@/components/hand-icon';
 import { getProvincePracticeModules, PROVINCES, type ProvincePracticeModule } from '@/core/provinces';
 import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
-import { getPracticeRecords } from '@/services/local-data';
+import { getPracticeStats } from '@/services/local-data';
 import { useProvince } from '@/services/province-context';
 import { useSubscription } from '@/services/subscription';
 
@@ -33,7 +33,7 @@ const QUICK_ITEMS: Omit<GridItem, 'onPress'>[] = [
 export default function HomeScreen() {
   const { ready, configured, isActive } = useSubscription();
   const { provinceId } = useProvince();
-  const [practiceStats, setPracticeStats] = useState({ total: 0, accuracy: 0 });
+  const [practiceStats, setPracticeStats] = useState({ todayCount: 0, todayAccuracy: 0 });
 
   const modules = useMemo(
     () => (provinceId ? getProvincePracticeModules(provinceId) : []),
@@ -45,12 +45,11 @@ export default function HomeScreen() {
   );
   useFocusEffect(useCallback(() => {
     let mounted = true;
-    getPracticeRecords().then((records) => {
+    getPracticeStats().then((stats) => {
       if (!mounted) return;
-      const correct = records.filter((record) => record.correct).length;
       setPracticeStats({
-        total: records.length,
-        accuracy: records.length ? Math.round(correct / records.length * 100) : 0,
+        todayCount: stats.todayCount,
+        todayAccuracy: stats.todayAccuracy,
       });
     });
     return () => { mounted = false; };
@@ -137,9 +136,9 @@ export default function HomeScreen() {
               <Text numberOfLines={1} style={styles.heroSub}>音乐艺考 · 视唱练耳专项训练</Text>
             </View>
             <View style={styles.heroData}>
-              <View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.total}</Text><Text style={styles.metricLabel}>累计练习</Text></View>
+              <View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.todayCount}</Text><Text style={styles.metricLabel}>今日练习</Text></View>
               <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,.28)', 'rgba(255,255,255,0)']} style={styles.heroDivider} />
-              <View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.accuracy}%</Text><Text style={styles.metricLabel}>正确率</Text></View>
+              <View style={styles.heroMetric}><Text style={styles.metricNumber}>{practiceStats.todayAccuracy}%</Text><Text style={styles.metricLabel}>今日正确率</Text></View>
             </View>
           </View>
         </ImageBackground>

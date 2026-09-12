@@ -325,15 +325,15 @@ export type ProvincePracticeModule = {
 
 /** 通用专项模块展示文案；按省份框架命中的 section 依次取用。 */
 const PRACTICE_MODULE_META: Record<string, { name: string; desc: string; icon: string; tone: 'mint' | 'accent' | 'coral' | 'amber'; answerMode: string; qualityRequired?: boolean }> = {
-  single:       { name: '单音听辨', desc: '听单音，写出音高', icon: 'single-note', tone: 'mint', answerMode: 'staff' },
+  single:       { name: '单音听记', desc: '听单音，写出音高', icon: 'single-note', tone: 'mint', answerMode: 'staff' },
   group:        { name: '旋律音组', desc: '听三/四/五音组，按顺序写音高', icon: 'triplet', tone: 'accent', answerMode: 'staff' },
-  interval:     { name: '音程听辨', desc: '听旋律/和声音程，写出两个音', icon: 'interval', tone: 'accent', answerMode: 'staff' },
+  interval:     { name: '音程听记', desc: '听旋律/和声音程，写出两个音', icon: 'interval', tone: 'accent', answerMode: 'staff' },
   connection:   { name: '和声音程连接', desc: '连续五个和声音程，逐组写音高', icon: 'interval', tone: 'coral', answerMode: 'staff' },
-  chord:        { name: '和弦听辨', desc: '听和弦，写出音高与性质', icon: 'chord', tone: 'coral', answerMode: 'staff' },
+  chord:        { name: '和弦听记', desc: '听和弦，写出音高与性质', icon: 'chord', tone: 'coral', answerMode: 'staff' },
   chordQuality: { name: '和弦性质', desc: '听和弦，只写性质', icon: 'chord', tone: 'coral', answerMode: 'qualityFill', qualityRequired: true },
   chordPitch:   { name: '和弦音高', desc: '听和弦，只写音高', icon: 'chord', tone: 'coral', answerMode: 'staff' },
-  rhythm:       { name: '节奏听辨', desc: '听节奏，写出节奏谱', icon: 'rhythm', tone: 'amber', answerMode: 'rhythmStaff' },
-  melody:       { name: '旋律听辨', desc: '听旋律，写出旋律谱', icon: 'treble', tone: 'accent', answerMode: 'melodyStaff' },
+  rhythm:       { name: '节奏听记', desc: '听节奏，写出节奏谱', icon: 'rhythm', tone: 'amber', answerMode: 'rhythmStaff' },
+  melody:       { name: '旋律听记', desc: '听旋律，写出旋律谱', icon: 'treble', tone: 'accent', answerMode: 'melodyStaff' },
 };
 
 /** 真题 section/item key → 专项模块 key；choice 省份的细分选择题归并到对应技能模块。 */

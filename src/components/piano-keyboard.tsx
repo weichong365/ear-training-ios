@@ -87,10 +87,10 @@ export const PianoKeyboard = memo(function PianoKeyboard({
 });
 
 function keyColor(highlight: Highlight, black: boolean) {
-  if (highlight === 'correct') return { backgroundColor: black ? '#22B573' : '#C8F7D4' };
+  if (highlight === 'correct') return { backgroundColor: black ? '#2e8b6f' : '#e2f2ec' };
   if (highlight === 'wrong') return { backgroundColor: black ? '#E5484D' : '#FFD3D3' };
   if (highlight === 'std') return { backgroundColor: black ? '#FAAD14' : '#FFE58F' };
-  if (highlight === 'play') return { backgroundColor: black ? '#7B5CFF' : '#D9D5FF' };
+  if (highlight === 'play') return { backgroundColor: black ? '#1f6f5b' : '#e7f2ee' };
   return undefined;
 }
 

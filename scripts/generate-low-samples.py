@@ -1,6 +1,6 @@
 """
 把 C4.wav 向下重采样，生成 G3~B3（MIDI 55~59）的 5 个精确钢琴采样。
-采样规格与现有库一致：16kHz / mono / PCM16 / 1.82s（29120 样本）。
+采样规格与现有库一致：16kHz / mono / PCM16 / 1.82s（29120 样本），播放时补齐为 1.85s。
 重采样采用线性插值（向下移调 = 拉伸时间轴，无需抗混叠）。
 """
 import struct
@@ -8,7 +8,7 @@ import math
 import os
 
 SAMPLE_RATE = 16000
-TARGET_LEN = 29120  # 1.82s，与 C4-A5 精确采样等长
+TARGET_LEN = 29120  # 包内 1.82s，播放渲染统一输出 1.85s
 
 def read_pcm(path):
     with open(path, 'rb') as f:
