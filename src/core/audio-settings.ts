@@ -6,3 +6,7 @@ export function parseStoredVolume(rawValue: unknown, fallback = DEFAULT_AUDIO_VO
   if (!Number.isFinite(value)) return fallback;
   return Math.max(0, Math.min(100, value));
 }
+
+export function normalizeAudioVolume(volume: number) {
+  return parseStoredVolume(volume) / 100;
+}

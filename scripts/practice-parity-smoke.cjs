@@ -10,10 +10,12 @@ const files = [
   'src/components/notation-editor.tsx',
   'src/components/piano-keyboard.tsx',
   'src/services/audio-engine.ts',
+  'src/core/audio-settings.ts',
 ];
 const source = Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), 'utf8')]));
 const practice = source['src/app/practice.tsx'];
 const notation = source['src/components/notation-editor.tsx'];
+const audioSettings = source['src/core/audio-settings.ts'];
 const renderedPaths = Object.values(source)
   .map((value) => value.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''))
   .flatMap((value) => [
@@ -174,6 +176,26 @@ function assertPracticeStateAndVolume(practice) {
 
 assertPracticeStateAndVolume(practice);
 assert.match(practice, /<PianoKeyboard\b[^>]*\bvolume=\{volume\}[^>]*>/, 'PianoKeyboard must receive stored volume');
+
+assert.match(audioSettings, /export function normalizeAudioVolume\(volume: number\)\s*\{\s*return parseStoredVolume\(volume\) \/ 100;\s*\}/,
+  'audio settings must provide one persisted-volume to playback-volume conversion');
+assert.match(practice, /const playbackVolume = normalizeAudioVolume\(volume\);/,
+  'PracticeScreen must normalize its stored volume once');
+assert.match(practice, /playQuestionAudio\(question, \{[\s\S]*?volume: playbackVolume,/,
+  'question playback must use the normalized stored volume');
+assert.match(practice, /playPianoNote\(midi, playbackVolume\)/,
+  'review piano playback must use the normalized stored volume');
+assert.match(practice, /const stopPlayback = useCallback\(\(\) => \{[\s\S]*?clearTimeout\(standardTimer\.current\)[\s\S]*?stopQuestionAudio\(\);[\s\S]*?setPlaying\(false\);[\s\S]*?setPreparing\(false\);[\s\S]*?setHighlights\(\{\}\);/,
+  'playback cleanup must clear timers, active audio, state, and highlights');
+assert.match(practice, /AppState\.addEventListener\('change', \(state\) => \{\s*if \(state !== 'active'\) stopPlayback\(\);/,
+  'background interruption must use the shared playback cleanup');
+assert.match(practice, /useFocusEffect\(useCallback\(\(\) => \(\) => \{ stopPlayback\(\); \}, \[stopPlayback\]\)\);/,
+  'navigation blur must stop active playback');
+assert.match(practice, /onInterrupted: \(\) => \{\s*stopPlayback\(\);\s*\}/,
+  'interrupted question playback must use the shared cleanup');
+assert.match(practice, /const reportAudioFailure = useCallback\(\(error\?: Error\) => \{\s*if \(__DEV__\) console\.warn\('音频播放失败', error\);\s*setMessage\('音频暂时无法播放，请重试'\);/,
+  'raw audio diagnostics must be development-only while users receive a short retry message');
+assert.ok(!practice.includes('setMessage(error.message)'), 'raw platform audio errors must never be rendered');
 
 const timedStaffTags = notation.match(/<TimedAnswerStaff\b[\s\S]*?\/>/g) || [];
 assert.ok(timedStaffTags.length >= 3, 'all timed staff render paths must be present');

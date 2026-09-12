@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,6 +10,7 @@ import { NotationEditor } from '@/components/notation-editor';
 import { PianoKeyboard } from '@/components/piano-keyboard';
 import { TeacherGradeMark } from '@/components/teacher-grade-mark';
 import { generateQuestionSet, type PracticeGenerateOptions, type PracticeMode, type PracticeProfile } from '@/core';
+import { normalizeAudioVolume } from '@/core/audio-settings';
 import { answerIsComplete, CHORD_INVERSIONS, CHORD_QUALITY_NAMES, emptyExamAnswer, formatCorrectAnswer, formatExamAnswer, isTimedQuestion, needsPitch, needsQuality, scoreQuestion, type ExamAnswer } from '@/core/exam-answer';
 import type { ExamQuestion } from '@/core/provinces';
 import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
@@ -171,6 +172,7 @@ export default function PracticeScreen() {
   const legacyQualityParts = answer.quality.split(' · ');
   const selectedChordQuality = legacyQualityParts[0] || '';
   const selectedChordInversion = answer.inversion || legacyQualityParts[1] || '';
+  const playbackVolume = normalizeAudioVolume(volume);
   const volumeRow = <View style={[styles.volumeRow, compactPitchMode && styles.compactVolumeRow]}><Text style={styles.volumeLabel}>音量</Text><Pressable accessibilityRole="button" accessibilityLabel="降低音量" onPress={() => changeVolume(volume - 10)} style={styles.volumeStep}><AppIcon name="minus" size={17} /></Pressable><View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: volume }} style={styles.volumeTrack}><View style={[styles.volumeFill, { width: `${volume}%` }]} /></View><Pressable accessibilityRole="button" accessibilityLabel="提高音量" onPress={() => changeVolume(volume + 10)} style={styles.volumeStep}><AppIcon name="plus" size={17} /></Pressable><Text style={styles.volumeValue}>{volume}%</Text></View>;
 
   useEffect(() => {
@@ -193,6 +195,21 @@ export default function PracticeScreen() {
     let cancelled = false;
     getAudioVolume().then((value) => { if (!cancelled) setVolume(value); });
     return () => { cancelled = true; };
+  }, []);
+
+  const stopPlayback = useCallback(() => {
+    if (standardTimer.current) clearTimeout(standardTimer.current);
+    standardTimer.current = null;
+    stopQuestionAudio();
+    setPlaying(false);
+    setPreparing(false);
+    replaying.current = false;
+    setHighlights({});
+  }, []);
+
+  const reportAudioFailure = useCallback((error?: Error) => {
+    if (__DEV__) console.warn('音频播放失败', error);
+    setMessage('音频暂时无法播放，请重试');
   }, []);
 
   useEffect(() => {
@@ -236,21 +253,15 @@ export default function PracticeScreen() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') {
-        if (standardTimer.current) clearTimeout(standardTimer.current);
-        standardTimer.current = null;
-        stopQuestionAudio();
-        setPlaying(false);
-        setPreparing(false);
-        replaying.current = false;
-      }
+      if (state !== 'active') stopPlayback();
     });
     return () => {
-      if (standardTimer.current) clearTimeout(standardTimer.current);
       subscription.remove();
-      stopQuestionAudio();
+      stopPlayback();
     };
-  }, []);
+  }, [stopPlayback]);
+
+  useFocusEffect(useCallback(() => () => { stopPlayback(); }, [stopPlayback]));
 
   async function play() {
     if (!question || !scoringQuestion || playing || preparing || (phase !== 'feedback' && playCount >= maxPlays)) return;
@@ -261,7 +272,7 @@ export default function PracticeScreen() {
     standardTimer.current = null;
     if (isReplay) replaying.current = true;
     const started = await playQuestionAudio(question, {
-      volume: volume / 100,
+      volume: playbackVolume,
       onFinish: () => {
         if (standardTimer.current) clearTimeout(standardTimer.current);
         standardTimer.current = null;
@@ -270,19 +281,11 @@ export default function PracticeScreen() {
         if (isReplay) setHighlights(correctKeyHighlights(scoringQuestion));
       },
       onInterrupted: () => {
-        if (standardTimer.current) clearTimeout(standardTimer.current);
-        standardTimer.current = null;
-        setPlaying(false);
-        replaying.current = false;
-        setHighlights(isReplay ? keyHighlights(scoringQuestion, answer, correct) : {});
+        stopPlayback();
       },
       onError: (error) => {
-        if (standardTimer.current) clearTimeout(standardTimer.current);
-        standardTimer.current = null;
-        setPlaying(false);
-        replaying.current = false;
-        setHighlights(isReplay ? keyHighlights(scoringQuestion, answer, correct) : {});
-        setMessage(error.message);
+        stopPlayback();
+        reportAudioFailure(error);
       },
     });
     setPreparing(false);
@@ -474,7 +477,7 @@ export default function PracticeScreen() {
 
         <View style={[styles.keyboardCard, phase === 'feedback' && styles.keyboardOpen]}>
           <View style={styles.keyboardHead}><View><Text style={styles.keyboardTitle}>复盘钢琴</Text>{!compactPitchMode && <Text style={styles.keyboardSub}>{phase === 'feedback' ? '键盘已解锁，可自由弹奏核对音高' : '提交谱面答案后自动解锁'}</Text>}</View><Text style={[styles.keyboardState, phase === 'feedback' && styles.keyboardStateOpen]}>{phase === 'feedback' ? '已解锁' : '待解锁'}</Text></View>
-          <View><View aria-hidden={phase !== 'feedback'} accessibilityElementsHidden={phase !== 'feedback'} importantForAccessibility={phase !== 'feedback' ? 'no-hide-descendants' : 'auto'}><PianoKeyboard disabled={phase !== 'feedback' || playing} highlights={highlights} volume={volume} onKeyPress={phase === 'feedback' ? (midi) => { if (!replaying.current) void playPianoNote(midi, volume / 100); } : undefined} /></View>{phase !== 'feedback' && <View accessibilityRole="text" accessibilityLabel="复盘钢琴待解锁，提交答案后解锁" style={styles.keyboardLock}><View style={styles.lockIcon}><AppIcon name="lock" size={21} color={Brand.textOnAccent} /></View><Text style={styles.lockText}>提交答案后解锁</Text></View>}</View>
+          <View><View aria-hidden={phase !== 'feedback'} accessibilityElementsHidden={phase !== 'feedback'} importantForAccessibility={phase !== 'feedback' ? 'no-hide-descendants' : 'auto'}><PianoKeyboard disabled={phase !== 'feedback' || playing} highlights={highlights} volume={volume} onKeyPress={phase === 'feedback' ? (midi) => { if (!replaying.current) void playPianoNote(midi, playbackVolume).then((started) => { if (!started) reportAudioFailure(); }); } : undefined} /></View>{phase !== 'feedback' && <View accessibilityRole="text" accessibilityLabel="复盘钢琴待解锁，提交答案后解锁" style={styles.keyboardLock}><View style={styles.lockIcon}><AppIcon name="lock" size={21} color={Brand.textOnAccent} /></View><Text style={styles.lockText}>提交答案后解锁</Text></View>}</View>
         </View>
       </>}
     </ScrollView>
