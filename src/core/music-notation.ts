@@ -22,6 +22,12 @@ export const STAFF_STEP_GAP = STAFF_LINE_GAP / 2;
 export const STAFF_LINE_YS = [28, 38, 48, 58, 68] as const;
 export const STAFF_STROKE_WIDTH = 1;
 
+/** Durations use quarter-note units; 6/8 beams follow dotted-quarter beats. */
+export function beamGroupAtBeat(elapsed: number, meter: string) {
+  const beatSize = meter === '3/8' ? 0.5 : meter === '6/8' ? 1.5 : 1;
+  return Math.floor((elapsed + 1e-6) / beatSize);
+}
+
 export function fitTupletBeamY(beamY: number, direction: StemDirection, staffHeight: number, numberHeight: number, gap: number, beamThickness: number) {
   return direction === 'up'
     ? Math.max(beamY, numberHeight + gap)

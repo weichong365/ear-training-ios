@@ -6,7 +6,7 @@ import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
 import { MusicAccidental, MusicFlag, MusicNotehead, MusicRest, noteheadHalfWidth } from '@/components/music-glyphs';
 import { meterBeatScale, meterCapacity, splitBars, sumDuration, targetTimedEvents } from '@/core/answer-sync';
 import type { ExamAnswer, NotationEvent } from '@/core/exam-answer';
-import { augmentationDotY, barlineBounds, durationNotation, fitTupletBeamY, ledgerLineYs, noteheadStemStart, STAFF_LINE_YS, STAFF_MIDDLE_LINE_Y, STAFF_STROKE_WIDTH, staffStepFromWrittenMidi, stemDirectionForWrittenMidis, type DurationNotation, type StemDirection } from '@/core/music-notation';
+import { augmentationDotY, barlineBounds, beamGroupAtBeat, durationNotation, fitTupletBeamY, ledgerLineYs, noteheadStemStart, STAFF_LINE_YS, STAFF_MIDDLE_LINE_Y, STAFF_STROKE_WIDTH, staffStepFromWrittenMidi, stemDirectionForWrittenMidis, type DurationNotation, type StemDirection } from '@/core/music-notation';
 import { accidentalGlyphForKeySignature, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
 import type { ExamQuestion } from '@/core/provinces';
 import { naturalMidiFromStaffSvgY, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
@@ -98,6 +98,7 @@ type RenderedNotation = {
   item: NotationEvent;
   index: number;
   beat: number;
+  beamGroup: number;
   localBar: number;
   x: number;
   y: number;
@@ -185,6 +186,7 @@ function buildStemLayout(notes: RenderedNotation[]) {
     }
     if (note.notation.beamCount > 0) {
       if (run.length && run[run.length - 1].localBar !== note.localBar) flushRun();
+      if (run.length && run[run.length - 1].beamGroup !== note.beamGroup) flushRun();
       if (run.length && !!run[run.length - 1].notation.tuplet !== !!note.notation.tuplet) flushRun();
       run.push(note);
       return;
@@ -216,6 +218,7 @@ function buildStemLayout(notes: RenderedNotation[]) {
     const isTuplet = !!note.notation.tuplet && !note.item.rest;
     if (!isTuplet) { flushTriplet(); return; }
     if (tripletGroup.length && note.localBar !== tripletGroup[tripletGroup.length - 1].localBar) flushTriplet();
+    if (tripletGroup.length && note.beamGroup !== tripletGroup[tripletGroup.length - 1].beamGroup) flushTriplet();
     tripletGroup.push(note);
   });
   flushTriplet();
@@ -245,6 +248,7 @@ export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, 
       item,
       index,
       beat,
+      beamGroup: beamGroupAtBeat(beat, capacityMeter || meter),
       localBar,
       x,
       y: staffSvgYFromWrittenMidi(written),
@@ -253,7 +257,7 @@ export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, 
       direction: stemDirectionForWrittenMidis([written]),
       headHalfWidth: noteheadHalfWidth(notation.headKind),
     };
-  }), [barWidth, capacity, positioned]);
+  }), [barWidth, capacity, capacityMeter, meter, positioned]);
   const stemLayout = useMemo(() => buildStemLayout(rendered), [rendered]);
   const color = tone === 'green' ? '#2e8b6f' : tone === 'red' ? Brand.danger : ink ? '#141414' : Brand.ink;
   const staffLine = ink ? '#141414' : '#596169';
@@ -336,6 +340,9 @@ export function NotationEditor({ question, answer, unlocked, disabled, reviewCor
   const answerCapacity = meterCapacity(answer.meter, beatsPerBar);
   const targetBars = splitBars(targetTimedEvents(question), beatsPerBar, barCount);
   const canEdit = unlocked && !disabled;
+  const emptyText = !unlocked && !disabled ? '播放题目后开始作答'
+    : !answer.meter ? '请先选择拍号' : isMelody && !answer.keySignature ? '请先选择调号'
+      : isMelody ? '选择时值后点击音高位置' : '选择时值后点击谱面写入';
 
   function selectMeter(meter: string) {
     if (!canEdit || meter === answer.meter) return;
@@ -397,7 +404,7 @@ export function NotationEditor({ question, answer, unlocked, disabled, reviewCor
       const systemBarCount = Math.min(2, barCount - barOffset);
       const systemEvents = answer.events.filter((event) => Number(event.barIndex) >= barOffset && Number(event.barIndex) < barOffset + systemBarCount);
       const correctEvents = targetBars.slice(barOffset, barOffset + systemBarCount).flatMap((bar, localBar) => bar.map((event, index) => ({ ...event, barIndex: barOffset + localBar, inputOrder: index + 1 })));
-      return <View key={systemIndex} style={styles.systemCard}><View style={styles.systemHead}><Text style={[styles.systemLabel, ink && styles.systemLabelInk]}>第 {barOffset + 1}-{barOffset + systemBarCount} 小节</Text><Text style={[styles.systemBeat, ink && styles.systemBeatInk]}>已写 {roundBeats(sumDuration(systemEvents) * meterBeatScale(answer.meter))} 拍</Text></View><TimedAnswerStaff events={systemEvents} meter={systemIndex === 0 ? answer.meter : ''} capacityMeter={answer.meter} keySignature={isMelody ? answer.keySignature : ''} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled={!canEdit} ink={ink} tone={disabled ? reviewCorrect ? 'green' : 'red' : ''} emptyText={!answer.meter ? '请先选择拍号' : isMelody && !answer.keySignature ? '请先选择调号' : isMelody ? '选择时值后点击音高位置' : '选择时值后点击谱面写入'} onStaffTap={(barIndex, midi, spelling) => append(barIndex, midi, spelling)} onEventTap={(event) => setSelectedOrder(Number(event.inputOrder))} />{showCorrect && !reviewCorrect && <View style={styles.standardBlock}><Text style={styles.standardLabel}>{systemIndex === 0 ? `标准答案：${String(question.meter)}${isMelody ? ` · ${String(question.keyName || question.keySignature)}` : ''}` : '标准答案'}</Text><TimedAnswerStaff events={correctEvents} meter={systemIndex === 0 ? String(question.meter || '') : ''} capacityMeter={String(question.meter || '')} keySignature={isMelody ? String(question.keySignature || 'C') : ''} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled ink={ink} tone="green" emptyText="" /></View>}</View>;
+      return <View key={systemIndex} style={styles.systemCard}><View style={styles.systemHead}><Text style={[styles.systemLabel, ink && styles.systemLabelInk]}>第 {barOffset + 1}-{barOffset + systemBarCount} 小节</Text><Text style={[styles.systemBeat, ink && styles.systemBeatInk]}>已写 {roundBeats(sumDuration(systemEvents) * meterBeatScale(answer.meter))} 拍</Text></View><TimedAnswerStaff events={systemEvents} meter={systemIndex === 0 ? answer.meter : ''} capacityMeter={answer.meter} keySignature={isMelody ? answer.keySignature : ''} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled={!canEdit || !answer.meter || (isMelody && !answer.keySignature)} ink={ink} tone={disabled ? reviewCorrect ? 'green' : 'red' : ''} emptyText={emptyText} onStaffTap={(barIndex, midi, spelling) => append(barIndex, midi, spelling)} onEventTap={(event) => setSelectedOrder(Number(event.inputOrder))} />{showCorrect && !reviewCorrect && <View style={styles.standardBlock}><Text style={styles.standardLabel}>{systemIndex === 0 ? `标准答案：${String(question.meter)}${isMelody ? ` · ${String(question.keyName || question.keySignature)}` : ''}` : '标准答案'}</Text><TimedAnswerStaff events={correctEvents} meter={systemIndex === 0 ? String(question.meter || '') : ''} capacityMeter={String(question.meter || '')} keySignature={isMelody ? String(question.keySignature || 'C') : ''} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled ink={ink} tone="green" emptyText="" /></View>}</View>;
     })}
     {!!message && <Text accessibilityLiveRegion="polite" style={styles.error}>{message}</Text>}
   </View>;

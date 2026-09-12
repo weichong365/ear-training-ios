@@ -221,10 +221,17 @@ function pitchHarness() {
     && ts.isArrayBindingPattern(node.name) && node.initializer && ts.isCallExpression(node.initializer)
     && node.initializer.expression.getText(ast) === 'useState').map((node) => node.name.elements[0].name.text);
   let state = {}, mode = 'single', screenStateIndex = null;
+  const componentState = [];
+  let componentStateIndex = null;
   const hooks = {
     ...require('react'), memo: (component) => component, useEffect: () => {},
     useMemo: (factory) => factory(), useCallback: (fn) => fn, useRef: (value) => ({ current: value }),
     useState: (initial) => {
+      if (componentStateIndex !== null) {
+        const index = componentStateIndex++;
+        if (!(index in componentState)) componentState[index] = typeof initial === 'function' ? initial() : initial;
+        return [componentState[index], (next) => { componentState[index] = typeof next === 'function' ? next(componentState[index]) : next; }];
+      }
       const name = screenStateIndex === null ? null : stateNames[screenStateIndex++];
       const value = name && Object.hasOwn(state, name) ? state[name] : typeof initial === 'function' ? initial() : initial;
       if (name) state[name] = value;
@@ -235,7 +242,7 @@ function pitchHarness() {
     react: hooks,
     'react-native': { ...Object.fromEntries(['ActivityIndicator', 'Image', 'Pressable', 'ScrollView', 'Text', 'View'].map((name) => [name, name])),
       StyleSheet: { create: (styles) => styles }, Platform: { select: (values) => values.ios ?? values.default } },
-    'react-native-svg': { __esModule: true, default: 'Svg', G: 'G', Line: 'Line', Path: 'Path' },
+    'react-native-svg': { __esModule: true, default: 'Svg', G: 'G', Line: 'Line', Path: 'Path', Text: 'SvgText', Ellipse: 'Ellipse' },
     'expo-router': { useLocalSearchParams: () => ({ type: mode }), useFocusEffect: () => {} },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0 }) },
     'expo-haptics': { selectionAsync: () => Promise.resolve() },
@@ -272,6 +279,13 @@ function pitchHarness() {
   }
   return {
     load,
+    renderComponent(Component, props) {
+      componentStateIndex = 0;
+      const tree = Component(props);
+      componentStateIndex = null;
+      const rendered = nodes(tree);
+      return { nodes: rendered.filter((node) => typeof node === 'object'), text: rendered.filter((node) => typeof node === 'string' || typeof node === 'number').join('') };
+    },
     start(nextMode, question, phase, answer, correct = false) {
       mode = nextMode;
       state = { practiceLoaded: true, activePracticeSession: { mode, questions: [question] }, phase, answer, correct };
@@ -400,4 +414,94 @@ for (const [midi, y] of [[60, 78], [64, 68], [65, 63], [71, 48], [77, 28], [81, 
   for (const height of [96, 122]) assert.equal(coordinates.naturalMidiFromStaffTapY(y * height / 96, height), midi);
 }
 
-console.log(`practice parity contract passed (${files.length} source files and ${pitchCases.length} pitch workflows checked)`);
+// Timed tests exercise real editor handlers and inspect the emitted SVG. Removing
+// prerequisite guards or merging adjacent beat runs must fail these fixtures.
+const timedFailures = [];
+function timedCheck(name, run) {
+  try { run(); } catch (error) { timedFailures.push(`${name}: ${error.message}`); }
+}
+const timedHarness = pitchHarness();
+const { TimedAnswerStaff, NotationStaff } = timedHarness.load('./src/components/notation-editor.tsx');
+for (const [meter, duration, count, primaryCount] of [
+  ['2/4', 0.5, 4, 2], ['4/4', 0.5, 8, 4], ['3/8', 0.5, 3, 0],
+  ['3/8', 0.25, 6, 3], ['6/8', 0.5, 6, 2], ['4/4', 1 / 3, 12, 4],
+]) {
+  for (const continuation of [false, true]) timedCheck(`${meter}/${duration}/${continuation ? 'continuation' : 'first'} beams`, () => {
+    const barOffset = continuation ? 2 : 0;
+    const events = Array.from({ length: count * 2 }, (_, index) => ({ midi: 69, duration, barIndex: barOffset + Math.floor(index / count) }));
+    const render = timedHarness.renderComponent(TimedAnswerStaff, { events, meter: continuation ? '' : meter, capacityMeter: meter, keySignature: '', barOffset, barCount: 2, isFinalSystem: true, disabled: true, emptyText: '' });
+    const primary = render.nodes.filter((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key));
+    assert.equal(primary.length, primaryCount * 2, 'beams must stop at each beat and barline');
+    assert.equal(render.nodes.filter((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9').length, duration === 1 / 3 ? 8 : 0, 'each triplet beat needs its own numeral');
+    if (continuation) assert.ok(!render.nodes.some((node) => node.type === 'SvgText' && node.props.fontSize === '17'), 'continuation hides only the meter label');
+  });
+}
+
+timedCheck('rests and secondary beams', () => {
+  const events = [0.5, -0.5, 0.5, 0.5, ...Array(8).fill(0.25)].map((duration, index) => ({ midi: 69, duration, rest: duration < 0, barIndex: index < 4 ? 0 : 1 }));
+  const render = timedHarness.renderComponent(TimedAnswerStaff, { events, meter: '2/4', capacityMeter: '2/4', keySignature: '', barOffset: 0, barCount: 2, isFinalSystem: true, disabled: true, emptyText: '' });
+  assert.equal(render.nodes.filter((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key)).length, 3, 'rests break runs and do not shift subsequent beat groups');
+  assert.equal(render.nodes.filter((node) => node.type === 'Line' && /^beam-2-\d+$/.test(node.key)).length, 2, 'secondary beams stop with their primary beat groups');
+});
+
+timedCheck('read-only preview systems', () => {
+  const render = timedHarness.renderComponent(NotationStaff, { events: Array.from({ length: 18 }, () => ({ midi: 69, duration: 0.5 })), meter: '6/8', barCount: 3 });
+  const rows = render.nodes.filter((node) => node.type?.name === 'TimedAnswerStaff');
+  assert.deepEqual(rows.map((row) => [row.props.barOffset, row.props.barCount, row.props.events.length, row.props.meter, row.props.capacityMeter, row.props.isFinalSystem]), [[0, 2, 12, '6/8', '6/8', false], [2, 1, 6, '', '6/8', true]], 'sequential preview events preserve the final partial system and continuation meter');
+});
+
+for (const type of ['rhythm', 'melody']) timedCheck(`${type} editing workflow`, () => {
+  const editorHarness = pitchHarness();
+  const { NotationEditor } = editorHarness.load('./src/components/notation-editor.tsx');
+  const question = { type, meter: '6/8', beatsPerBar: 3, barCount: 4, keySignature: 'G', beats: Array(24).fill(0.5), durs: Array(24).fill(0.5), midis: Array(24).fill(69) };
+  let answer = emptyExamAnswer();
+  const render = (props = {}) => editorHarness.renderComponent(NotationEditor, { question, answer, unlocked: true, onChange: (next) => { answer = next; }, ...props });
+  const staffRows = (value) => value.nodes.filter((node) => node.type?.name === 'TimedAnswerStaff');
+  const button = (label) => render().nodes.find((node) => node.type === 'Pressable' && node.props.children?.props?.children === label);
+  const ready = render({ unlocked: false });
+  assert.ok(ready.text.includes('播放题目后开始作答'), 'ready staff must prompt playback before setup');
+  assert.ok(!ready.text.includes('撤销'), 'ready phase must not expose editing tools');
+  assert.ok(ready.nodes.filter((node) => node.props.accessibilityRole === 'radio').every((node) => node.props.disabled), 'ready setup controls are disabled');
+  assert.ok(staffRows(render()).every((node) => node.props.disabled), 'missing meter must disable writing');
+  staffRows(render())[0].props.onStaffTap(0, 60, 'C4');
+  assert.deepEqual(answer.events, [], 'missing prerequisites cannot write events');
+  button('6/8').props.onPress();
+  if (type === 'melody') {
+    assert.ok(staffRows(render()).every((node) => node.props.disabled), 'melody also requires key selection');
+    assert.ok(render().text.includes('请先选择调号'));
+    button('G 大调（1♯）').props.onPress();
+  }
+  assert.ok(staffRows(render()).every((node) => !node.props.disabled), 'complete setup enables writing');
+  const choices = render().nodes.filter((node) => node.props.accessibilityRole === 'radio').map((node) => node.props.children.props.children);
+  assert.ok(choices.indexOf('6/8') < choices.indexOf('附点二分'), 'meter comes before duration');
+  if (type === 'melody') assert.ok(choices.indexOf('G 大调（1♯）') < choices.indexOf('附点二分'), 'key comes before duration');
+  button('八分').props.onPress();
+  staffRows(render())[1].props.onStaffTap(2, 60, 'C4');
+  const entered = structuredClone(answer.events);
+  button('十六分').props.onPress();
+  assert.deepEqual(answer.events, entered, 'duration selection preserves entered notes');
+  staffRows(render())[0].props.onStaffTap(0, 64, 'E4');
+  assert.deepEqual(answer.events.map((event) => [event.barIndex, event.duration]), [[0, 0.25], [2, 0.5]], 'new notes use the selected duration while preserving earlier bars');
+  button('撤销').props.onPress();
+  assert.deepEqual(answer.events, entered, 'undo removes last input, not the last item in bar order');
+  button('写休止符').props.onPress();
+  staffRows(render())[0].props.onStaffTap(0, 64, 'E4');
+  assert.equal(answer.events[0].rest, true);
+  assert.equal(answer.events[0].duration, -0.25);
+  const comparison = render({ unlocked: false, disabled: true, showCorrect: true, reviewCorrect: false });
+  const rows = staffRows(comparison);
+  assert.deepEqual(rows.map((row) => [row.props.barOffset, row.props.barCount, row.props.isFinalSystem]), [[0, 2, false], [0, 2, false], [2, 2, true], [2, 2, true]], 'user and correct rows share two-measure system boundaries');
+  assert.deepEqual(rows.map((row) => row.props.meter), ['6/8', '6/8', '', '']);
+  assert.ok(rows.every((row) => row.props.capacityMeter === '6/8' && row.props.disabled), 'every feedback row retains its layout meter and is read-only');
+  assert.equal(rows[1].props.events.length, 12);
+  assert.equal(rows[3].props.events.length, 12);
+  assert.deepEqual(rows.map((row) => row.props.tone), ['red', 'green', 'red', 'green']);
+  assert.ok(!comparison.text.includes('撤销'), 'feedback hides editing tools');
+  assert.deepEqual(staffRows(render({ unlocked: false, disabled: true, showCorrect: true, reviewCorrect: true })).map((row) => row.props.tone), ['green', 'green'], 'correct feedback shows only the green user systems');
+  answer = { ...answer, meter: '3/8' };
+  const wrongMeterRows = staffRows(render({ unlocked: false, disabled: true, showCorrect: true, reviewCorrect: false }));
+  assert.deepEqual(wrongMeterRows.map((row) => row.props.capacityMeter), ['3/8', '6/8', '3/8', '6/8'], 'incorrect user meter must not change standard-answer layout or disappear on continuation');
+});
+assert.deepEqual(timedFailures, [], 'timed notation parity failures');
+
+console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 12 beam fixtures and 2 timed workflows checked)`);
