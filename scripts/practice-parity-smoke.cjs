@@ -605,21 +605,27 @@ for (const [meter, duration, count, primaryCount] of [
   });
 }
 
-for (const [meter, count, expectedBeams, expectedTuplets, expectedEndpoints] of [
-  ['4/4', 12, 4, 4, [[120.9, 154.233], [170.9, 204.233], [220.9, 254.233], [270.9, 304.233]]],
-  ['6/8', 9, 2, 2, [[120.9, 209.789], [232.011, 298.678]]],
+for (const [meter, count, expectedDuration, expectedGroups, expectedTuplets, expectedEndpoints] of [
+  ['3/8', 3, 1, 2, 2, [[120.9, 165.344], [209.789, 209.789]]],
+  ['4/4', 12, 4, 4, 4, [[120.9, 154.233], [170.9, 204.233], [220.9, 254.233], [270.9, 304.233]]],
+  ['6/8', 9, 3, 2, 2, [[120.9, 209.789], [232.011, 298.678]]],
 ]) {
-  for (const continuation of [false, true]) timedCheck(`${meter} complete tuplet ${continuation ? 'continuation' : 'first'} groups`, () => {
+  for (const continuation of [false, true]) timedCheck(`${meter} ${meter === '3/8' ? 'partial' : 'complete'} tuplet ${continuation ? 'continuation' : 'first'} groups`, () => {
     const barOffset = continuation ? 2 : 0;
     const events = Array.from({ length: count }, () => ({ midi: 69, duration: 1 / 3, barIndex: barOffset }));
-    assert.equal(events.reduce((sum, event) => sum + event.duration, 0), meter === '6/8' ? 3 : 4, 'tuplet fixture must fill the meter capacity');
+    assert.equal(events.reduce((sum, event) => sum + event.duration, 0), expectedDuration, 'tuplet fixture must retain its literal represented duration');
     const render = timedHarness.renderComponent(TimedAnswerStaff, { events, meter: continuation ? '' : meter, capacityMeter: meter, keySignature: '', barOffset, barCount: 1, isFinalSystem: true, disabled: true, emptyText: '' });
     const primary = render.nodes.filter((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key));
+    const flags = render.nodes.filter((node) => node.type?.name === 'MusicFlag');
     const tuplets = render.nodes.filter((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9');
     const rounded = (value) => Math.round(Number(value) * 1000) / 1000;
-    assert.equal(primary.length, expectedBeams, `${meter} must use meter-sized tuplet beam groups`);
+    const groups = [
+      ...primary.map((beam) => [rounded(beam.props.x1), rounded(beam.props.x2)]),
+      ...flags.map((flag) => [rounded(flag.props.stemX), rounded(flag.props.stemX)]),
+    ].sort((left, right) => left[0] - right[0]);
+    assert.equal(groups.length, expectedGroups, `${meter} must use meter-sized tuplet groups`);
     assert.equal(tuplets.length, expectedTuplets, `${meter} must emit one independently counted numeral per meter group`);
-    assert.deepEqual(primary.map((beam) => [rounded(beam.props.x1), rounded(beam.props.x2)]), expectedEndpoints, `${meter} beam endpoints must identify exact group membership`);
+    assert.deepEqual(groups, expectedEndpoints, `${meter} beam and flag endpoints must identify exact group membership`);
     if (continuation) assert.ok(!render.nodes.some((node) => node.type === 'SvgText' && node.props.fontSize === '17'), 'continuation hides only the meter label');
   });
 }
@@ -833,7 +839,7 @@ for (const compact of [false, true]) {
   assert.ok(blackHeight >= 44 && keybedHeight - blackHeight - 2 * whites[0].borderWidth >= 44, 'black and exposed white key hit depths must remain at least 44 pt');
 }
 
-console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 12 beam fixtures and 2 timed workflows checked)`);
+console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 14 beam fixtures and 2 timed workflows checked)`);
 
 async function flushAsyncEffects() {
   for (let count = 0; count < 12; count += 1) await Promise.resolve();
