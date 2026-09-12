@@ -6,6 +6,7 @@ const ts = require('typescript');
 const root = path.resolve(__dirname, '..');
 const files = [
   'src/app/practice.tsx',
+  'src/app/exam-paper.tsx',
   'src/components/answer-staff.tsx',
   'src/components/notation-editor.tsx',
   'src/components/piano-keyboard.tsx',
@@ -14,6 +15,7 @@ const files = [
 ];
 const source = Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), 'utf8')]));
 const practice = source['src/app/practice.tsx'];
+const examPaper = source['src/app/exam-paper.tsx'];
 const notation = source['src/components/notation-editor.tsx'];
 const audioSettings = source['src/core/audio-settings.ts'];
 const audioEngine = source['src/services/audio-engine.ts'];
@@ -47,6 +49,38 @@ const childrenOf = (node) => {
   ts.forEachChild(node, visit);
   return children;
 };
+function assertSharedRouteConsumers(routeName, routeSource, expected) {
+  const ast = ts.createSourceFile(routeName, routeSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const imports = new Map(ast.statements.filter(ts.isImportDeclaration).map((node) => [
+    node.moduleSpecifier.text,
+    new Set(node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)
+      ? node.importClause.namedBindings.elements.map((element) => element.name.text) : []),
+  ]));
+  const jsxNames = new Set(childrenOf(ast).flatMap((node) => {
+    const opening = ts.isJsxElement(node) ? node.openingElement : ts.isJsxSelfClosingElement(node) ? node : undefined;
+    return opening && ts.isIdentifier(opening.tagName) ? [opening.tagName.text] : [];
+  }));
+  for (const [moduleName, componentName] of expected) {
+    assert.ok(imports.get(moduleName)?.has(componentName), `${routeName} must import shared ${componentName}`);
+    assert.ok(jsxNames.has(componentName), `${routeName} must render shared ${componentName} in its route tree`);
+  }
+  assert.ok(!imports.has('react-native-svg'), `${routeName} must not import route-local SVG geometry`);
+  for (const geometryTag of ['Svg', 'G', 'Line', 'Path', 'Ellipse', 'Circle']) {
+    assert.ok(!jsxNames.has(geometryTag), `${routeName} must not render route-local ${geometryTag} geometry`);
+  }
+}
+
+assertSharedRouteConsumers('practice.tsx', practice, [
+  ['@/components/answer-staff', 'AnswerStaff'],
+  ['@/components/notation-editor', 'NotationEditor'],
+  ['@/components/piano-keyboard', 'PianoKeyboard'],
+]);
+assertSharedRouteConsumers('exam-paper.tsx', examPaper, [
+  ['@/components/answer-staff', 'AnswerStaff'],
+  ['@/components/staff-preview', 'StaffPreview'],
+  ['@/components/notation-editor', 'NotationStaff'],
+  ['@/components/notation-editor', 'NotationEditor'],
+]);
 function assertPracticeStateAndVolume(practice) {
   // Bind this one source file; dependency types are not needed for lexical identity.
   const practiceAst = ts.createSourceFile('practice.tsx', practice, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -242,7 +276,7 @@ timedStaffTags.forEach((tag, index) => {
 // Exercise production pitch renders and event handlers without a native runtime.
 // Only device effects and unrelated timed/piano components are replaced. State
 // names come from the AST so adding an earlier hook cannot shift test fixtures.
-function pitchHarness() {
+function pitchHarness({ realNotation = false, realPiano = false } = {}) {
   const ast = ts.createSourceFile('practice.tsx', practice, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const stateNames = childrenOf(ast).filter((node) => ts.isVariableDeclaration(node)
     && ts.isArrayBindingPattern(node.name) && node.initializer && ts.isCallExpression(node.initializer)
@@ -283,9 +317,9 @@ function pitchHarness() {
     'expo-haptics': { selectionAsync: () => Promise.resolve(), notificationAsync: () => Promise.resolve(), NotificationFeedbackType: { Success: 'success', Error: 'error' } },
     '@/services/audio-engine': {}, '@/services/local-data': {}, '@/global.css': {},
     '@/components/app-icon': { AppIcon: () => null },
-    '@/components/notation-editor': { NotationEditor: () => null },
-    '@/components/piano-keyboard': { PianoKeyboard: () => null },
   };
+  if (!realNotation) mocks['@/components/notation-editor'] = { NotationEditor: () => null };
+  if (!realPiano) mocks['@/components/piano-keyboard'] = { PianoKeyboard: () => null };
   const cache = new Map();
   function load(request, from = root) {
     if (Object.hasOwn(mocks, request)) return mocks[request];
@@ -324,11 +358,11 @@ function pitchHarness() {
       const rendered = nodes(tree);
       return { nodes: rendered.filter((node) => typeof node === 'object'), text: rendered.filter((node) => typeof node === 'string' || typeof node === 'number').join('') };
     },
-    start(nextMode, question, phase, answer, correct = false) {
+    start(nextMode, question, phase, answer, correct = false, stateOverrides = {}) {
       mode = nextMode;
       params = {};
       screenRefs.length = 0;
-      state = { practiceLoaded: true, activePracticeSession: { mode, questions: [question], snapshots: [], sessionId: 'test-session' }, phase, answer, correct };
+      state = { practiceLoaded: true, activePracticeSession: { mode, questions: [question], snapshots: [], sessionId: 'test-session' }, phase, answer, correct, ...stateOverrides };
     },
     openReview(nextParams) {
       params = nextParams;
@@ -462,6 +496,66 @@ for (const correct of [false, true]) {
 harness.start('group', { type: 'interval', typeName: '旋律音组', groupSize: 3, noteCount: 3, midis: [60, 64, 67] }, 'answering', { ...emptyExamAnswer(), pitches: [null, 64, 67] });
 assert.doesNotThrow(() => harness.render(), 'restored null pitch slots must render');
 assert.equal(submitButton(harness.render()).props.disabled, true, 'restored null pitch slots are incomplete');
+
+// Route-level practice fixtures render the real shared staff and piano modules.
+// Removing a shared route consumer or weakening its phase/audio gate must fail here.
+const sharedPractice = pitchHarness({ realNotation: true, realPiano: true });
+const { AnswerStaff: SharedAnswerStaff } = sharedPractice.load('./src/components/answer-staff.tsx');
+const { NotationEditor: SharedNotationEditor, TimedAnswerStaff: SharedTimedAnswerStaff } = sharedPractice.load('./src/components/notation-editor.tsx');
+const { PianoKeyboard: SharedPianoKeyboard } = sharedPractice.load('./src/components/piano-keyboard.tsx');
+const sharedSingle = { id: 'practice-single', type: 'single', typeName: '单音听记', midis: [60], spellings: ['C4'], answer: [60], answerText: 'C4', repeatCount: 3 };
+const sharedAnswer = { ...emptyExamAnswer(), pitches: [60], spellings: ['C4'] };
+const sharedWrongAnswer = { ...emptyExamAnswer(), pitches: [62], spellings: ['D4'] };
+const sharedComponent = (render, Component) => render.nodes.find((node) => node.type === Component);
+const pianoKeys = (render) => render.nodes.filter((node) => node.type === 'Pressable' && /^钢琴键 /.test(node.props.accessibilityLabel || ''));
+
+for (const phase of ['ready', 'answering']) {
+  sharedPractice.start('single', sharedSingle, phase, phase === 'ready' ? emptyExamAnswer() : sharedAnswer);
+  const render = sharedPractice.render();
+  assert.equal(sharedComponent(render, SharedAnswerStaff).props.disabled, phase !== 'answering', `${phase}: shared answer staff must follow the practice edit phase`);
+  const keyboard = sharedComponent(render, SharedPianoKeyboard);
+  assert.equal(keyboard.props.disabled, true, `${phase}: review piano must remain locked`);
+  assert.equal(keyboard.props.onKeyPress, undefined, `${phase}: locked review piano must not expose a press handler`);
+  assert.equal(pianoKeys(render).length, 0, `${phase}: locked review piano must not expose focusable keys`);
+  assert.ok(render.nodes.some((node) => node.props['aria-hidden'] === true && node.props.importantForAccessibility === 'no-hide-descendants'), `${phase}: locked review piano must hide descendants from accessibility focus`);
+}
+
+for (const [correct, answer, tone, showCorrect] of [[true, sharedAnswer, 'green', false], [false, sharedWrongAnswer, 'red', true]]) {
+  sharedPractice.start('single', sharedSingle, 'feedback', answer, correct, { highlights: correct ? { 60: 'correct' } : { 60: 'correct', 62: 'wrong' } });
+  const render = sharedPractice.render();
+  const staff = sharedComponent(render, SharedAnswerStaff);
+  assert.deepEqual([staff.props.disabled, staff.props.tone, staff.props.showCorrect], [true, tone, showCorrect], `${correct ? 'correct' : 'wrong'} feedback must use the shared read-only answer staff state`);
+  const keyboard = sharedComponent(render, SharedPianoKeyboard);
+  assert.equal(keyboard.props.disabled, false, 'idle feedback must unlock the shared review piano');
+  assert.equal(typeof keyboard.props.onKeyPress, 'function', 'unlocked feedback must wire the review piano handler');
+  assert.equal(pianoKeys(render).length, 27, 'unlocked feedback must expose every G3–A5 key as a focusable control');
+  assert.ok(pianoKeys(render).every((key) => key.props.disabled === false && key.props.accessibilityState?.disabled === false), 'idle unlocked review keys must be pressable');
+}
+
+for (const audioState of ['playing', 'preparing']) {
+  sharedPractice.start('single', sharedSingle, 'feedback', sharedWrongAnswer, false, { [audioState]: true });
+  const render = sharedPractice.render();
+  const keyboard = sharedComponent(render, SharedPianoKeyboard);
+  assert.equal(keyboard.props.disabled, true, `feedback piano must disable while ${audioState}`);
+  assert.equal(typeof keyboard.props.onKeyPress, 'function', `feedback piano keeps its handler while ${audioState} but gates every key`);
+  assert.ok(pianoKeys(render).every((key) => key.props.disabled === true && key.props.accessibilityState?.disabled === true), `every unlocked review key must disable while ${audioState}`);
+}
+
+const timedPracticeQuestion = { id: 'practice-rhythm', type: 'rhythm', typeName: '节奏听记', meter: '6/8', beatsPerBar: 3, barCount: 3, beats: Array(18).fill(0.5), repeatCount: 3 };
+const timedPracticeAnswer = { ...emptyExamAnswer(), meter: '6/8', events: Array.from({ length: 18 }, (_, index) => ({ midi: 69, duration: 0.5, barIndex: Math.floor(index / 6) })) };
+timedPracticeAnswer.events[0] = { ...timedPracticeAnswer.events[0], duration: -0.5, rest: true };
+sharedPractice.start('rhythm', timedPracticeQuestion, 'feedback', timedPracticeAnswer, false);
+const timedPracticeFeedback = sharedPractice.render();
+assert.ok(sharedComponent(timedPracticeFeedback, SharedNotationEditor), 'timed practice feedback must render the shared notation editor');
+const timedPracticeRows = timedPracticeFeedback.nodes.filter((node) => node.type === SharedTimedAnswerStaff);
+assert.deepEqual(timedPracticeRows.map((row) => row.props.tone), ['red', 'green', 'red', 'green'], 'wrong timed practice feedback must render paired user and standard shared staffs');
+assert.deepEqual(timedPracticeRows.map((row) => row.props.meter), ['6/8', '6/8', '', ''], 'timed practice continuation rows must hide only the displayed meter');
+assert.ok(timedPracticeRows.every((row) => row.props.capacityMeter === '6/8' && row.props.disabled), 'timed practice feedback rows must preserve layout meter and read-only state');
+
+sharedPractice.start('single', sharedSingle, 'finished', sharedAnswer, true);
+const finishedPractice = sharedPractice.render();
+assert.ok(finishedPractice.text.includes('本组训练完成'), 'finished practice must render its completion state');
+assert.ok(!sharedComponent(finishedPractice, SharedAnswerStaff) && !sharedComponent(finishedPractice, SharedPianoKeyboard), 'finished practice must remove answer and piano interaction surfaces');
 
 // Hand-checked line/space fixtures guard the shared native geometry contract.
 const geometry = harness.load('./src/core/music-notation.ts');
@@ -961,4 +1055,105 @@ async function flushAsyncEffects() {
   const failedResult = failedSave.render();
   assert.ok(!failedResult.text.includes('1 道错题已收入错题复盘'), 'a failed local write must not be reported as saved');
   assert.ok(failedResult.text.includes('1 道错题未能保存，请返回后重试'), 'completion must retain an actionable local-save failure summary');
+
+  // Render the whole mock-exam route with the real shared staff components.
+  // The storage/audio seams stay mocked because they are the platform boundaries,
+  // while ready, playing, answering, feedback and submitted trees remain real.
+  const exam = pitchHarness();
+  const realNotation = exam.load('./src/components/notation-editor.tsx');
+  const { AnswerStaff: ExamAnswerStaff } = exam.load('./src/components/answer-staff.tsx');
+  const { StaffPreview: ExamStaffPreview } = exam.load('./src/components/staff-preview.tsx');
+  exam.mocks['@/components/notation-editor'] = realNotation;
+  exam.mocks['expo-router'].router = { replace() {} };
+  let confirmExam;
+  exam.mocks['react-native'].Alert = { alert: (_title, _message, actions) => { confirmExam = actions[1].onPress; } };
+  let resolveExamPlayback, examPlaybackOptions;
+  exam.mocks['@/services/audio-engine'] = {
+    stopQuestionAudio() {},
+    playQuestionAudio: (_question, options) => {
+      examPlaybackOptions = options;
+      return new Promise((resolve) => { resolveExamPlayback = resolve; });
+    },
+  };
+  const choiceTimedEvents = Array.from({ length: 18 }, () => ({ midis: [69], dur: 0.5 }));
+  const examQuestions = [
+    { id: 'exam-ready', type: 'single', typeName: '单音听记', sectionTitle: '一、音高', points: 2, midis: [60], spellings: ['C4'], answerText: 'C4', repeatCount: 3 },
+    { id: 'exam-correct', type: 'single', typeName: '单音听记', sectionTitle: '一、音高', points: 2, midis: [64], spellings: ['E4'], answerText: 'E4', repeatCount: 3 },
+    { id: 'exam-wrong', type: 'single', typeName: '单音听记', sectionTitle: '一、音高', points: 2, midis: [81], spellings: ['A5'], answerText: 'A5', repeatCount: 3 },
+    { id: 'exam-choice', type: 'single', typeName: '谱例选择', sectionTitle: '二、选择', points: 2, repeatCount: 3, choice: { correctIndex: 0, options: [
+      { label: 'A', events: [{ midis: [64], dur: 1 }] },
+      { label: 'B', events: choiceTimedEvents, meter: '6/8', barCount: 3 },
+    ] } },
+    { id: 'exam-rhythm', type: 'rhythm', typeName: '节奏听记', sectionTitle: '三、节奏', points: 6, meter: '6/8', beatsPerBar: 3, barCount: 3, examBars: 3, beats: Array(18).fill(0.5), repeatCount: 3 },
+  ];
+  const completeTimedAnswer = { ...emptyExamAnswer(), meter: '6/8', events: Array.from({ length: 18 }, (_, index) => ({ midi: 69, duration: 0.5, barIndex: Math.floor(index / 6) })) };
+  completeTimedAnswer.events[0] = { ...completeTimedAnswer.events[0], duration: -0.5, rest: true };
+  let examSession = {
+    paper: { id: 'paper-flow', provinceId: 'zhejiang', provinceLabel: '浙江', framework: { title: '集成测试卷', year: '2026' }, questions: examQuestions, fullScore: 14, createdAt: 1 },
+    answers: {
+      'exam-ready': emptyExamAnswer(),
+      'exam-correct': { ...emptyExamAnswer(), pitches: [64], spellings: ['E4'] },
+      'exam-wrong': { ...emptyExamAnswer(), pitches: [79], spellings: ['G5'] },
+      'exam-choice': { ...emptyExamAnswer(), choiceIndex: 0 },
+      'exam-rhythm': completeTimedAnswer,
+    },
+    playCounts: {},
+    unlockedIds: ['exam-correct', 'exam-wrong', 'exam-choice', 'exam-rhythm'],
+    currentIndex: 0,
+    updatedAt: 1,
+  };
+  let savedExamResult;
+  exam.mocks['@/services/local-data'] = {
+    getActiveExamSession: async () => examSession,
+    getAudioVolume: async () => 78,
+    saveExamSession: async (next) => { examSession = next; },
+    saveExamResult: async (result) => { savedExamResult = result; },
+    clearActiveExamSession: async () => {},
+  };
+  const ExamPaperScreen = exam.load('./src/app/exam-paper.tsx').default;
+  assert.ok(exam.renderComponent(ExamPaperScreen, {}, true).text.includes('正在恢复试卷'), 'mock-exam route must begin in its ready/loading state');
+  exam.runEffects();
+  await flushAsyncEffects();
+  const renderExam = () => exam.renderComponent(ExamPaperScreen, {});
+  let examRender = renderExam();
+  const examComponents = (Component) => examRender.nodes.filter((node) => node.type === Component);
+  assert.equal(examComponents(ExamAnswerStaff).length, 3, 'mock exam must render basic user answers through shared AnswerStaff');
+  assert.equal(examComponents(ExamStaffPreview).length, 1, 'mock exam must render a basic choice through shared StaffPreview');
+  assert.equal(examComponents(realNotation.NotationStaff).length, 1, 'mock exam must render a timed choice through shared NotationStaff');
+  assert.equal(examComponents(realNotation.NotationEditor).length, 1, 'mock exam must render timed user answers through shared NotationEditor');
+  assert.ok(examRender.nodes.some((node) => node.type === 'Svg'), 'shared mock-exam consumers must reach real native SVG staff output');
+  assert.equal(examComponents(ExamAnswerStaff)[0].props.disabled, true, 'unplayed mock-exam question must keep its shared answer staff locked');
+  assert.ok(examComponents(ExamAnswerStaff).slice(1).every((staff) => staff.props.disabled === false), 'previously unlocked mock-exam answers must remain editable before submission');
+
+  examRender.nodes.find((node) => node.type === 'Pressable' && node.props.accessibilityLabel === '播放本题').props.onPress();
+  examRender = renderExam();
+  assert.ok(examRender.nodes.some((node) => node.props.accessibilityLabel === '正在准备音频' && node.props.disabled), 'mock-exam playing flow must expose a disabled preparing control');
+  resolveExamPlayback(true);
+  await flushAsyncEffects();
+  examRender = renderExam();
+  assert.ok(examRender.nodes.some((node) => node.props.accessibilityLabel === '正在播放' && node.props.disabled), 'mock-exam playing flow must expose a disabled active-audio control');
+  assert.equal(examRender.nodes.filter((node) => node.type === ExamAnswerStaff)[0].props.disabled, false, 'audio start must unlock the shared user-answer staff');
+  examPlaybackOptions.onFinish();
+  examRender = renderExam();
+  examRender.nodes.filter((node) => node.type === ExamAnswerStaff)[0].props.onChange([60], ['C4']);
+  examRender = renderExam();
+  assert.deepEqual(examRender.nodes.filter((node) => node.type === ExamAnswerStaff)[0].props.pitches, [60], 'unlocked shared answer staff must update the mock-exam session');
+
+  const submitExam = examRender.nodes.find((node) => node.type === 'Pressable' && childText(node.props.children) === '提交整张试卷');
+  submitExam.props.onPress();
+  assert.equal(typeof confirmExam, 'function', 'mock-exam finish control must reach the confirmation boundary');
+  await confirmExam();
+  examRender = renderExam();
+  assert.ok(examRender.text.includes('已完成交卷') && examRender.text.includes('标准答案已显示在原卷面'), 'submitted mock exam must render its finished state');
+  assert.deepEqual({ questionCount: savedExamResult.questionCount, fullScore: savedExamResult.total }, { questionCount: 5, fullScore: 14 }, 'mock-exam completion must retain the original paper scope');
+  const feedbackStaffs = examRender.nodes.filter((node) => node.type === ExamAnswerStaff);
+  const correctFeedbackStaff = feedbackStaffs.find((staff) => staff.props.correctPitches[0] === 64);
+  const wrongFeedbackStaff = feedbackStaffs.find((staff) => staff.props.correctPitches[0] === 81);
+  assert.deepEqual([correctFeedbackStaff.props.disabled, correctFeedbackStaff.props.tone, correctFeedbackStaff.props.showCorrect], [true, 'green', false], 'correct mock-exam feedback must use the shared green user staff only');
+  assert.deepEqual([wrongFeedbackStaff.props.disabled, wrongFeedbackStaff.props.tone, wrongFeedbackStaff.props.showCorrect], [true, 'red', true], 'wrong mock-exam feedback must use paired shared user and correct staffs');
+  const timedExamFeedbackRows = examRender.nodes.filter((node) => node.type === realNotation.TimedAnswerStaff && node.props.tone);
+  assert.deepEqual(timedExamFeedbackRows.map((row) => row.props.tone), ['red', 'green', 'red', 'green'], 'wrong timed mock-exam feedback must render paired shared user and standard staffs');
+  assert.deepEqual(timedExamFeedbackRows.map((row) => row.props.meter), ['6/8', '6/8', '', ''], 'mock-exam continuation feedback must hide only the displayed meter');
+  assert.ok(timedExamFeedbackRows.every((row) => row.props.capacityMeter === '6/8' && row.props.disabled), 'mock-exam standard-answer rows must preserve layout meter and read-only state');
+  console.log('shared route flow passed: practice + wrong-answer retry + mock exam + choice/user/standard answers');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
