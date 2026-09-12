@@ -465,11 +465,11 @@ assert.equal(submitButton(harness.render()).props.disabled, true, 'restored null
 
 // Hand-checked line/space fixtures guard the shared native geometry contract.
 const geometry = harness.load('./src/core/music-notation.ts');
-assert.deepEqual(geometry.STAFF_LINE_YS, [32, 40, 48, 56, 64]);
-assert.equal(geometry.staffSvgYFromWrittenMidi(64), 64);
-assert.deepEqual(geometry.ledgerLineYs(60), [72]);
-assert.deepEqual(geometry.ledgerLineYs(57), [72, 80]);
-assert.deepEqual(geometry.barlineBounds(), { top: 32, bottom: 64 });
+assert.deepEqual(geometry.STAFF_LINE_YS, [28, 38, 48, 58, 68]);
+assert.equal(geometry.staffSvgYFromWrittenMidi(64), 68);
+assert.deepEqual(geometry.ledgerLineYs(60), [78]);
+assert.deepEqual(geometry.ledgerLineYs(57), [78, 88]);
+assert.deepEqual(geometry.barlineBounds(), { top: 28, bottom: 68 });
 assert.equal(geometry.writtenMidiFromStaffSvgY(geometry.staffSvgYFromWrittenMidi(69)), 69);
 assert.equal(geometry.pianoWhiteMidis(55, 81).length, 16);
 assert.equal(geometry.pianoBlackKeys(55, 81).length, 11);
@@ -479,8 +479,8 @@ naturalWrittenMidis.forEach((midi) => {
   assert.equal(geometry.writtenMidiFromStaffSvgY(geometry.staffSvgYFromWrittenMidi(midi)), midi,
     `natural written pitch must round-trip: ${midi}`);
 });
-assert.equal(geometry.STAFF_LINE_YS[1] - geometry.STAFF_LINE_YS[0], 8, 'staff lines must use equal spacing');
-assert.equal(geometry.ledgerLineYs(57)[1] - geometry.ledgerLineYs(57)[0], 8, 'ledger lines must use staff spacing');
+assert.equal(geometry.STAFF_LINE_YS[1] - geometry.STAFF_LINE_YS[0], 10, 'staff lines must use equal spacing');
+assert.equal(geometry.ledgerLineYs(57)[1] - geometry.ledgerLineYs(57)[0], 10, 'ledger lines must use staff spacing');
 assert.equal(geometry.STAFF_STROKE_WIDTH, 1, 'ledger and staff strokes must share the one-point width');
 for (const [meter, elapsed, expected] of [
   ['2/4', [0, 0.5, 1, 1.5], [0, 0, 1, 1]],

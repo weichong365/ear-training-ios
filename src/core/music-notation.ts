@@ -12,12 +12,18 @@ export type DurationNotation = {
   tuplet?: boolean;
 };
 
-export const STAFF_TOP_LINE_Y = 32;
-export const STAFF_MIDDLE_LINE_Y = 48;
-export const STAFF_BOTTOM_LINE_Y = 64;
-export const STAFF_LINE_GAP = 8;
+export const STAFF_TOP_LINE_Y = 28;
+export const STAFF_LINE_GAP = 10;
+export const STAFF_MIDDLE_LINE_Y = STAFF_TOP_LINE_Y + STAFF_LINE_GAP * 2;
+export const STAFF_BOTTOM_LINE_Y = STAFF_TOP_LINE_Y + STAFF_LINE_GAP * 4;
 export const STAFF_STEP_GAP = STAFF_LINE_GAP / 2;
-export const STAFF_LINE_YS = [32, 40, 48, 56, 64] as const;
+export const STAFF_LINE_YS = [
+  STAFF_TOP_LINE_Y,
+  STAFF_TOP_LINE_Y + STAFF_LINE_GAP,
+  STAFF_TOP_LINE_Y + STAFF_LINE_GAP * 2,
+  STAFF_TOP_LINE_Y + STAFF_LINE_GAP * 3,
+  STAFF_TOP_LINE_Y + STAFF_LINE_GAP * 4,
+] as const;
 export const STAFF_STROKE_WIDTH = 1;
 
 const STAFF_E4_Y = STAFF_BOTTOM_LINE_Y;
@@ -27,7 +33,7 @@ const LETTER_INDEX: Record<string, number> = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 
 const SHARP_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const E4_DIATONIC = 4 * 7 + LETTER_INDEX.E;
 
-/** Convert a written MIDI pitch to the shared 96-unit staff coordinate. */
+/** Convert a written MIDI pitch to the shared 96-unit normalized staff coordinate. */
 export function staffSvgYFromWrittenMidi(midi: number) {
   const name = SHARP_NAMES[((midi % 12) + 12) % 12];
   const octave = Math.floor(midi / 12) - 1;
