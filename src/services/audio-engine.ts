@@ -30,6 +30,7 @@ let pendingStartCancel: (() => void) | null = null;
 let pianoPlayer: AudioPlayer | null = null;
 let pianoCleanup: ReturnType<typeof setTimeout> | null = null;
 let pianoPlaybackGeneration = 0;
+const PIANO_NOTE_PLAYBACK_MS = 1850;
 
 function stopPianoAudio() {
   if (pianoCleanup) clearTimeout(pianoCleanup);
@@ -218,7 +219,7 @@ export async function playPianoNote(midi: number, volume = 0.78) {
       pianoPlayer?.remove();
       pianoPlayer = null;
       pianoCleanup = null;
-    }, 1600);
+    }, PIANO_NOTE_PLAYBACK_MS);
     return true;
   } catch {
     return false;

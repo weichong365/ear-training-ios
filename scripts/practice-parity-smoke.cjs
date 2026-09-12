@@ -16,6 +16,8 @@ const source = Object.fromEntries(files.map((file) => [file, fs.readFileSync(pat
 const practice = source['src/app/practice.tsx'];
 const notation = source['src/components/notation-editor.tsx'];
 const audioSettings = source['src/core/audio-settings.ts'];
+const audioEngine = source['src/services/audio-engine.ts'];
+const piano = source['src/components/piano-keyboard.tsx'];
 const renderedPaths = Object.values(source)
   .map((value) => value.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''))
   .flatMap((value) => [
@@ -204,6 +206,39 @@ assert.match(practice, /function next\(\) \{[\s\S]*?setAutoPlay\(true\);/,
   'next must schedule the follow-up autoplay path');
 assert.match(practice, /if \(!autoPlay \|\| phase !== 'ready'\) return;\s*autoPlayTimer\.current = setTimeout\([\s\S]*?return \(\) => \{[\s\S]*?autoPlayTimer\.current = null;/,
   'the next-then-background path must retain and release its autoplay timer');
+
+assert.match(practice, /const REVIEW_KEY_PLAYBACK_MS = 1850;/,
+  'manual review keys must remain audible and highlighted for the full 1.85-second sample');
+assert.match(audioEngine, /const PIANO_NOTE_PLAYBACK_MS = 1850;[\s\S]*?pianoCleanup = setTimeout\([\s\S]*?PIANO_NOTE_PLAYBACK_MS\);/,
+  'manual review audio must retain the full 1.85-second sample before cleanup');
+assert.match(practice, /const manualKeyTimer = useRef<ReturnType<typeof setTimeout> \| null>\(null\);/,
+  'manual review highlighting must keep a lifecycle-owned timer');
+assert.match(practice, /function reviewPianoKey\(midi: number\) \{[\s\S]*?setHighlights\(\{[\s\S]*?\[midi\]: 'play'[\s\S]*?\}\);[\s\S]*?manualKeyTimer\.current = setTimeout\([\s\S]*?REVIEW_KEY_PLAYBACK_MS\);[\s\S]*?playPianoNote\(midi, playbackVolume\)/,
+  'the practice screen must own manual note sound, highlight, and the 1.85-second cleanup');
+assert.match(practice, /function reviewPianoKey\(midi: number\) \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);/,
+  'a repeated manual key tap must replace the earlier cleanup timer');
+assert.match(practice, /async function play\(\) \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);\s*manualKeyTimer\.current = null;\s*setHighlights\(\{\}\);/,
+  'starting question replay must immediately remove a manual-key highlight');
+assert.match(practice, /const stopPlayback = useCallback\(\(\) => \{[\s\S]*?if \(manualKeyTimer\.current\) clearTimeout\(manualKeyTimer\.current\);\s*manualKeyTimer\.current = null;/,
+  'navigation and lifecycle cleanup must clear a pending manual key highlight');
+assert.match(practice, /<PianoKeyboard\b[^>]*\bdisabled=\{phase !== 'feedback' \|\| playing \|\| preparing\}[^>]*\bonKeyPress=\{phase === 'feedback' \? reviewPianoKey : undefined\}/,
+  'review piano must unlock only after feedback and stay disabled while question audio is preparing or playing');
+assert.ok(!/\buse(?:State|Effect|Ref)\b/.test(piano),
+  'PianoKeyboard must remain stateless while the practice screen owns review behavior');
+assert.match(practice, /accessibilityLabel="复盘钢琴待解锁，提交答案后解锁"/,
+  'locked review piano must expose its unlock instruction to assistive technology');
+assert.match(practice, /phase === 'feedback' \? '已解锁' : '待解锁'/,
+  'review piano must announce its unlocked feedback state');
+assert.match(practice, /\{wrongId \? '返回错题复盘' : '返回首页'\}/,
+  'completion return must remain aware of wrongbook origin');
+assert.match(practice, /\{wrongId \? '再练一次' : '再来一组'\}/,
+  'completion must offer the correct context-aware repeat action');
+assert.match(practice, /const accuracy = questions\.length \? Math\.round\(score \/ questions\.length \* 100\) : 0;/,
+  'completion must calculate one stable accuracy from finalized question scores');
+assert.match(practice, /共 \{questions\.length\} 题，答对 \{score\} 题/,
+  'completion must render its total and correct-answer counts');
+assert.match(practice, /score < questions\.length && <Text[^>]*>\{questions\.length - score\} 道错题已收入错题复盘<\/Text>/,
+  'completion must tell learners when missed questions enter the wrongbook');
 
 const timedStaffTags = notation.match(/<TimedAnswerStaff\b[\s\S]*?\/>/g) || [];
 assert.ok(timedStaffTags.length >= 3, 'all timed staff render paths must be present');

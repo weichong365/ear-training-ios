@@ -18,12 +18,13 @@ import { playPianoNote, playQuestionAudio, stopQuestionAudio } from '@/services/
 import { clearActivePracticeSession, finalizePracticeSubmission, getActivePracticeSession, getAudioVolume, getPracticeProfile, getWrongRecords, removeWrongRecord, saveAudioVolume, savePracticeResult, savePracticeSession, type PracticeQuestionSnapshot, type PracticeSession } from '@/services/local-data';
 
 type Phase = 'ready' | 'answering' | 'feedback' | 'finished';
-type Highlight = 'correct' | 'wrong' | 'std';
+type Highlight = 'correct' | 'wrong' | 'std' | 'play';
 
 const MODE_NAMES: Record<PracticeMode, string> = {
   single: '单音听记', group: '旋律音组', interval: '音程听记', connection: '和声音程连接', chord: '和弦听记', chordQuality: '和弦性质', chordPitch: '和弦音高', rhythm: '节奏听记', melody: '旋律听记', adaptive: '智能强化',
 };
 const STANDARD_GAP_MS = 1780;
+const REVIEW_KEY_PLAYBACK_MS = 1850;
 
 const PRACTICE_MODES: PracticeMode[] = ['single', 'group', 'interval', 'connection', 'chord', 'chordQuality', 'chordPitch', 'rhythm', 'melody', 'adaptive'];
 
@@ -156,6 +157,7 @@ export default function PracticeScreen() {
   const submitting = useRef(false);
   const standardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manualKeyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionId = useRef(practiceSessionId());
   const questionSnapshots = useRef<Array<PracticeQuestionSnapshot | undefined>>([]);
   const completedQuestions = useRef(new Set<number>());
@@ -203,6 +205,8 @@ export default function PracticeScreen() {
     standardTimer.current = null;
     if (autoPlayTimer.current) clearTimeout(autoPlayTimer.current);
     autoPlayTimer.current = null;
+    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
+    manualKeyTimer.current = null;
     stopQuestionAudio();
     setPlaying(false);
     setPreparing(false);
@@ -269,6 +273,9 @@ export default function PracticeScreen() {
 
   async function play() {
     if (!question || !scoringQuestion || playing || preparing || (phase !== 'feedback' && playCount >= maxPlays)) return;
+    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
+    manualKeyTimer.current = null;
+    setHighlights({});
     setPreparing(true);
     setMessage('');
     const isReplay = phase === 'feedback';
@@ -353,8 +360,21 @@ export default function PracticeScreen() {
     void Haptics.notificationAsync(result ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error);
   }
 
+  function reviewPianoKey(midi: number) {
+    if (!scoringQuestion || playing || preparing || replaying.current) return;
+    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
+    const feedbackHighlights = keyHighlights(scoringQuestion, answer, correct);
+    setHighlights({ ...feedbackHighlights, [midi]: 'play' });
+    manualKeyTimer.current = setTimeout(() => {
+      manualKeyTimer.current = null;
+      setHighlights(feedbackHighlights);
+    }, REVIEW_KEY_PLAYBACK_MS);
+    void playPianoNote(midi, playbackVolume).then((started) => { if (!started) reportAudioFailure(); });
+  }
+
   function capturePracticeSnapshot() {
-    questionSnapshots.current[index] = { answer, phase: phase === 'finished' ? 'feedback' : phase, correct, playCount, highlights };
+    const snapshotHighlights = Object.fromEntries(Object.entries(highlights).filter(([, value]) => value !== 'play')) as PracticeQuestionSnapshot['highlights'];
+    questionSnapshots.current[index] = { answer, phase: phase === 'finished' ? 'feedback' : phase, correct, playCount, highlights: snapshotHighlights };
   }
 
   function restorePracticeSnapshot(targetIndex: number) {
@@ -378,6 +398,8 @@ export default function PracticeScreen() {
   function resetQuestionState() {
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
+    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
+    manualKeyTimer.current = null;
     setAnswer(emptyExamAnswer());
     setPhase('ready');
     setPlayCount(0);
@@ -393,6 +415,8 @@ export default function PracticeScreen() {
     void Haptics.selectionAsync();
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
+    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
+    manualKeyTimer.current = null;
     stopQuestionAudio();
     if (index >= questions.length - 1) {
       if (wrongId && correct) void removeWrongRecord(wrongId);
@@ -414,6 +438,8 @@ export default function PracticeScreen() {
     if (index <= 0 || playing || preparing) return;
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
+    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
+    manualKeyTimer.current = null;
     stopQuestionAudio();
     capturePracticeSnapshot();
     restorePracticeSnapshot(index - 1);
@@ -422,6 +448,8 @@ export default function PracticeScreen() {
   function restart() {
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
+    if (manualKeyTimer.current) clearTimeout(manualKeyTimer.current);
+    manualKeyTimer.current = null;
     stopQuestionAudio();
     setIndex(0);
     setScore(0);
@@ -489,7 +517,7 @@ export default function PracticeScreen() {
 
         <View style={[styles.keyboardCard, phase === 'feedback' && styles.keyboardOpen]}>
           <View style={styles.keyboardHead}><View><Text style={styles.keyboardTitle}>复盘钢琴</Text><Text style={styles.keyboardSub}>{phase === 'feedback' ? '键盘已解锁，可自由弹奏核对音高' : '提交谱面答案后自动解锁'}</Text></View><Text style={[styles.keyboardState, phase === 'feedback' && styles.keyboardStateOpen]}>{phase === 'feedback' ? '已解锁' : '待解锁'}</Text></View>
-          <View><View aria-hidden={phase !== 'feedback'} accessibilityElementsHidden={phase !== 'feedback'} importantForAccessibility={phase !== 'feedback' ? 'no-hide-descendants' : 'auto'}><PianoKeyboard disabled={phase !== 'feedback' || playing} highlights={highlights} volume={volume} onKeyPress={phase === 'feedback' ? (midi) => { if (!replaying.current) void playPianoNote(midi, playbackVolume).then((started) => { if (!started) reportAudioFailure(); }); } : undefined} /></View>{phase !== 'feedback' && <View accessibilityRole="text" accessibilityLabel="复盘钢琴待解锁，提交答案后解锁" style={styles.keyboardLock}><View style={styles.lockIcon}><AppIcon name="lock" size={21} color={Brand.textOnAccent} /></View><Text style={styles.lockText}>提交答案后解锁</Text></View>}</View>
+          <View><View aria-hidden={phase !== 'feedback'} accessibilityElementsHidden={phase !== 'feedback'} importantForAccessibility={phase !== 'feedback' ? 'no-hide-descendants' : 'auto'}><PianoKeyboard disabled={phase !== 'feedback' || playing || preparing} highlights={highlights} volume={volume} onKeyPress={phase === 'feedback' ? reviewPianoKey : undefined} /></View>{phase !== 'feedback' && <View accessibilityRole="text" accessibilityLabel="复盘钢琴待解锁，提交答案后解锁" style={styles.keyboardLock}><View style={styles.lockIcon}><AppIcon name="lock" size={21} color={Brand.textOnAccent} /></View><Text style={styles.lockText}>提交答案后解锁</Text></View>}</View>
         </View>
       </>}
     </ScrollView>
