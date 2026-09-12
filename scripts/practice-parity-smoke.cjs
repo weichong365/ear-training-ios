@@ -463,7 +463,35 @@ harness.start('group', { type: 'interval', typeName: '旋律音组', groupSize: 
 assert.doesNotThrow(() => harness.render(), 'restored null pitch slots must render');
 assert.equal(submitButton(harness.render()).props.disabled, true, 'restored null pitch slots are incomplete');
 
-// Hand-checked line/space fixtures guard shared geometry before any changes to it.
+// Hand-checked line/space fixtures guard the shared native geometry contract.
+const geometry = harness.load('./src/core/music-notation.ts');
+assert.deepEqual(geometry.STAFF_LINE_YS, [32, 40, 48, 56, 64]);
+assert.equal(geometry.staffSvgYFromWrittenMidi(64), 64);
+assert.deepEqual(geometry.ledgerLineYs(60), [72]);
+assert.deepEqual(geometry.ledgerLineYs(57), [72, 80]);
+assert.deepEqual(geometry.barlineBounds(), { top: 32, bottom: 64 });
+assert.equal(geometry.writtenMidiFromStaffSvgY(geometry.staffSvgYFromWrittenMidi(69)), 69);
+assert.equal(geometry.pianoWhiteMidis(55, 81).length, 16);
+assert.equal(geometry.pianoBlackKeys(55, 81).length, 11);
+
+const naturalWrittenMidis = [55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81];
+naturalWrittenMidis.forEach((midi) => {
+  assert.equal(geometry.writtenMidiFromStaffSvgY(geometry.staffSvgYFromWrittenMidi(midi)), midi,
+    `natural written pitch must round-trip: ${midi}`);
+});
+assert.equal(geometry.STAFF_LINE_YS[1] - geometry.STAFF_LINE_YS[0], 8, 'staff lines must use equal spacing');
+assert.equal(geometry.ledgerLineYs(57)[1] - geometry.ledgerLineYs(57)[0], 8, 'ledger lines must use staff spacing');
+assert.equal(geometry.STAFF_STROKE_WIDTH, 1, 'ledger and staff strokes must share the one-point width');
+for (const [meter, elapsed, expected] of [
+  ['2/4', [0, 0.5, 1, 1.5], [0, 0, 1, 1]],
+  ['4/4', [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5], [0, 0, 1, 1, 2, 2, 3, 3]],
+  ['3/8', [0, 0.25, 0.5, 0.75, 1, 1.25], [0, 0, 1, 1, 2, 2]],
+  ['6/8', [0, 0.5, 1, 1.5, 2, 2.5], [0, 0, 0, 1, 1, 1]],
+]) {
+  assert.deepEqual(elapsed.map((beat) => geometry.beamGroupAtBeat(beat, meter)), expected,
+    `${meter} beams must group within beats`);
+}
+
 const coordinates = harness.load('./src/core/staff-coordinate.ts');
 for (const [midi, y] of [[60, 78], [64, 68], [65, 63], [71, 48], [77, 28], [81, 18]]) {
   assert.equal(coordinates.staffSvgYFromWrittenMidi(midi), y);

@@ -1,5 +1,3 @@
-import { staffSvgYFromWrittenMidi } from './staff-coordinate.ts';
-
 export type NoteheadKind = 'whole' | 'half' | 'black';
 export type RestKind = 'whole' | 'half' | 'quarter' | 'eighth' | 'sixteenth';
 export type StemDirection = 'up' | 'down';
@@ -14,13 +12,80 @@ export type DurationNotation = {
   tuplet?: boolean;
 };
 
-export const STAFF_TOP_LINE_Y = 28;
+export const STAFF_TOP_LINE_Y = 32;
 export const STAFF_MIDDLE_LINE_Y = 48;
-export const STAFF_BOTTOM_LINE_Y = 68;
-export const STAFF_LINE_GAP = 10;
+export const STAFF_BOTTOM_LINE_Y = 64;
+export const STAFF_LINE_GAP = 8;
 export const STAFF_STEP_GAP = STAFF_LINE_GAP / 2;
-export const STAFF_LINE_YS = [28, 38, 48, 58, 68] as const;
+export const STAFF_LINE_YS = [32, 40, 48, 56, 64] as const;
 export const STAFF_STROKE_WIDTH = 1;
+
+const STAFF_E4_Y = STAFF_BOTTOM_LINE_Y;
+const STAFF_DIATONIC_STEP = STAFF_STEP_GAP;
+const NATURAL_SCALE = [0, 2, 4, 5, 7, 9, 11];
+const LETTER_INDEX: Record<string, number> = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+const SHARP_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const E4_DIATONIC = 4 * 7 + LETTER_INDEX.E;
+
+/** Convert a written MIDI pitch to the shared 96-unit staff coordinate. */
+export function staffSvgYFromWrittenMidi(midi: number) {
+  const name = SHARP_NAMES[((midi % 12) + 12) % 12];
+  const octave = Math.floor(midi / 12) - 1;
+  const diatonic = octave * 7 + LETTER_INDEX[name[0]];
+  return STAFF_E4_Y - (diatonic - E4_DIATONIC) * STAFF_DIATONIC_STEP;
+}
+
+/** Convert a staff coordinate to the nearest natural written MIDI pitch. */
+export function writtenMidiFromStaffSvgY(y: number) {
+  const diatonic = E4_DIATONIC + Math.round((STAFF_E4_Y - y) / STAFF_DIATONIC_STEP);
+  const octave = Math.floor(diatonic / 7);
+  const index = ((diatonic % 7) + 7) % 7;
+  return (octave + 1) * 12 + NATURAL_SCALE[index];
+}
+
+export type PianoKeyLayout = { midi: number; leftPercent: number; widthPercent: number };
+
+const BLACK_PITCH_CLASSES = [1, 3, 6, 8, 10];
+
+export function pianoWhiteMidis(startMidi = 55, endMidi = 81) {
+  const midis: number[] = [];
+  for (let midi = startMidi; midi <= endMidi; midi += 1) {
+    if (!BLACK_PITCH_CLASSES.includes(((midi % 12) + 12) % 12)) midis.push(midi);
+  }
+  return midis;
+}
+
+function blackKeyLayout(midi: number, leftUnits: number, whiteCount: number): PianoKeyLayout {
+  const widthPercent = whiteCount ? 55 / whiteCount : 0;
+  return {
+    midi,
+    leftPercent: whiteCount ? Math.max(0, Math.min(
+      (leftUnits / whiteCount) * 100 - widthPercent / 2,
+      100 - widthPercent,
+    )) : 0,
+    widthPercent,
+  };
+}
+
+export function pianoBlackKeys(startMidi = 55, endMidi = 81): PianoKeyLayout[] {
+  const whiteMidis = pianoWhiteMidis(startMidi, endMidi);
+  const whiteCount = whiteMidis.length;
+  const keys: PianoKeyLayout[] = [];
+  let leftUnits = 0;
+  for (let midi = startMidi; midi <= endMidi; midi += 1) {
+    if (BLACK_PITCH_CLASSES.includes(((midi % 12) + 12) % 12)) {
+      keys.push(blackKeyLayout(midi, leftUnits, whiteCount));
+    } else {
+      leftUnits += 1;
+    }
+  }
+  return keys;
+}
+
+/** Return the percentage-positioned black-key layout for the requested range. */
+export function pianoKeyLayout(startMidi = 55, endMidi = 81) {
+  return pianoBlackKeys(startMidi, endMidi);
+}
 
 /** Durations use quarter-note units; 6/8 beams follow dotted-quarter beats. */
 export function beamGroupAtBeat(elapsed: number, meter: string) {
