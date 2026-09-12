@@ -16,8 +16,8 @@ const ACCIDENTAL_COLUMN_GAP = 9;
 export const MUSIC_STAFF_VIEW_BOX = '0 0 320 96';
 export const MUSIC_STAFF_LEFT = 16;
 export const MUSIC_STAFF_RIGHT = 308;
-export const MUSIC_STAFF_WRITABLE_LEFT = 76;
-export const MUSIC_STAFF_WRITABLE_RIGHT = MUSIC_STAFF_RIGHT;
+export const MUSIC_STAFF_WRITABLE_LEFT_INSET = '23.75%';
+export const MUSIC_STAFF_WRITABLE_RIGHT_INSET = '3.75%';
 
 const NOTEHEADS: Record<NoteheadKind, { width: number; path: string }> = {
   whole: {

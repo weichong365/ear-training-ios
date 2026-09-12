@@ -575,8 +575,12 @@ const emptyAnswer = rendererHarness.renderComponent(AnswerStaff, {
 });
 const prompt = emptyAnswer.nodes.find((node) => node.type === 'Text' && node.props.children === '播放题目后开始作答');
 const promptStyle = flattenRendererStyle(prompt.props.style);
-assert.equal((promptStyle.left + 320 - promptStyle.right) / 2, 192,
-  'the playback prompt must be horizontally centered in the 76…308 writable area');
+const layoutPoints = (value, width) => typeof value === 'string' && value.endsWith('%')
+  ? parseFloat(value) * width / 100
+  : value;
+const fluidStaffWidth = 375;
+assert.equal((layoutPoints(promptStyle.left, fluidStaffWidth) + fluidStaffWidth - layoutPoints(promptStyle.right, fluidStaffWidth)) / 2, 225,
+  'the playback prompt must stay centered at 60% of a non-320 fluid staff');
 
 // Timed tests exercise real editor handlers and inspect the emitted SVG. Removing
 // prerequisite guards or merging adjacent beat runs must fail these fixtures.
