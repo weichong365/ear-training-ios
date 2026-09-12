@@ -29,6 +29,7 @@ let playbackGeneration = 0;
 let pendingStartCancel: (() => void) | null = null;
 let pianoPlayer: AudioPlayer | null = null;
 let pianoCleanup: ReturnType<typeof setTimeout> | null = null;
+let pianoPlaybackGeneration = 0;
 
 function stopPianoAudio() {
   if (pianoCleanup) clearTimeout(pianoCleanup);
@@ -36,6 +37,11 @@ function stopPianoAudio() {
   pianoPlayer?.pause();
   pianoPlayer?.remove();
   pianoPlayer = null;
+}
+
+function cancelPianoPlayback() {
+  pianoPlaybackGeneration += 1;
+  stopPianoAudio();
 }
 
 async function assetArrayBuffer(moduleId: number): Promise<ArrayBuffer> {
@@ -185,7 +191,7 @@ export function stopQuestionAudio() {
     player.remove();
     player = null;
   }
-  stopPianoAudio();
+  cancelPianoPlayback();
   renderingOrPlaying = false;
 }
 
@@ -194,9 +200,11 @@ export async function playPianoNote(midi: number, volume = 0.78) {
   if (!config) return false;
   const moduleId = PIANO_NOTE_ASSETS[config.sampleMidi];
   if (!moduleId) return false;
+  const generation = ++pianoPlaybackGeneration;
   try {
     const asset = Asset.fromModule(moduleId);
     await asset.downloadAsync();
+    if (generation !== pianoPlaybackGeneration) return false;
     const uri = asset.localUri || asset.uri;
     if (!uri) return false;
     stopPianoAudio();

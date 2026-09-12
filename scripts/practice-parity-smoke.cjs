@@ -196,6 +196,14 @@ assert.match(practice, /onInterrupted: \(\) => \{\s*stopPlayback\(\);\s*\}/,
 assert.match(practice, /const reportAudioFailure = useCallback\(\(error\?: Error\) => \{\s*if \(__DEV__\) console\.warn\('音频播放失败', error\);\s*setMessage\('音频暂时无法播放，请重试'\);/,
   'raw audio diagnostics must be development-only while users receive a short retry message');
 assert.ok(!practice.includes('setMessage(error.message)'), 'raw platform audio errors must never be rendered');
+assert.match(practice, /const autoPlayTimer = useRef<ReturnType<typeof setTimeout> \| null>\(null\);/,
+  'next-question autoplay must have lifecycle-owned timer storage');
+assert.match(practice, /const stopPlayback = useCallback\(\(\) => \{[\s\S]*?if \(autoPlayTimer\.current\) clearTimeout\(autoPlayTimer\.current\);\s*autoPlayTimer\.current = null;/,
+  'background and blur cleanup must clear a pending next-question autoplay');
+assert.match(practice, /function next\(\) \{[\s\S]*?setAutoPlay\(true\);/,
+  'next must schedule the follow-up autoplay path');
+assert.match(practice, /if \(!autoPlay \|\| phase !== 'ready'\) return;\s*autoPlayTimer\.current = setTimeout\([\s\S]*?return \(\) => \{[\s\S]*?autoPlayTimer\.current = null;/,
+  'the next-then-background path must retain and release its autoplay timer');
 
 const timedStaffTags = notation.match(/<TimedAnswerStaff\b[\s\S]*?\/>/g) || [];
 assert.ok(timedStaffTags.length >= 3, 'all timed staff render paths must be present');

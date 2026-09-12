@@ -155,6 +155,7 @@ export default function PracticeScreen() {
   const replaying = useRef(false);
   const submitting = useRef(false);
   const standardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoPlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionId = useRef(practiceSessionId());
   const questionSnapshots = useRef<Array<PracticeQuestionSnapshot | undefined>>([]);
   const completedQuestions = useRef(new Set<number>());
@@ -200,9 +201,12 @@ export default function PracticeScreen() {
   const stopPlayback = useCallback(() => {
     if (standardTimer.current) clearTimeout(standardTimer.current);
     standardTimer.current = null;
+    if (autoPlayTimer.current) clearTimeout(autoPlayTimer.current);
+    autoPlayTimer.current = null;
     stopQuestionAudio();
     setPlaying(false);
     setPreparing(false);
+    setAutoPlay(false);
     replaying.current = false;
     setHighlights({});
   }, []);
@@ -306,8 +310,15 @@ export default function PracticeScreen() {
 
   useEffect(() => {
     if (!autoPlay || phase !== 'ready') return;
-    const timer = setTimeout(() => { setAutoPlay(false); void play(); }, 500);
-    return () => clearTimeout(timer);
+    autoPlayTimer.current = setTimeout(() => {
+      autoPlayTimer.current = null;
+      setAutoPlay(false);
+      void play();
+    }, 500);
+    return () => {
+      if (autoPlayTimer.current) clearTimeout(autoPlayTimer.current);
+      autoPlayTimer.current = null;
+    };
     // play intentionally uses the freshly rendered question after index changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPlay, index, phase]);
