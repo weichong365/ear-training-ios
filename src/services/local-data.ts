@@ -7,6 +7,7 @@ import { PROVINCES, type ProvinceId, type ProvincePaper } from '@/core/provinces
 
 type LocalDataNormalizer = {
   normalizePracticeRecords(value: unknown): PracticeRecord[];
+  normalizePracticeSession(value: unknown): PracticeSession | null;
   normalizeWrongRecords(value: unknown): WrongRecord[];
   normalizeExamSession(value: unknown): ExamSession | null;
   normalizeExamResults(value: unknown): ExamResultRecord[];
@@ -34,6 +35,7 @@ export type PracticeRecord = {
   createdAt: number;
   sessionId?: string;
   modeName?: string;
+  submissionKey?: string;
 };
 
 export type PracticeStats = {
@@ -118,10 +120,11 @@ function canonicalPracticeType(type: PracticeQuestion['type']): PracticeType {
   return (type === 'intervalConnection' ? 'connection' : type) as PracticeType;
 }
 
-export async function savePracticeResult(question: PracticeQuestion, correct: boolean, context: { sessionId?: string; modeName?: string } = {}) {
+export async function savePracticeResult(question: PracticeQuestion, correct: boolean, context: { sessionId?: string; modeName?: string; submissionKey?: string } = {}) {
   const now = Date.now();
   const normalizedType = canonicalPracticeType(question.type);
   const records = await readList<PracticeRecord>(RECORDS_KEY);
+  if (context.submissionKey && records.some((record) => record.submissionKey === context.submissionKey)) return;
   records.unshift({
     id: `r_${now}_${Math.random().toString(36).slice(2, 7)}`,
     type: normalizedType,
@@ -129,6 +132,7 @@ export async function savePracticeResult(question: PracticeQuestion, correct: bo
     createdAt: now,
     sessionId: context.sessionId,
     modeName: context.modeName,
+    submissionKey: context.submissionKey,
   });
   await AsyncStorage.setItem(RECORDS_KEY, JSON.stringify(records.slice(0, 1000)));
 
@@ -220,26 +224,6 @@ export async function removeWrongRecord(id: string) {
   await AsyncStorage.setItem(WRONGS_KEY, JSON.stringify(wrongs.filter((item) => item.id !== id)));
 }
 
-function normalizePracticeSession(value: unknown): PracticeSession | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const session = value as Partial<PracticeSession>;
-  if (session.version !== 1 || !Array.isArray(session.questions) || !session.questions.length || !Array.isArray(session.snapshots) || typeof session.mode !== 'string' || typeof session.sessionId !== 'string') return null;
-  const questions = session.questions.filter((question): question is PracticeQuestion => Boolean(question && typeof question === 'object' && typeof question.type === 'string'));
-  if (!questions.length) return null;
-  const snapshots = session.snapshots.map((snapshot) => snapshot && typeof snapshot === 'object' ? snapshot as PracticeQuestionSnapshot : undefined);
-  return {
-    version: 1,
-    mode: session.mode as PracticeMode,
-    ...(session.tier === 1 || session.tier === 2 || session.tier === 3 ? { tier: session.tier } : {}),
-    questions,
-    snapshots,
-    index: Math.max(0, Math.min(questions.length - 1, Math.floor(Number(session.index) || 0))),
-    score: Math.max(0, Math.floor(Number(session.score) || 0)),
-    sessionId: session.sessionId,
-    updatedAt: Number(session.updatedAt) || Date.now(),
-  };
-}
-
 export async function savePracticeSession(session: Omit<PracticeSession, 'updatedAt'>) {
   const payload = JSON.stringify({ ...session, updatedAt: Date.now() });
   practiceSaveQueue = practiceSaveQueue.catch(() => undefined).then(() => AsyncStorage.setItem(ACTIVE_PRACTICE_KEY, payload));
@@ -250,7 +234,7 @@ export async function getActivePracticeSession() {
   await practiceSaveQueue.catch(() => undefined);
   try {
     const raw = await AsyncStorage.getItem(ACTIVE_PRACTICE_KEY);
-    return raw ? normalizePracticeSession(JSON.parse(raw)) : null;
+    return raw ? normalizeLocalData.normalizePracticeSession(JSON.parse(raw)) : null;
   } catch {
     return null;
   }

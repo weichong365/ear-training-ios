@@ -1,11 +1,13 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const ts = require('typescript');
 const {
   aggregatePracticeStats,
   normalizeAnswer,
   normalizeExamResults,
   normalizeExamSession,
+  normalizePracticeSession,
   normalizePracticeRecords,
   normalizeWrongRecords,
 } = require('../src/core/local-data-normalize.js');
@@ -14,18 +16,36 @@ const root = path.resolve(__dirname, '..');
 const localData = fs.readFileSync(path.join(root, 'src/services/local-data.ts'), 'utf8');
 const practice = fs.readFileSync(path.join(root, 'src/app/practice.tsx'), 'utf8');
 
-assert.match(localData, /const ACTIVE_PRACTICE_KEY = 'ios_active_practice_v1';/, '练习进度必须使用独立的版本化存储键');
-for (const operation of ['savePracticeSession', 'getActivePracticeSession', 'clearActivePracticeSession']) {
-  assert.match(localData, new RegExp(`export async function ${operation}\\b`), `练习进度必须提供 ${operation}`);
+function memoryStorage() {
+  const values = new Map();
+  return {
+    values,
+    async getItem(key) { return values.get(key) ?? null; },
+    async setItem(key, value) { values.set(key, value); },
+    async removeItem(key) { values.delete(key); },
+    async multiRemove(keys) { keys.forEach((key) => values.delete(key)); },
+  };
 }
-assert.match(practice, /questionSnapshots(?:\.current)?\[targetIndex\]/, '恢复时必须按目标题号读取题目快照');
-assert.match(practice, /const snapshot = questionSnapshots(?:\.current)?\[targetIndex\]/, '已答题快照必须可恢复');
-assert.match(practice, /if \(!snapshot\)[\s\S]*?resetQuestionState\(\)/, '未答题快照必须恢复为空白作答状态');
-assert.match(practice, /submitting\.current/, '重复提交必须由提交锁保护');
-assert.match(practice, /setScore\(\(value\) => value \+ \(result \? 1 : 0\)\)/, '同一题重复提交不得重复累计分数');
-const submitBody = practice.slice(practice.indexOf('async function submit()'), practice.indexOf('function capturePracticeSnapshot()'));
-assert.equal((submitBody.match(/savePracticeResult\(/g) || []).length, 1, '每次提交只能保存一条练习记录');
-assert.match(localData, /findIndex\(\(item\) => item\.knowledgeKey === question\.knowledgeKey\)/, '错题本必须按知识点更新，不能重复插入');
+
+function loadLocalData(storage) {
+  const output = ts.transpileModule(localData, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const module = { exports: {} };
+  const localRequire = (id) => {
+    if (id === '@react-native-async-storage/async-storage') return storage;
+    if (id === '@/core/audio-settings') return { DEFAULT_AUDIO_VOLUME: 78, parseStoredVolume: (value, fallback = 78) => Number.isFinite(Number(value)) ? Number(value) : fallback };
+    if (id === '@/core/provinces') return { PROVINCES: [] };
+    if (id === '../core/local-data-normalize.js') return require('../src/core/local-data-normalize.js');
+    throw new Error(`unexpected local-data dependency: ${id}`);
+  };
+  new Function('require', 'module', 'exports', output)(localRequire, module, module.exports);
+  return module.exports;
+}
+
+const practiceAst = ts.createSourceFile('practice.tsx', practice, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const screen = practiceAst.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'PracticeScreen');
+const submit = screen?.body?.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'submit');
+assert.ok(submit, '练习页必须保留提交处理器');
+assert.ok(submit.body.statements.some((node) => ts.isIfStatement(node) && node.expression.getText(practiceAst).includes('submitting.current')), '提交处理器必须直接用提交锁拦截重复提交');
 
 const answer = normalizeAnswer({ pitches: [60, null, '62'], events: null, choiceIndex: -1 });
 assert.equal(answer.pitches.length, 3);
@@ -86,4 +106,47 @@ assert.equal(stats.trend7day.length, 7);
 assert.equal(stats.trend7day[0].isToday, true);
 assert.equal(stats.recent.length, 2);
 
-console.log('local data smoke passed');
+const emptyPracticeAnswer = { pitches: [], spellings: [], accidentals: [], events: [], meter: '', keySignature: '', quality: '', inversion: '', choiceIndex: null };
+const practiceQuestion = { type: 'single', typeName: '单音', answer: [60], answerText: 'C4', hint: '', knowledgeKey: 'single-c4' };
+const practiceSession = {
+  version: 1,
+  mode: 'single',
+  questions: [practiceQuestion, { ...practiceQuestion, knowledgeKey: 'single-d4' }],
+  snapshots: [
+    { answer: { ...emptyPracticeAnswer, pitches: [60, undefined] }, phase: 'feedback', correct: true, playCount: 1, highlights: { 60: 'correct' } },
+    { answer: emptyPracticeAnswer, phase: 'ready', correct: false, playCount: 0, highlights: {} },
+  ],
+  index: 1,
+  score: 1,
+  sessionId: 'practice-smoke',
+  updatedAt: 1,
+};
+const restoredPracticeSession = normalizePracticeSession(JSON.parse(JSON.stringify(practiceSession)));
+assert.ok(restoredPracticeSession, 'JSON 往返后的练习会话必须可恢复');
+assert.equal(restoredPracticeSession.snapshots[0].phase, 'feedback', '已答题快照必须保留反馈状态');
+assert.equal(restoredPracticeSession.snapshots[0].answer.pitches[0], 60);
+assert.ok(Number.isNaN(restoredPracticeSession.snapshots[0].answer.pitches[1]), '序列化后的音高空位必须归一化');
+assert.equal(restoredPracticeSession.snapshots[1].phase, 'ready', '未答题快照必须保留准备状态');
+assert.equal(normalizePracticeSession({ ...practiceSession, snapshots: [{}] }), null, '不完整快照不得进入练习页');
+
+const storage = memoryStorage();
+const local = loadLocalData(storage);
+(async () => {
+  await local.savePracticeSession(practiceSession);
+  assert.equal(JSON.parse(storage.values.get('ios_active_practice_v1')).version, 1, '练习会话必须写入版本化键');
+  assert.equal((await local.getActivePracticeSession()).snapshots[1].phase, 'ready', '存储读取必须恢复未答题快照');
+  await local.clearActivePracticeSession();
+  assert.equal(await local.getActivePracticeSession(), null, '重新开始必须清除活动练习会话');
+
+  await local.savePracticeResult(practiceQuestion, false, { sessionId: 'practice-smoke', submissionKey: 'practice-smoke:0' });
+  await local.savePracticeResult(practiceQuestion, false, { sessionId: 'practice-smoke', submissionKey: 'practice-smoke:0' });
+  assert.equal((await local.getPracticeRecords()).length, 1, '重复提交不得增加练习记录');
+  const wrongs = await local.getWrongRecords();
+  assert.equal(wrongs.length, 1, '重复提交不得重复写入错题本');
+  assert.equal(wrongs[0].errorCount, 1, '重复提交不得增加错题次数');
+
+  console.log('local data smoke passed');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

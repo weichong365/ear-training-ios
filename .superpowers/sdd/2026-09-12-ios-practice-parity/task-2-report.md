@@ -35,3 +35,26 @@ tsc --noEmit
 - Confirmed missing snapshots retain their array index and reset before navigation rather than overwriting restored state.
 - Confirmed restarting drops the restored session reference before generating the new group.
 - `git diff --check` completed without whitespace errors.
+
+## Review fix round 1
+
+- Replaced source-text persistence checks with executable coverage: the smoke test transpiles the local storage service against an in-memory AsyncStorage implementation, verifies a versioned JSON round trip, answered and unanswered snapshot restoration, clearing for restart, and duplicate submission suppression for both records and wrongbook entries.
+- Moved practice-session normalization into the existing Node-compatible normalizer so the same executable test validates the production restore path.
+- Invalid snapshot objects now reject the entire active session. Valid snapshots normalize their answer with the existing answer normalizer, preserving serialized pitch holes and their original snapshot indexes.
+- Added a per-question submission key as a persistence backstop alongside the existing `submitting` ref, so a duplicate retry cannot create another record or increase wrongbook error count.
+
+Exact commands and output:
+
+```text
+npm run test:storage
+exit=0
+local data smoke passed
+
+npm run test:practice-parity
+exit=0
+practice parity contract passed (5 source files checked)
+
+npm run typecheck
+exit=0
+tsc --noEmit
+```

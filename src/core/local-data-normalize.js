@@ -1,8 +1,11 @@
 // 与 core/index.ts 的 PracticeType 对齐；连接题的题目 type 为 intervalConnection，
 // 统一归一化为 connection，保证统计 / 错题本 / 智能强化按同一题型键聚合。
 const PRACTICE_TYPES = new Set(['single', 'group', 'interval', 'connection', 'chord', 'chordQuality', 'chordPitch', 'rhythm', 'melody']);
+const PRACTICE_MODES = new Set([...PRACTICE_TYPES, 'adaptive']);
 const PRACTICE_TYPE_ALIASES = { intervalConnection: 'connection' };
 const ACCIDENTALS = new Set(['none', 'sharp', 'flat', 'natural']);
+const PRACTICE_PHASES = new Set(['ready', 'answering', 'feedback']);
+const HIGHLIGHTS = new Set(['correct', 'wrong', 'std']);
 
 function canonicalType(type) {
   const value = String(type || '');
@@ -101,6 +104,49 @@ function normalizeAnswer(value) {
     quality: text(answer.quality),
     inversion: text(answer.inversion),
     choiceIndex: Number.isInteger(answer.choiceIndex) && answer.choiceIndex >= 0 ? answer.choiceIndex : null,
+  };
+}
+
+function normalizePracticeSnapshot(value) {
+  const snapshot = object(value);
+  if (!snapshot || !PRACTICE_PHASES.has(snapshot.phase) || typeof snapshot.correct !== 'boolean' || !Number.isFinite(snapshot.playCount) || Number(snapshot.playCount) < 0 || !object(snapshot.highlights)) return null;
+  const highlights = {};
+  for (const [midi, highlight] of Object.entries(snapshot.highlights)) {
+    if (Number.isFinite(Number(midi)) && HIGHLIGHTS.has(highlight)) highlights[Number(midi)] = highlight;
+  }
+  return {
+    answer: normalizeAnswer(snapshot.answer),
+    phase: snapshot.phase,
+    correct: snapshot.correct,
+    playCount: Math.floor(Number(snapshot.playCount)),
+    highlights,
+  };
+}
+
+function normalizePracticeSession(value, now = Date.now()) {
+  const session = object(value);
+  if (!session || session.version !== 1 || !PRACTICE_MODES.has(session.mode) || !text(session.sessionId) || !Array.isArray(session.questions) || !session.questions.length || !Array.isArray(session.snapshots)) return null;
+  if (!session.questions.every((question) => object(question) && text(question.type))) return null;
+  const snapshots = [];
+  for (const snapshot of session.snapshots) {
+    if (snapshot == null) {
+      snapshots.push(undefined);
+      continue;
+    }
+    const normalized = normalizePracticeSnapshot(snapshot);
+    if (!normalized) return null;
+    snapshots.push(normalized);
+  }
+  return {
+    version: 1,
+    mode: session.mode,
+    ...(session.tier === 1 || session.tier === 2 || session.tier === 3 ? { tier: session.tier } : {}),
+    questions: session.questions,
+    snapshots,
+    index: Math.max(0, Math.min(session.questions.length - 1, Math.floor(number(session.index)))),
+    score: Math.max(0, Math.floor(number(session.score))),
+    sessionId: session.sessionId,
+    updatedAt: number(session.updatedAt, now),
   };
 }
 
@@ -308,6 +354,7 @@ module.exports = {
   normalizeAnswer,
   normalizeExamResults,
   normalizeExamSession,
+  normalizePracticeSession,
   normalizePracticeRecords,
   normalizeWrongRecords,
 };

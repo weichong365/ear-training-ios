@@ -328,7 +328,7 @@ export default function PracticeScreen() {
     setHighlights(keyHighlights(scoringQuestion, answer, result));
     setScore((value) => value + (result ? 1 : 0));
     try {
-      await savePracticeResult(question, result, { sessionId: sessionId.current, modeName: wrongId ? '错题强化' : MODE_NAMES[mode] });
+      await savePracticeResult(question, result, { sessionId: sessionId.current, modeName: wrongId ? '错题强化' : MODE_NAMES[mode], submissionKey: `${sessionId.current}:${index}` });
     } catch {
       setMessage('本题已完成批改，但练习记录未能保存到本机。你仍可继续下一题。');
     } finally {
