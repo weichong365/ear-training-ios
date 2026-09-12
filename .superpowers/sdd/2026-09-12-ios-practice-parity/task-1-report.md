@@ -94,3 +94,61 @@ npm run test:core
 exit=0
 核心冒烟测试通过：题目去重、和弦同时起音与难度比例、四句式旋律和音频渲染均正常。
 ```
+
+## Review fix round 4
+
+Addressed both remaining findings without changing production code:
+
+- Snapshot capture now requires an assignment to the current index of the same lexically bound `questionSnapshots` collection used by restoration. Both direct collections and `.current` refs are accepted, with matching access on capture and restore. The assigned snapshot must contain all five fields, either inline or through a bound object initializer.
+- Restoration resolves the called helper and snapshot variable through TypeScript symbols, then requires the exact `answer -> setAnswer`, `phase -> setPhase`, `correct -> setCorrect`, `playCount -> setPlayCount`, and `highlights -> setHighlights` mapping. The previous handler passes `index - 1`, and either it or the restore helper must update the bound index setter to that target. The previous button must use that handler.
+- `volumeRow` must be a component-local constant initialized directly with a React Native `View`. Actual child `Pressable` handlers must call the component's `changeVolume` with the stored volume plus/minus a positive step. The row must render the volume label, percentage, track, and fill tied to that same volume binding.
+- Exactly one reference to the bound row must be inserted directly in the rendered practice card after its play control. Conditional/logical initializers, gated insertions, and same-name bindings in other scopes cannot satisfy the checks. The existing finished/practice page switch remains valid.
+- Added a reproducible AST probe artifact in this report directory: `task-1-r4-probes.cjs`. It checks five valid fixtures and rejects thirty mutations; all fixtures are parsed as valid TSX before exercising the contract.
+
+Exact commands and outputs (working directory: `F:\WorkBuddy\练耳大师\ios-app\.worktrees\ios-practice-parity`):
+
+```text
+node .superpowers/sdd/2026-09-12-ios-practice-parity/task-1-r4-probes.cjs
+exit=0
+practice parity AST probes passed (5 valid fixtures, 30 rejected mutations)
+
+node scripts/practice-parity-smoke.cjs
+exit=1
+node:internal/assert/utils:77
+    throw err;
+    ^
+
+AssertionError [ERR_ASSERTION]: practice parity marker missing: 上一题
+    at Object.<anonymous> (F:\WorkBuddy\练耳大师\ios-app\.worktrees\ios-practice-parity\scripts\practice-parity-smoke.cjs:33:10)
+    at Module._compile (node:internal/modules/cjs/loader:1760:14)
+    at Object..js (node:internal/modules/cjs/loader:1892:10)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v25.2.1
+
+npm run typecheck
+exit=0
+> ear-training-buddy-ios@1.0.0 typecheck
+> tsc --noEmit
+
+npm run test:core
+exit=0
+> ear-training-buddy-ios@1.0.0 test:core
+> node ./scripts/core-smoke.cjs
+
+核心冒烟测试通过：题目去重、和弦同时起音与难度比例、四句式旋律和音频渲染均正常。
+```
+
+Self-review: inspected the full diff against both findings, verified no production files changed, and confirmed the positive fixtures accept both snapshot storage forms and the real finished-page conditional. The mutation probes cover each field mapping, missing/wrong index updates, missing/wrong capture assignments, native/component/state shadowing, absent handlers, gated row initializers/insertions, duplicate insertions, and a disconnected previous button. The contract remains a focused structural smoke check, not a runtime proof of every control-flow path; later-task parity gaps intentionally keep the application smoke test red.
