@@ -13,7 +13,7 @@ workflows:
         - ios_signing_credentials
       vars:
         BUNDLE_ID: com.lianerdazi.app
-      node: v22.11.0
+      node: v22.13.0
       # 固定版本，避免 Codemagic 的 latest 别名更新后改变构建环境。
       xcode: 26.4
       cocoapods: default
