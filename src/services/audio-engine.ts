@@ -33,7 +33,8 @@ let pianoCleanup: ReturnType<typeof setTimeout> | null = null;
 let pianoStatusSubscription: { remove(): void } | null = null;
 let pianoEnd: ((result: PianoNotePlaybackResult) => void) | null = null;
 let pianoPlaybackGeneration = 0;
-const PIANO_NOTE_PLAYBACK_MS = 1850;
+// 与单音题一致的 4 秒起音窗口：包内采样本身已换成 4.00s，让钢琴尾巴自然衰减完。
+const PIANO_NOTE_PLAYBACK_MS = 4000;
 
 function stopPianoAudio(result: PianoNotePlaybackResult = 'cancelled') {
   const end = pianoEnd;
@@ -131,7 +132,7 @@ export async function playQuestionAudio(
     if (!player) player = createAudioPlayer(uri, { updateInterval: 100 });
     else player.replace(uri);
     requestPlayer = player;
-    requestPlayer.volume = Math.max(0, Math.min(1, options.volume ?? 0.78));
+    requestPlayer.volume = Math.max(0, Math.min(1, options.volume ?? 0.8));
     let completed = false;
     let hasStarted = false;
     let startSettled = false;
@@ -216,7 +217,7 @@ export function stopQuestionAudio() {
   renderingOrPlaying = false;
 }
 
-export async function playPianoNote(midi: number, volume = 0.78, options: {
+export async function playPianoNote(midi: number, volume = 0.8, options: {
   onStart?: () => void; onFinish?: () => void; onError?: () => void;
 } = {}): Promise<PianoNotePlaybackResult> {
   const config = pianoPlaybackConfig(midi);

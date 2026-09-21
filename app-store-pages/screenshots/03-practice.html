@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><style>
+:root{--cream:#F6F0E3;--ivory:#FFFDF7;--ink:#1B211D;--muted:#5F6F65;--forest:#1D6B4D;--forest-deep:#103C2B;--forest-soft:#DCEDE3;--border:#D4DED7;--gold:#B78922;--warning:#8A671E;--warning-soft:#FBF0CF;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;}
+.canvas{width:1290px;height:2796px;background:var(--cream);position:relative;overflow:hidden;}
+.statusbar{height:180px;padding:0 70px;display:flex;align-items:center;justify-content:space-between;position:relative;}
+.statusbar .time{font-size:54px;font-weight:700;color:var(--ink);margin-left:30px;}
+.statusbar .right{display:flex;align-items:center;gap:18px;}
+.statusbar .right svg{display:block;}
+.dynamic-island{position:absolute;left:50%;top:36px;transform:translateX(-50%);width:360px;height:110px;background:#000;border-radius:55px;}
+.nav{height:140px;padding:0 60px;display:flex;align-items:center;justify-content:space-between;background:var(--cream);}
+.nav-back{width:80px;height:80px;display:flex;align-items:center;justify-content:center;}
+.nav-back svg{width:48px;height:48px;}
+.nav-title{font-size:48px;font-weight:800;color:var(--ink);}
+.nav-progress{font-size:36px;color:var(--muted);font-weight:700;}
+.progress-bar{height:8px;background:var(--border);margin:0 60px 30px;border-radius:4px;overflow:hidden;}
+.progress-fill{height:100%;background:var(--forest);width:30%;}
+.qinfo{padding:20px 60px 10px;display:flex;justify-content:space-between;align-items:center;}
+.qinfo .qtype{font-size:38px;font-weight:800;color:var(--ink);}
+.qinfo .qnum{font-size:36px;color:var(--muted);font-weight:700;}
+.play-card{margin:0 60px 30px;background:var(--ivory);border:1.5px solid var(--border);border-radius:32px;padding:36px 40px;display:flex;align-items:center;}
+.play-btn{width:160px;height:160px;border-radius:50%;background:var(--forest);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.play-btn svg{width:64px;height:64px;fill:#fff;}
+.play-copy{flex:1;margin-left:36px;}
+.play-title{font-size:46px;font-weight:900;color:var(--ink);}
+.play-sub{margin-top:12px;font-size:32px;color:var(--muted);}
+.staff-card{margin:0 60px 30px;background:var(--ivory);border:1.5px solid var(--border);border-radius:32px;padding:40px 40px 30px;}
+.staff-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:30px;}
+.staff-title{font-size:36px;color:var(--muted);font-weight:700;}
+.staff-actions{display:flex;gap:16px;}
+.staff-action{padding:12px 24px;background:var(--forest-soft);border-radius:14px;font-size:30px;color:var(--forest);font-weight:700;}
+.staff-svg{background:#fff;border-radius:18px;padding:30px 24px;height:340px;display:flex;align-items:center;justify-content:center;}
+.key-chip{padding:16px 28px;background:var(--warning-soft);color:var(--warning);border-radius:14px;font-size:32px;font-weight:800;display:inline-flex;align-items:center;gap:14px;margin-top:24px;}
+.key-chip .dot{width:20px;height:20px;border-radius:50%;background:var(--warning);}
+.kb{margin:0 30px;background:var(--ivory);border-radius:24px 24px 0 0;padding:30px 30px 60px;border:1.5px solid var(--border);border-bottom:none;}
+.kb-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;}
+.kb-title{font-size:36px;font-weight:800;color:var(--ink);}
+.kb-state{padding:8px 20px;background:var(--border);color:var(--muted);border-radius:12px;font-size:28px;font-weight:700;}
+.keys{display:flex;position:relative;height:280px;}
+.white-key{flex:1;background:#fff;border:1px solid #C8C8C8;border-radius:0 0 12px 12px;margin-right:-1px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:18px;font-size:32px;color:#999;font-weight:700;}
+.white-key.highlight{background:#FFF7C2;}
+.white-key.active{background:#FCEAB0;}
+.white-key:nth-child(8){margin-right:0;}
+.black-keys{position:absolute;left:0;right:0;top:0;height:170px;display:flex;pointer-events:none;}
+.bk{width:6.2%;height:100%;display:flex;justify-content:center;}
+.bk-inner{width:70%;height:100%;background:#1B211D;border-radius:0 0 8px 8px;visibility:hidden;}
+.bk.has .bk-inner{visibility:visible;}
+.bk.highlight .bk-inner{background:#B78922;}
+.bk.active .bk-inner{background:#8A671E;}
+.submit{margin:0 60px 60px;background:var(--forest);color:#fff;border-radius:28px;padding:36px 0;text-align:center;font-size:46px;font-weight:900;letter-spacing:4px;}
+</style></head>
+<body>
+<div class="canvas">
+  <div class="statusbar">
+    <div class="time">9:41</div>
+    <div class="dynamic-island"></div>
+    <div class="right">
+      <svg width="60" height="44" viewBox="0 0 60 44"><rect x="0" y="28" width="10" height="16" rx="2" fill="#1B211D"/><rect x="14" y="20" width="10" height="24" rx="2" fill="#1B211D"/><rect x="28" y="10" width="10" height="34" rx="2" fill="#1B211D"/><rect x="42" y="0" width="10" height="44" rx="2" fill="#1B211D"/></svg>
+      <svg width="56" height="40" viewBox="0 0 56 40"><path d="M28 36 L34 30 A6 6 0 0 0 22 30 Z" fill="#1B211D"/><path d="M28 24 Q38 14 50 24 L46 28 Q38 20 28 28 Q18 20 10 28 L6 24 Q18 14 28 24 Z" fill="#1B211D"/><path d="M28 8 Q44 -8 56 8 L52 12 Q40 4 28 12 Q16 4 4 12 L0 8 Q12 -8 28 8 Z" fill="#1B211D"/></svg>
+      <svg width="80" height="40" viewBox="0 0 80 40"><rect x="0" y="0" width="72" height="40" rx="8" fill="none" stroke="#1B211D" stroke-width="3"/><rect x="74" y="12" width="6" height="16" rx="2" fill="#1B211D"/><rect x="6" y="6" width="56" height="28" rx="4" fill="#1B211D"/></svg>
+    </div>
+  </div>
+
+  <div class="nav">
+    <div class="nav-back"><svg viewBox="0 0 48 48"><path d="M30 10 L18 24 L30 38" fill="none" stroke="#1B211D" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="nav-title">单音听辨</div>
+    <div class="nav-progress">3 / 10</div>
+  </div>
+
+  <div class="progress-bar"><div class="progress-fill"></div></div>
+
+  <div class="qinfo">
+    <div class="qtype">单音听辨</div>
+    <div class="qnum">第 3 题</div>
+  </div>
+
+  <div class="play-card">
+    <div class="play-btn">
+      <svg viewBox="0 0 64 64"><path d="M20 14 L52 32 L20 50 Z"/></svg>
+    </div>
+    <div class="play-copy">
+      <div class="play-title">播放本题</div>
+      <div class="play-sub">完整播放结束前无法重听</div>
+    </div>
+  </div>
+
+  <div class="staff-card">
+    <div class="staff-head">
+      <div class="staff-title">五线谱答题区</div>
+      <div class="staff-actions">
+        <div class="staff-action">4/4</div>
+        <div class="staff-action">C 大调</div>
+      </div>
+    </div>
+    <div class="staff-svg">
+      <svg width="100%" height="100%" viewBox="0 0 1100 280" preserveAspectRatio="xMidYMid meet">
+        <!-- staff lines -->
+        <g stroke="#5F6F65" stroke-width="2.5">
+          <line x1="0" y1="60" x2="1100" y2="60"/>
+          <line x1="0" y1="100" x2="1100" y2="100"/>
+          <line x1="0" y1="140" x2="1100" y2="140"/>
+          <line x1="0" y1="180" x2="1100" y2="180"/>
+          <line x1="0" y1="220" x2="1100" y2="220"/>
+        </g>
+        <!-- clef -->
+        <text x="20" y="190" font-family="serif" font-size="220" fill="#1B211D">𝄞</text>
+        <!-- time signature -->
+        <text x="120" y="155" font-family="serif" font-size="60" fill="#1B211D" font-weight="700">4</text>
+        <text x="120" y="205" font-family="serif" font-size="60" fill="#1B211D" font-weight="700">4</text>
+        <!-- notes: a few placeholder notes -->
+        <g fill="#1B211D">
+          <ellipse cx="260" cy="140" rx="22" ry="16" transform="rotate(-20 260 140)"/>
+          <line x1="280" y1="140" x2="280" y2="60" stroke="#1B211D" stroke-width="3"/>
+          <ellipse cx="420" cy="100" rx="22" ry="16" transform="rotate(-20 420 100)"/>
+          <line x1="440" y1="100" x2="440" y2="40" stroke="#1B211D" stroke-width="3"/>
+        </g>
+        <text x="240" y="260" font-family="serif" font-size="32" fill="#8A671E" font-weight="700">目标音高 · 待作答</text>
+      </svg>
+    </div>
+    <div class="key-chip"><span class="dot"></span>提交谱面答案后键盘自动解锁</div>
+  </div>
+
+  <div class="kb">
+    <div class="kb-head">
+      <div class="kb-title">复盘钢琴</div>
+      <div class="kb-state">待解锁</div>
+    </div>
+    <div class="keys">
+      <div class="white-key">C</div>
+      <div class="white-key">D</div>
+      <div class="white-key highlight">E</div>
+      <div class="white-key">F</div>
+      <div class="white-key">G</div>
+      <div class="white-key">A</div>
+      <div class="white-key">B</div>
+      <div class="white-key">C</div>
+    </div>
+  </div>
+
+  <div class="submit">提交答案</div>
+</div>
+</body></html>

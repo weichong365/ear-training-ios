@@ -6,7 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/app-icon';
 import { getProvincePracticeModules, hasDedicatedFramework, PROVINCES } from '@/core/provinces';
-import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
+import { Btn } from '@/constants/button-tokens';
+import { Brand, TypeScale } from '@/constants/theme';
 import { useProvince } from '@/services/province-context';
 
 const REGION_ORDER = ['华北', '东北', '华东', '中南', '西南', '西北'];
@@ -99,9 +100,9 @@ export default function ProvinceSelectScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: Brand.cream },
-  safe: { backgroundColor: Brand.cream },
+  safe: { backgroundColor: Brand.ivory },
   nav: { height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 },
-  back: { width: TouchTarget, height: TouchTarget, alignItems: 'center', justifyContent: 'center' },
+  back: { ...Btn.provinceSelect.back, alignItems: 'center', justifyContent: 'center' },
   navTitle: { color: Brand.ink, fontSize: 17, fontWeight: '800', letterSpacing: 0.4 },
   content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 },
   head: { marginBottom: 18 },
@@ -110,7 +111,9 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
   regionBlock: { marginTop: 16 },
   regionTitle: { marginBottom: 8, color: Brand.ink, fontSize: TypeScale.headline, fontWeight: '900' },
-  card: { width: '48.4%', padding: 14, borderRadius: Radius.card, backgroundColor: Brand.ivory, borderWidth: 1, borderColor: Brand.border },
+  // 小程序 .province-card 的 padding-right 44rpx(22pt) 是为绝对定位的 .card-arrow 留位；
+  // iOS 的箭头在 cardHead 行内，不需要这段留白，故右内边距取小程序左内边距同值 20rpx→10pt。
+  card: { width: '48.4%', ...Btn.provinceSelect.card, paddingRight: 10, backgroundColor: Brand.ivory, borderColor: Brand.border },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
   cardName: { color: Brand.ink, fontSize: TypeScale.subheadline, fontWeight: '900' },

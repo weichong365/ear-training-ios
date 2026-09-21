@@ -78,9 +78,17 @@ assertSharedRouteConsumers('practice.tsx', practice, [
 assertSharedRouteConsumers('exam-paper.tsx', examPaper, [
   ['@/components/answer-staff', 'AnswerStaff'],
   ['@/components/staff-preview', 'StaffPreview'],
-  ['@/components/notation-editor', 'NotationStaff'],
   ['@/components/notation-editor', 'NotationEditor'],
 ]);
+// 三处谱面共用同一个绘制出口：路由本身不再 import 谱面几何，只消费共享组件。
+const sharedStaffConsumers = {
+  'src/components/answer-staff.tsx': '答题谱',
+  'src/components/notation-editor.tsx': '听记谱面编辑器',
+  'src/components/staff-preview.tsx': '谱例预览',
+};
+for (const [file, label] of Object.entries(sharedStaffConsumers)) {
+  assert.match(fs.readFileSync(path.join(root, file), 'utf8'), /from '@\/components\/staff-notation'/, `${label}（${file}）没有走共享谱面绘制出口`);
+}
 function assertPracticeStateAndVolume(practice) {
   // Bind this one source file; dependency types are not needed for lexical identity.
   const practiceAst = ts.createSourceFile('practice.tsx', practice, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -241,8 +249,8 @@ assert.match(practice, /function next\(\) \{[\s\S]*?setAutoPlay\(true\);/,
 assert.match(practice, /if \(!autoPlay \|\| phase !== 'ready'\) return;\s*autoPlayTimer\.current = setTimeout\([\s\S]*?return \(\) => \{[\s\S]*?autoPlayTimer\.current = null;/,
   'the next-then-background path must retain and release its autoplay timer');
 
-assert.match(audioEngine, /const PIANO_NOTE_PLAYBACK_MS = 1850;[\s\S]*?pianoCleanup = setTimeout\([\s\S]*?PIANO_NOTE_PLAYBACK_MS\);/,
-  'manual review audio must retain the full 1.85-second sample before cleanup');
+assert.match(audioEngine, /const PIANO_NOTE_PLAYBACK_MS = 4000;[\s\S]*?pianoCleanup = setTimeout\([\s\S]*?PIANO_NOTE_PLAYBACK_MS\);/,
+  'manual review audio must retain the full 4-second sample before cleanup');
 assert.match(practice, /async function play\(\) \{[\s\S]*?stopQuestionAudio\(\);[\s\S]*?setHighlights\(\{\}\);/,
   'starting question replay must immediately remove a manual-key highlight');
 assert.match(practice, /async function play\(\) \{[\s\S]*?stopQuestionAudio\(\);[\s\S]*?playQuestionAudio\(/,
@@ -267,11 +275,17 @@ assert.match(practice, /共 \{questions\.length\} 题，答对 \{score\} 题/,
   'completion must render its total and correct-answer counts');
 
 const timedStaffTags = notation.match(/<TimedAnswerStaff\b[\s\S]*?\/>/g) || [];
-assert.ok(timedStaffTags.length >= 3, 'all timed staff render paths must be present');
+assert.ok(timedStaffTags.length >= 4, 'all timed staff render paths must be present');
 timedStaffTags.forEach((tag, index) => {
   assert.match(tag, /capacityMeter=\{(?:meter|answer\.meter|String\(question\.meter \|\| ''\))\}/, `timed staff ${index + 1} must receive a layout meter`);
-  assert.match(tag, /meter=\{systemIndex === 0 \? (?:meter|answer\.meter|String\(question\.meter \|\| ''\)) : ''\}/, `timed staff ${index + 1} must hide display meter only on continuation systems`);
 });
+// 多系统分行必须只在首系统显示拍号；单系统（staffWidth 选择题宽谱）本来就只有一个系统，
+// 可以直接传 meter —— 这是小程序 exam.wxml 单谱面的等价写法。
+const continuationMeters = timedStaffTags.filter((tag) => /meter=\{systemIndex === 0 \? (?:meter|answer\.meter|String\(question\.meter \|\| ''\)) : ''\}/.test(tag));
+assert.ok(continuationMeters.length >= 3, '每一条分行谱表都必须只在首系统显示拍号');
+const singleSystemMeters = timedStaffTags.filter((tag) => /\bmeter=\{meter\}/.test(tag));
+assert.equal(singleSystemMeters.length, 1, '只有单系统谱面可以直接传拍号，且只允许一处');
+assert.ok(singleSystemMeters[0].includes('staffWidth'), '单系统谱面必须是给了 staffWidth 的那条分支');
 
 // Exercise production pitch renders and event handlers without a native runtime.
 // Only device effects and unrelated timed/piano components are replaced. State
@@ -393,7 +407,7 @@ assert.equal(typeof snapshotPracticeHighlights, 'function', 'practice feedback s
 assert.deepEqual(
   snapshotPracticeHighlights('feedback', { type: 'single', midis: [61] }, { ...emptyExamAnswer(), pitches: [60] }, false, { 60: 'play', 61: 'correct' }),
   { 60: 'wrong', 61: 'correct' },
-  'tapping a coloured review key then navigating away before 1.85 seconds must restore persistent wrong/correct feedback on return',
+  'tapping a coloured review key then navigating away before 4 seconds must restore persistent wrong/correct feedback on return',
 );
 const questionCore = require('../src/core/legacy/question.js');
 const originalRandom = Math.random;
@@ -411,6 +425,41 @@ assert.ok(adaptivePitches.length > 0, 'adaptive set must include pitch questions
 pitchCases.push(...adaptivePitches.map((question) => ({ mode: 'adaptive', question, qualityOnly: question.answerMode === 'qualityFill' })));
 const submitButton = (render) => render.nodes.find((node) => node.type === 'Pressable' && node.props.accessibilityRole === 'button' && !node.props.accessibilityLabel && node.props.accessibilityState?.disabled !== undefined);
 const staffs = (render) => render.nodes.filter((node) => node.type?.name === 'AnswerStaff');
+const { ANSWER_STAFF_HEIGHT, STAFF_VIEWBOX_HEIGHT } = harness.load('./src/core/staff-coordinate.ts');
+const staffTouchArea = (render) => render.nodes.find((node) => node.props.accessibilityLabel === '五线谱答题区域' || node.props.accessibilityLabel === '五线谱谱面');
+/**
+ * 先触发一次 onLayout：真实设备上 viewBox 宽由实测容器宽算出来，
+ * 不先布局的话 layout.width 还是 0，横向坐标会退化成无意义的值。
+ * 之后再取一次新渲染的节点做手势 —— 同一渲染内的节点才共享同一份 ref。
+ */
+function layoutStaffTouchArea(render, width = 375) {
+  const area = staffTouchArea(render);
+  assert.ok(area, 'missing staff touch area');
+  area.props.onLayout({ nativeEvent: { layout: { width, height: ANSWER_STAFF_HEIGHT } } });
+  return harness.render();
+}
+/** 谱面 rpx 坐标 → 屏幕 pt（画布高 70pt / viewBox 高 140rpx） */
+const ptFromStaffRpx = (rpx) => rpx * ANSWER_STAFF_HEIGHT / STAFF_VIEWBOX_HEIGHT;
+function tapStaff(render, xPt, yRpx) {
+  const area = staffTouchArea(render);
+  const event = { nativeEvent: { locationX: xPt, locationY: ptFromStaffRpx(yRpx) } };
+  area.props.onResponderGrant(event);
+  area.props.onResponderRelease(event);
+}
+// 播放按钮只保留标题一行：引导语与复盘副标题都不得出现在按钮上。
+// 2026-09-20：用户在截图里要求去掉「结合谱面与键盘复盘」⇒ 两端同时移除，
+// 断言方向随之反转，防止被无意加回来。
+const miniProgramPractice = fs.readFileSync(
+  path.resolve(root, '..', 'pages', 'practice', 'practice.wxml'), 'utf8');
+assert.ok(!miniProgramPractice.includes('先听题，再在五线谱上作答'),
+  '小程序 practice.wxml 不应再出现「先听题，再在五线谱上作答」');
+assert.ok(!miniProgramPractice.includes('结合谱面与键盘复盘'),
+  '小程序 practice.wxml 不应再出现「结合谱面与键盘复盘」');
+assert.ok(!practice.includes('先听题，再在五线谱上作答'),
+  'iOS practice.tsx 不应再出现「先听题，再在五线谱上作答」');
+assert.ok(!practice.includes('结合谱面与键盘复盘'),
+  'iOS practice.tsx 不应再出现「结合谱面与键盘复盘」');
+
 for (const { mode, question, qualityOnly } of pitchCases) {
   const readyAnswer = { ...emptyExamAnswer(), pitches: question.type === 'intervalConnection' ? question.chords.flat() : question.midis,
     quality: qualityOnly ? '大三和弦' : '', inversion: qualityOnly ? '原位' : '' };
@@ -421,7 +470,10 @@ for (const { mode, question, qualityOnly } of pitchCases) {
     const noun = question.type === 'single' ? '单音' : question.type === 'chord' ? '和弦' : question.groupSize ? '音组' : '音程';
     assert.ok(render.nodes.some((node) => node.type === 'Text' && typeof node.props.children === 'string' && node.props.children.includes('听到的') && node.props.children.includes(noun)), `${mode}/${phase}: missing answer title/noun`);
     assert.ok(render.text.includes(qualityOnly ? '先选性质（大/小/增/减三和弦），再选转位。' : '按住音符可上下拖动'), `${mode}/${phase}: missing answer instruction`);
-    assert.ok(render.text.includes(phase === 'feedback' ? '结合谱面与键盘复盘' : '先听题，再在五线谱上作答'), `${mode}/${phase}: missing playback instruction`);
+    // 播放按钮只剩一行：ready/answering 不许再出现「先听题，再在五线谱上作答」，
+    // 复盘阶段也不许出现「结合谱面与键盘复盘」。两个方向都钉住，防止被无意加回来。
+    assert.ok(!render.text.includes('先听题，再在五线谱上作答'), `${mode}/${phase}: playback instruction must stay removed`);
+    assert.ok(!render.text.includes('结合谱面与键盘复盘'), `${mode}/${phase}: feedback playback instruction must stay removed`);
     assert.ok(render.text.includes(phase === 'feedback' ? '键盘已解锁，可自由弹奏核对音高' : '提交谱面答案后自动解锁'), `${mode}/${phase}: missing keyboard instruction`);
     if (phase !== 'feedback') {
       const prompt = phase === 'ready' ? '播放题目后开始作答' : qualityOnly ? '请选择和弦性质与转位' : question.type === 'intervalConnection' ? '点击五线谱写入两个音' : '点击五线谱写入答案';
@@ -460,16 +512,14 @@ assert.equal(answerIsComplete(connection, { ...emptyExamAnswer(), pitches: [, 64
 // parent onChange callback: fixed flat-array padding must not swallow new notes.
 harness.start('connection', connection, 'answering', emptyExamAnswer());
 staffs(harness.render())[1].props.onChange([62, 69], ['D4', 'A4']);
-const firstTouchArea = harness.render().nodes.find((node) => node.props.accessibilityLabel === '五线谱答题区域');
-const tap = { nativeEvent: { locationX: 166, locationY: 78 * 122 / 96 } };
-firstTouchArea.props.onResponderGrant(tap);
-firstTouchArea.props.onResponderRelease(tap);
+// 落点用谱面 rpx 坐标表达：中央 C 在 y=106（下加一线），E4 在 y=91（第一线），G4 在 y=76。
+// 横向取 250pt ⇒ 500rpx，离已写音符的锚点（约 344rpx）超过 42rpx 命中半径，
+// 必须走「按 y 写新音」而不是「弹出临时记号菜单」。
+let tapRender = layoutStaffTouchArea(harness.render());
+tapStaff(tapRender, 250, 106);
 assert.deepEqual(staffs(harness.render())[0].props.pitches.filter(Number.isFinite), [60], 'tapping an empty padded connection group must write its first note');
-for (const y of [68, 58]) {
-  const area = harness.render().nodes.find((node) => node.props.accessibilityLabel === '五线谱答题区域');
-  const event = { nativeEvent: { locationX: 250, locationY: y * 122 / 96 } };
-  area.props.onResponderGrant(event);
-  area.props.onResponderRelease(event);
+for (const y of [91, 76]) {
+  tapStaff(layoutStaffTouchArea(harness.render()), 250, y);
 }
 assert.deepEqual(staffs(harness.render())[0].props.pitches, [60, 64], 'connection staff writes the second note and enforces its two-note stack limit');
 assert.deepEqual(staffs(harness.render())[0].props.spellings, ['C4', 'E4'], 'stack insertion preserves spelling alignment');
@@ -568,110 +618,223 @@ assert.ok(finishedPractice.text.includes('本组训练完成'), 'finished practi
 assert.ok(!sharedComponent(finishedPractice, SharedAnswerStaff) && !sharedComponent(finishedPractice, SharedPianoKeyboard), 'finished practice must remove answer and piano interaction surfaces');
 
 // Hand-checked line/space fixtures guard the shared native geometry contract.
+// ⚠️ 单位是 rpx（1rpx = 0.5pt）：lineTop 30 / lineGap 15 / 第一线 E4 = 91。
+// 逐值来源：components/staff-layout.js（小程序），跨端对账见 scripts/staff-parity-smoke.cjs。
 const geometry = harness.load('./src/core/music-notation.ts');
-assert.deepEqual(geometry.STAFF_LINE_YS, [28, 38, 48, 58, 68]);
-assert.equal(geometry.staffSvgYFromWrittenMidi(64), 68);
-assert.deepEqual(geometry.ledgerLineYs(60), [78]);
-assert.deepEqual(geometry.ledgerLineYs(57), [78, 88]);
-assert.deepEqual(geometry.barlineBounds(), { top: 28, bottom: 68 });
+const layout = harness.load('./src/core/staff-layout.ts');
+assert.deepEqual(geometry.STAFF_LINE_YS, [31, 46, 61, 76, 91]);
+assert.equal(geometry.staffSvgYFromWrittenMidi(64), 91);
+assert.deepEqual(geometry.ledgerLineYs(60), [106]);
+assert.deepEqual(geometry.ledgerLineYs(57), [106, 121]);
+assert.deepEqual(geometry.barlineBounds(), { top: 31, bottom: 91 });
 assert.equal(geometry.writtenMidiFromStaffSvgY(geometry.staffSvgYFromWrittenMidi(69)), 69);
 assert.equal(geometry.pianoWhiteMidis(55, 81).length, 16);
 assert.equal(geometry.pianoBlackKeys(55, 81).length, 11);
+assert.equal(layout.RPX_TO_PT, 0.5, '1rpx 必须等于 0.5pt');
+assert.equal(layout.DEFAULT_STAFF_WIDTH_RPX, 630, '答题谱必须使用小程序 answer-staff 的 width=630');
+assert.equal(layout.STAFF_HEIGHT_RPX, 140, '谱面内容高必须是 140rpx');
+assert.equal(layout.STAFF_LINE_GAP, 15, '谱线间距必须是 15rpx');
+assert.equal(layout.STAFF_STEP_GAP, 7.5, '相邻音级必须是 7.5rpx');
 
 const naturalWrittenMidis = [55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81];
 naturalWrittenMidis.forEach((midi) => {
   assert.equal(geometry.writtenMidiFromStaffSvgY(geometry.staffSvgYFromWrittenMidi(midi)), midi,
     `natural written pitch must round-trip: ${midi}`);
 });
-assert.equal(geometry.STAFF_LINE_YS[1] - geometry.STAFF_LINE_YS[0], 10, 'staff lines must use equal spacing');
-assert.equal(geometry.ledgerLineYs(57)[1] - geometry.ledgerLineYs(57)[0], 10, 'ledger lines must use staff spacing');
-assert.equal(geometry.STAFF_STROKE_WIDTH, 1, 'ledger and staff strokes must share the one-point width');
+assert.equal(geometry.STAFF_LINE_YS[1] - geometry.STAFF_LINE_YS[0], 15, 'staff lines must use equal spacing');
+assert.equal(geometry.ledgerLineYs(57)[1] - geometry.ledgerLineYs(57)[0], 15, 'ledger lines must use staff spacing');
+assert.equal(geometry.STAFF_STROKE_WIDTH, 2, 'ledger and staff strokes must share the 2rpx width');
 for (const [meter, elapsed, expected] of [
   ['2/4', [0, 0.5, 1, 1.5], [0, 0, 1, 1]],
   ['4/4', [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5], [0, 0, 1, 1, 2, 2, 3, 3]],
-  ['3/8', [0, 0.25, 0.5, 0.75, 1, 1.25], [0, 0, 1, 1, 2, 2]],
+  ['3/8', [0, 0.25, 0.5, 0.75, 1, 1.25], [0, 0, 0, 0, 0, 0]],
   ['6/8', [0, 0.5, 1, 1.5, 2, 2.5], [0, 0, 0, 1, 1, 1]],
 ]) {
   assert.deepEqual(elapsed.map((beat) => geometry.beamGroupAtBeat(beat, meter)), expected,
     `${meter} beams must group within beats`);
 }
 
+// ⚠️ 单位是 rpx：E4 第一线 = 91、第三线(B4) = 61、顶线(F5) = 31，相邻音级 7.5rpx。
+// 「物理点击 y(pt)」= 谱面 y(rpx) × 画布高 ÷ 140，换算必须与画布高无关。
 const coordinates = harness.load('./src/core/staff-coordinate.ts');
-for (const [midi, y] of [[60, 78], [64, 68], [65, 63], [71, 48], [77, 28], [81, 18]]) {
-  assert.equal(coordinates.staffSvgYFromWrittenMidi(midi), y);
-  for (const height of [96, 122]) assert.equal(coordinates.naturalMidiFromStaffTapY(y * height / 96, height), midi);
+assert.equal(coordinates.STAFF_VIEWBOX_HEIGHT, 140, 'viewBox 高必须是 140rpx');
+assert.equal(coordinates.STAFF_VIEWBOX_WIDTH, 630, '首帧 viewBox 宽必须是 answer-staff 的 width=630');
+assert.equal(coordinates.ANSWER_STAFF_HEIGHT, 70, '画布渲染高必须是 140rpx × 0.5pt = 70pt');
+assert.equal(coordinates.staffViewBoxWidth(375), 750, '375pt 容器 → 750rpx viewBox');
+assert.equal(coordinates.staffViewBoxWidth(0), 630, '未测到宽度时必须回落到设计宽 630rpx');
+for (const [midi, y] of [[60, 106], [64, 91], [65, 83.5], [71, 61], [77, 31], [81, 16]]) {
+  assert.equal(coordinates.staffSvgYFromWrittenMidi(midi), y, `记谱 y 必须是 ${y}rpx`);
+  for (const height of [coordinates.ANSWER_STAFF_HEIGHT, 122]) {
+    assert.equal(
+      coordinates.naturalMidiFromStaffTapY(y * height / coordinates.STAFF_VIEWBOX_HEIGHT, height),
+      midi,
+      `${height}pt 画布上点击 y=${y}rpx 必须还原文 ${midi}`,
+    );
+  }
 }
 
 // A renderer-local offset must not make an editable staff disagree with the
 // read-only preview. These fixtures inspect the real component trees so a
 // duplicated line, accidental, ledger, stem, clef or prompt anchor is caught.
+//
+// 期望值一律取自共享几何（@/core/staff-layout + headerSymbols + buildStaffGeometry），
+// 不重复硬编码第二份像素 —— 几何单源一改，这里不会虚假失败；但任何「调用方私加偏移」
+// 都会被抓住。几何本身与小程序 layout() 的逐值对账见 scripts/staff-parity-smoke.cjs。
 const rendererHarness = pitchHarness();
 const { AnswerStaff } = rendererHarness.load('./src/components/answer-staff.tsx');
 const { StaffPreview } = rendererHarness.load('./src/components/staff-preview.tsx');
 const flattenRendererStyle = (style) => Array.isArray(style)
   ? Object.assign({}, ...style.filter(Boolean).map(flattenRendererStyle))
   : style || {};
+/** 未触发 onLayout 时的 viewBox 宽 = 小程序 answer-staff 的 width 设计宽（rpx） */
+const VIEWBOX_WIDTH_RPX = layout.DEFAULT_STAFF_WIDTH_RPX;
 const lineNodes = (render) => render.nodes.filter((node) => node.type === 'Line');
-const staffLineNodes = (render) => lineNodes(render).filter((node) => Number(node.props.x1) === 16 && Number(node.props.x2) === 308);
-const barlineNodes = (render) => lineNodes(render).filter((node) => Number(node.props.x1) === 304 || Number(node.props.x1) === 308);
-const ledgerNodes = (render) => lineNodes(render).filter((node) => typeof node.props.x1 === 'number'
-  && typeof node.props.x2 === 'number' && node.props.x2 - node.props.x1 === 22 && node.props.y1 === node.props.y2);
-const noteheadNodes = (render) => render.nodes.filter((node) => node.type?.name === 'MusicNotehead');
-const accidentalNodes = (render) => render.nodes.filter((node) => node.type?.name === 'MusicAccidental');
+const staffLineNodes = (render) => lineNodes(render)
+  .filter((node) => Number(node.props.x1) === 0 && Number(node.props.x2) === VIEWBOX_WIDTH_RPX);
+const barlineNodes = (render) => lineNodes(render).filter((node) => /^bar-/.test(node.key));
+const stemNodes = (render) => lineNodes(render).filter((node) => /^s-\d+$/.test(node.key));
+const beamNodes = (render, prefix) => lineNodes(render).filter((node) => new RegExp(`^${prefix}-\\d+$`).test(node.key));
+const ledgerNodes = (render) => lineNodes(render).filter((node) => node.props.y1 === node.props.y2
+  && Math.abs(Number(node.props.x2) - Number(node.props.x1) - layout.LEDGER_WIDTH) < 0.001);
+const nodeNamed = (render, name) => render.nodes.filter((node) => node.type?.name === name);
+/**
+ * 谱头字形（谱号 / 调号 / 拍号）—— 唯一标识方式是「绘制顺序在第一个音符之前」，
+ * 因为音符、临时记号、休止符、符尾、附点也都走同一个 MusicGlyph 出口。
+ */
+const headerGlyphNodes = (render) => {
+  const firstNote = render.nodes.findIndex((node) => node.type?.name === 'MusicNotehead' || node.type?.name === 'MusicRest');
+  return render.nodes.slice(0, firstNote < 0 ? render.nodes.length : firstNote)
+    .filter((node) => node.type?.name === 'MusicGlyph');
+};
+const noteheadNodes = (render) => nodeNamed(render, 'MusicNotehead');
+const accidentalNodes = (render) => nodeNamed(render, 'MusicAccidental');
+const restNodes = (render) => nodeNamed(render, 'MusicRest');
+const flagNodes = (render) => nodeNamed(render, 'MusicFlag');
+const dotNodes = (render) => nodeNamed(render, 'MusicDot');
+const tupletNodes = (render) => nodeNamed(render, 'MusicTuplet');
+/** 共享谱面必须只有一个 <Svg> 根（调用方不得再套自己的 SVG 坐标层） */
+const staffRoot = (render) => {
+  const roots = render.nodes.filter((node) => node.type === 'Svg');
+  assert.equal(roots.length, 1, '谱面必须只由一个共享 <Svg> 根绘制');
+  return roots[0];
+};
 
-const wholeMidis = [65, 64, 81, 60]; // first space, first line, upper ledger, lower ledger
+const wholeMidis = [65, 64, 81, 60]; // 第一间、第一线、上加线、下加线
 const wholeSpellings = ['F4', 'E4', 'A5', 'C4'];
 const answerWhole = rendererHarness.renderComponent(AnswerStaff, {
   pitches: wholeMidis, spellings: wholeSpellings, slots: 4, disabled: true, emptyText: '',
 });
 const previewWhole = rendererHarness.renderComponent(StaffPreview, { midis: wholeMidis, wholeNotes: true });
-for (const [name, render, expectedLedgers] of [
-  ['AnswerStaff', answerWhole, [[18, 216], [78, 272]]],
-  ['StaffPreview', previewWhole, [[18, 146], [78, 173]]],
-]) {
-  const svg = render.nodes.find((node) => node.type === 'Svg');
-  assert.equal(svg.props.viewBox, '0 0 320 96', `${name} must use the shared logical viewBox`);
-  assert.deepEqual(staffLineNodes(render).map((line) => line.props.y1), [28, 38, 48, 58, 68], `${name} must use the native line centers`);
-  assert.ok(staffLineNodes(render).every((line) => line.props.strokeWidth === 1), `${name} staff lines must use the shared stroke width`);
-  assert.deepEqual(barlineNodes(render).map((line) => ({ top: line.props.y1, bottom: line.props.y2 })),
-    [{ top: 28, bottom: 68 }, { top: 28, bottom: 68 }], `${name} final barlines must stop at the outer line centers`);
-  assert.deepEqual(noteheadNodes(render).map((head) => [head.props.kind, head.props.y]),
-    [['whole', 63], ['whole', 68], ['whole', 18], ['whole', 78]], `${name} whole notes must stay centered on spaces, lines and ledgers`);
+for (const [name, render] of [['AnswerStaff', answerWhole], ['StaffPreview', previewWhole]]) {
+  const svg = staffRoot(render);
+  // viewBox 用 rpx（小程序坐标系）：宽 = 实测容器宽 ÷ 0.5，高 140 ⇒ 1 单位恒等于 0.5pt。
+  assert.equal(svg.props.viewBox, `0 0 ${VIEWBOX_WIDTH_RPX} ${layout.STAFF_HEIGHT_RPX}`,
+    `${name} 必须以 rpx 为 viewBox 单位（宽 630 / 高 140）`);
+  assert.equal(svg.props.preserveAspectRatio, 'none',
+    `${name} 必须用 preserveAspectRatio="none"，否则窄容器下 1 单位 ≠ 0.5pt`);
+  assert.equal(staffLineNodes(render).length, 5, `${name} 必须恰好画出五条谱线`);
+  assert.deepEqual(staffLineNodes(render).map((line) => line.props.y1), geometry.STAFF_LINE_YS,
+    `${name} 谱线必须落在 31/46/61/76/91rpx`);
+  assert.ok(staffLineNodes(render).every((line) => line.props.strokeWidth === geometry.STAFF_STROKE_WIDTH),
+    `${name} 谱线必须与加线/小节线同宽 2rpx`);
+
+  const heads = noteheadNodes(render);
+  assert.deepEqual(heads.map((head) => [head.props.kind, head.props.y]),
+    [['whole', 83.5], ['whole', 91], ['whole', 16], ['whole', 106]],
+    `${name} 全音符必须逐值落在间/线/上下加线上（rpx）`);
+  assert.ok(Math.abs(layout.noteheadBox('whole', 0, 0).width - 25.32) < 0.001,
+    '空心全音符列宽必须是 Bravura 在 15rpx 谱距下的 25.32rpx');
+
   const ledgers = ledgerNodes(render);
-  assert.deepEqual(ledgers.map((line) => [line.props.y1, (line.props.x1 + line.props.x2) / 2]), expectedLedgers,
-    `${name} upper and lower ledgers must stay centered under their noteheads`);
-  assert.ok(ledgers.every((line) => line.props.strokeWidth === 1 && line.props.x2 - line.props.x1 === 22),
-    `${name} ledger strokes must share staff width and extents`);
-  const clef = render.nodes.find((node) => node.type === 'Image');
-  const clefStyle = flattenRendererStyle(clef.props.style);
-  assert.equal(clefStyle.top + clefStyle.height / 2, 61, `${name} clef must center on the middle staff line`);
+  assert.deepEqual(ledgers.map((line) => line.props.y1), [16, 106],
+    `${name} 上加线/下加线必须各画一条（16rpx / 106rpx）`);
+  ledgers.forEach((line) => {
+    const center = (Number(line.props.x1) + Number(line.props.x2)) / 2;
+    assert.ok(heads.some((head) => Math.abs(head.props.x - center) < 0.01),
+      `${name} 加线必须以符头中心为轴（宽 ${layout.LEDGER_WIDTH}rpx）`);
+  });
+  assert.ok(ledgers.every((line) => line.props.strokeWidth === geometry.STAFF_STROKE_WIDTH),
+    `${name} 加线必须与谱线同宽`);
+  assert.deepEqual(barlineNodes(render), [], `${name} 固定答题区域不画小节线`);
+  assert.deepEqual(restNodes(render), [], `${name} 这两个样例里没有休止符`);
+
+  // 谱号必须逐值等于 headerSymbols（锚点在 G4 线 = 第二线）。
+  const header = layout.headerSymbols('', '');
+  assert.deepEqual(headerGlyphNodes(render).map((node) => [node.props.name, node.props.box]), [['clef', header.clefGlyph]],
+    `${name} 谱号必须逐值取自 headerSymbols`);
+  assert.deepEqual(
+    [header.clefGlyph.left, Math.round(header.clefGlyph.top * 100) / 100, Math.round(header.clefGlyph.width * 100) / 100, Math.round(header.clefGlyph.height * 100) / 100],
+    [4, 10.12, 40.26, 105.36],
+    `${name} 谱号盒必须是 671×1756 字体单位按 15rpx/250 折算出来的 40.26×105.36rpx`,
+  );
+  assert.equal(layout.staffYForStep(2), 76, '谱号锚点（G4）必须落在第二线 76rpx');
 }
+// 可写答题谱与只读谱例必须共用同一套谱面壳（谱线 + 谱头）：任何渲染器局部偏移都会在这里暴露。
+assert.deepEqual(
+  headerGlyphNodes(answerWhole).map((node) => node.props.box),
+  headerGlyphNodes(previewWhole).map((node) => node.props.box),
+  '答题谱与只读谱例的谱头字形必须逐值相同（同一条 rpx 几何）',
+);
+assert.deepEqual(
+  staffLineNodes(answerWhole).map((line) => line.props.y1),
+  staffLineNodes(previewWhole).map((line) => line.props.y1),
+  '答题谱与只读谱例的谱线必须完全重合',
+);
+assert.deepEqual(
+  noteheadNodes(answerWhole).map((head) => head.props.y),
+  noteheadNodes(previewWhole).map((head) => head.props.y),
+  '同一批音在答题谱与只读谱例上的谱位必须一致',
+);
 
 const answerChord = rendererHarness.renderComponent(AnswerStaff, {
   pitches: [61, 63], spellings: ['C#4', 'D#4'], stacked: true, disabled: true,
 });
 const previewChord = rendererHarness.renderComponent(StaffPreview, { midis: [61, 63], harmonic: true, wholeNotes: true });
 for (const [name, render] of [['AnswerStaff', answerChord], ['StaffPreview', previewChord]]) {
-  const heads = noteheadNodes(render);
-  const accidentals = accidentalNodes(render);
-  assert.equal(accidentals.length, 2, `${name} must render both chord accidentals`);
-  assert.deepEqual(accidentals.map((accidental, index) => heads[index].props.x - accidental.props.x).sort((a, b) => a - b), [15, 24],
-    `${name} vertically colliding accidentals must occupy separate anchor columns`);
+  const heads = noteheadNodes(render).sort((left, right) => left.props.x - right.props.x);
+  const accidentals = accidentalNodes(render).sort((left, right) => left.props.rightEdgeX - right.props.rightEdgeX);
+  assert.equal(heads.length, 2, `${name} 和声音程必须有 2 个符头`);
+  assert.deepEqual(accidentals.map((node) => node.props.acc), ['#', '#'], `${name} 必须画出两个升号`);
+  // 二度错位：第二个符头右移 SECOND_HEAD_DX，临时记号必须跟着走（否则会压住符头）。
+  assert.ok(Math.abs((heads[1].props.x - heads[0].props.x) - layout.SECOND_HEAD_DX) < 0.001,
+    `${name} 二度和弦必须左右错开 ${layout.SECOND_HEAD_DX}rpx`);
+  heads.forEach((head, index) => {
+    const { left } = layout.noteheadBox(head.props.kind, head.props.x, head.props.y);
+    assert.ok(Math.abs(accidentals[index].props.rightEdgeX - (left - layout.ACCIDENTAL_GAP)) < 0.001,
+      `${name} 临时记号右缘必须落在符头 bbox 左缘 − ${layout.ACCIDENTAL_GAP}rpx`);
+    assert.equal(accidentals[index].props.centerY, head.props.y, `${name} 临时记号必须与符头同高`);
+  });
+  assert.ok(Math.abs((accidentals[1].props.rightEdgeX - accidentals[0].props.rightEdgeX) - layout.SECOND_HEAD_DX) < 0.001,
+    `${name} 两个升号必须各占一列（列距 ${layout.SECOND_HEAD_DX}rpx），不能叠在同一列`);
 }
 
 const stemRenders = [
   [rendererHarness.renderComponent(StaffPreview, { midis: [60, 81] }), 2],
-  [rendererHarness.renderComponent(StaffPreview, { midis: [60, 64], harmonic: true }), 1],
+  // ⚠️ 和声模式（harmonic）在小程序里恒为全音符（dur 4，无符干），要测和弦共用符干
+  //    必须显式给事件形状。
+  [rendererHarness.renderComponent(StaffPreview, { events: [{ midis: [60, 64], spellings: ['C4', 'E4'], dur: 1 }] }), 1],
+  [rendererHarness.renderComponent(StaffPreview, { midis: [60, 64], harmonic: true }), 0],
 ];
 stemRenders.forEach(([render, expectedStemCount]) => {
   const heads = noteheadNodes(render);
-  const stems = lineNodes(render).filter((node) => node.props.strokeWidth === '1.5');
-  assert.equal(stems.length, expectedStemCount, 'preview must retain every isolated or shared chord stem');
+  const stems = stemNodes(render);
+  assert.equal(stems.length, expectedStemCount, '预览必须保留每个孤立符干或和弦共用符干');
   stems.forEach((stem) => {
-    const head = heads.find((candidate) => Math.abs(candidate.props.x - stem.props.x1) < 6
-      && Math.abs(candidate.props.y - stem.props.y1) === 1);
-    assert.ok(head, 'every isolated or chord stem must begin inside its notehead');
+    const x1 = Number(stem.props.x1);
+    const y1 = Number(stem.props.y1);
+    const y2 = Number(stem.props.y2);
+    assert.equal(Number(stem.props.x2), x1, '符干必须垂直');
+    assert.ok(Math.abs(Math.abs(y2 - y1) - layout.STEM_LENGTH) < 0.01, `符干长度必须是 ${layout.STEM_LENGTH}rpx`);
+    const attached = heads.filter((candidate) => {
+      const { left, width } = layout.noteheadBox(candidate.props.kind, candidate.props.x, candidate.props.y);
+      const inset = layout.STAFF_LINE_GAP * 0.2;
+      return x1 >= left + inset - 1e-6 && x1 <= left + width - inset + 1e-6;
+    });
+    assert.ok(attached.length, '符干必须从符头内部起笔（不能贴边或落到隔壁符头）');
+    assert.ok(attached.some((head) => Math.abs(head.props.y - y1) < 1e-6 || Math.abs(head.props.y - y2) < 1e-6),
+      '符干必须有一端落在同组某个符头的中心高度上（和弦取最高/最低音）');
   });
+  assert.deepEqual(beamNodes(render, 'b'), [], '四分音符不得生成连符杠');
 });
 
 const emptyAnswer = rendererHarness.renderComponent(AnswerStaff, {
@@ -679,12 +842,14 @@ const emptyAnswer = rendererHarness.renderComponent(AnswerStaff, {
 });
 const prompt = emptyAnswer.nodes.find((node) => node.type === 'Text' && node.props.children === '播放题目后开始作答');
 const promptStyle = flattenRendererStyle(prompt.props.style);
-const layoutPoints = (value, width) => typeof value === 'string' && value.endsWith('%')
-  ? parseFloat(value) * width / 100
-  : value;
-const fluidStaffWidth = 375;
-assert.equal((layoutPoints(promptStyle.left, fluidStaffWidth) + fluidStaffWidth - layoutPoints(promptStyle.right, fluidStaffWidth)) / 2, 225,
-  'the playback prompt must stay centered at 60% of a non-320 fluid staff');
+// 小程序 .staff-notation .empty：left/right 0、top 31rpx、height 60rpx、font-size 20rpx。
+assert.equal(promptStyle.left, 0, '空态提示必须与壳体同宽（left: 0）');
+assert.equal(promptStyle.right, 0, '空态提示必须与壳体同宽（right: 0）');
+assert.equal(promptStyle.textAlign, 'center', '空态提示必须水平居中');
+assert.equal(promptStyle.top, layout.EMPTY_TOP * layout.RPX_TO_PT, '空态提示上缘必须是 31rpx → 15.5pt');
+assert.equal(promptStyle.height, layout.EMPTY_HEIGHT * layout.RPX_TO_PT, '空态提示盒高必须是 60rpx → 30pt');
+assert.equal(promptStyle.fontSize, layout.EMPTY_FONT_SIZE * layout.RPX_TO_PT, '空态提示字号必须是 20rpx → 10pt（≥ 9pt 底线）');
+assert.equal(layout.EMPTY_TOP + layout.EMPTY_HEIGHT / 2, layout.emptyTextCenterY(), '空态提示必须垂直居中于第三线（61rpx）');
 
 // Timed tests exercise real editor handlers and inspect the emitted SVG. Removing
 // prerequisite guards or merging adjacent beat runs must fail these fixtures.
@@ -694,95 +859,155 @@ function timedCheck(name, run) {
 }
 const timedHarness = pitchHarness();
 const { TimedAnswerStaff, NotationStaff } = timedHarness.load('./src/components/notation-editor.tsx');
+const timedLineNodes = (render) => render.nodes.filter((node) => node.type === 'Line');
+const timedBeams = (render, prefix) => timedLineNodes(render).filter((node) => new RegExp(`^${prefix}-\\d+$`).test(node.key));
+const timedNamed = (render, name) => render.nodes.filter((node) => node.type?.name === name);
+/** 谱头字形 = 出现在第一个音符之前的 MusicGlyph（音符/记号/休止符共用同一个出口） */
+const timedHeaderGlyphs = (render) => {
+  const firstNote = render.nodes.findIndex((node) => node.type?.name === 'MusicNotehead' || node.type?.name === 'MusicRest');
+  return render.nodes.slice(0, firstNote < 0 ? render.nodes.length : firstNote)
+    .filter((node) => node.type?.name === 'MusicGlyph');
+};
+const timedGlyphNames = (render) => timedHeaderGlyphs(render).map((node) => node.props.name);
 for (const [meter, duration, count, primaryCount] of [
   ['2/4', 0.5, 4, 2], ['4/4', 0.5, 8, 4],
-  ['3/8', 0.25, 6, 3], ['6/8', 0.5, 6, 2],
+  ['3/8', 0.25, 6, 1], ['6/8', 0.5, 6, 2],
 ]) {
   for (const continuation of [false, true]) timedCheck(`${meter}/${duration}/${continuation ? 'continuation' : 'first'} beams`, () => {
     const barOffset = continuation ? 2 : 0;
     const events = Array.from({ length: count * 2 }, (_, index) => ({ midi: 69, duration, barIndex: barOffset + Math.floor(index / count) }));
     const render = timedHarness.renderComponent(TimedAnswerStaff, { events, meter: continuation ? '' : meter, capacityMeter: meter, keySignature: '', barOffset, barCount: 2, isFinalSystem: true, disabled: true, emptyText: '' });
-    const primary = render.nodes.filter((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key));
-    assert.equal(primary.length, primaryCount * 2, 'beams must stop at each beat and barline');
-    assert.equal(render.nodes.filter((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9').length, 0, 'ordinary beat fixtures must not emit tuplet numerals');
-    if (continuation) assert.ok(!render.nodes.some((node) => node.type === 'SvgText' && node.props.fontSize === '17'), 'continuation hides only the meter label');
+    assert.equal(timedBeams(render, 'b').length, primaryCount * 2, '连符杠必须在每个拍组与小节线处断组');
+    assert.equal(timedNamed(render, 'MusicTuplet').length, 0, '普通拍组不得画三连音「3」');
+    // 拍号现在是 Bravura 字形（小程序 <image> + staff-glyph-metrics），不再是 SVG 文本。
+    const names = timedGlyphNames(render);
+    assert.ok(names.includes('clef'), '谱号在任何一行都必须画出');
+    assert.equal(names.filter((name) => name.startsWith('time')).length, continuation ? 0 : 2,
+      '续行必须只隐藏拍号字形（小程序 meter 传空串）');
   });
 }
 
-for (const [meter, count, expectedDuration, expectedGroups, expectedTuplets, expectedEndpoints] of [
-  ['3/8', 3, 1, 2, 2, [[120.9, 165.344], [209.789, 209.789]]],
-  ['4/4', 12, 4, 4, 4, [[120.9, 154.233], [170.9, 204.233], [220.9, 254.233], [270.9, 304.233]]],
-  ['6/8', 9, 3, 2, 2, [[120.9, 209.789], [232.011, 298.678]]],
+for (const [meter, count, expectedDuration, expectedByLine] of [
+  ['3/8', 3, 1, {
+    first: { groups: 1, tuplets: 1, tupletX: 227.89, endpoints: [[130.85, 339.63]] },
+    continuation: { groups: 1, tuplets: 1, tupletX: 203, endpoints: [[98.85, 321.85]] },
+  }],
+  ['4/4', 12, 4, {
+    first: { groups: 4, tuplets: 1, tupletX: 371, endpoints: [[124.85, 211.85], [250.85, 337.85], [376.85, 463.85], [502.85, 589.85]] },
+    continuation: { groups: 4, tuplets: 1, tupletX: 357, endpoints: [[92.85, 185.85], [227.85, 320.85], [362.85, 455.85], [497.85, 590.85]] },
+  }],
+  ['6/8', 9, 3, {
+    first: { groups: 2, tuplets: 1, tupletX: 351, endpoints: [[124.85, 359.85], [414.85, 591.85]] },
+    continuation: { groups: 2, tuplets: 1, tupletX: 335, endpoints: [[92.85, 343.85], [402.85, 591.85]] },
+  }],
 ]) {
   for (const continuation of [false, true]) timedCheck(`${meter} ${meter === '3/8' ? 'partial' : 'complete'} tuplet ${continuation ? 'continuation' : 'first'} groups`, () => {
     const barOffset = continuation ? 2 : 0;
     const events = Array.from({ length: count }, () => ({ midi: 69, duration: 1 / 3, barIndex: barOffset }));
-    assert.equal(events.reduce((sum, event) => sum + event.duration, 0), expectedDuration, 'tuplet fixture must retain its literal represented duration');
+    assert.equal(events.reduce((sum, event) => sum + event.duration, 0), expectedDuration, '三连音样例必须保留其字面记谱时长');
     const render = timedHarness.renderComponent(TimedAnswerStaff, { events, meter: continuation ? '' : meter, capacityMeter: meter, keySignature: '', barOffset, barCount: 1, isFinalSystem: true, disabled: true, emptyText: '' });
-    const primary = render.nodes.filter((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key));
-    const flags = render.nodes.filter((node) => node.type?.name === 'MusicFlag');
-    const tuplets = render.nodes.filter((node) => node.type === 'SvgText' && node.props.children === '3' && node.props.fontSize === '9');
+    const flags = timedNamed(render, 'MusicFlag');
+    const tuplets = timedNamed(render, 'MusicTuplet');
     const rounded = (value) => Math.round(Number(value) * 1000) / 1000;
     const groups = [
-      ...primary.map((beam) => [rounded(beam.props.x1), rounded(beam.props.x2)]),
+      ...timedBeams(render, 'b').map((beam) => [rounded(beam.props.x1), rounded(beam.props.x2)]),
       ...flags.map((flag) => [rounded(flag.props.stemX), rounded(flag.props.stemX)]),
     ].sort((left, right) => left[0] - right[0]);
-    assert.equal(groups.length, expectedGroups, `${meter} must use meter-sized tuplet groups`);
-    assert.equal(tuplets.length, expectedTuplets, `${meter} must emit one independently counted numeral per meter group`);
-    assert.deepEqual(groups, expectedEndpoints, `${meter} beam and flag endpoints must identify exact group membership`);
-    if (continuation) assert.ok(!render.nodes.some((node) => node.type === 'SvgText' && node.props.fontSize === '17'), 'continuation hides only the meter label');
+    const expected = expectedByLine[continuation ? 'continuation' : 'first'];
+    assert.equal(groups.length, expected.groups, `${meter} 必须按拍组切分连符杠`);
+    // ⚠️ 小程序 flushTriplet 只按「idx 连续」分组，**不**按拍组：12 个连续三连音只有 1 个「3」。
+    assert.equal(tuplets.length, expected.tuplets, `${meter} 必须按「连续 idx」而不是按拍组计数「3」`);
+    assert.deepEqual(groups, expected.endpoints, `${meter} 符杠端点必须唯一确定组内成员`);
+    assert.equal(rounded(tuplets[0].props.x), expected.tupletX, `${meter} 「3」必须压在本组中间那个音上`);
   });
 }
 
 timedCheck('header and notation anchors', () => {
   const base = { events: [], meter: '4/4', capacityMeter: '4/4', barOffset: 0, barCount: 2, isFinalSystem: true, disabled: true, emptyText: '' };
-  for (const [keySignature, expectedY] of [['G', 28], ['F', 48]]) {
+  for (const keySignature of ['G', 'F']) {
     const render = timedHarness.renderComponent(TimedAnswerStaff, { ...base, keySignature });
-    const accidental = render.nodes.find((node) => node.type?.name === 'MusicAccidental');
-    assert.deepEqual([accidental.props.x, accidental.props.y], [57, expectedY], `${keySignature} key signature must use its mini-program anchor`);
-    const meter = render.nodes.filter((node) => node.type === 'SvgText' && node.props.fontSize === '17');
-    assert.deepEqual(meter.map((node) => [Number(node.props.x), node.props.y, node.props.children]), [[82, 38, '4'], [82, 58, '4']], 'time signature digits must align to the second and fourth staff lines');
+    const header = layout.headerSymbols(keySignature, '4/4');
+    // 谱号 / 调号 / 拍号必须逐值等于 headerSymbols，不得有渲染器局部偏移。
+    assert.deepEqual(timedHeaderGlyphs(render).map((node) => [node.props.name, node.props.box]), [
+      ['clef', header.clefGlyph],
+      [header.keyGlyph.name, header.keyGlyph],
+      ...header.meterGlyphs.map((glyph) => [glyph.name, glyph]),
+    ], `${keySignature} 调的谱号/调号/拍号字形必须逐值取自 headerSymbols`);
+    assert.deepEqual(header.meterGlyphs.map((glyph) => Math.round(glyph.top * 100) / 100), [30.94, 60.94],
+      '拍号数字必须锚在第二线(46rpx)/第四线(76rpx)上，不得压线或漂移');
+    assert.deepEqual(header.meterGlyphs.map((glyph) => glyph.left), [74.6, 74.6],
+      '拍号数字必须共用一个 35rpx 时间列（左侧让位给调号）');
   }
+  const gKey = layout.headerSymbols('G', '4/4').keyGlyph;
+  assert.deepEqual([gKey.left, Math.round(gKey.top * 100) / 100], [47, 12.1],
+    'G 调升号左缘必须 47rpx、锚点落在顶线(31rpx)，尺寸按 sharp ×0.9 收一档');
+  const fKey = layout.headerSymbols('F', '4/4').keyGlyph;
+  assert.deepEqual([fKey.left, Math.round(fKey.top * 100) / 100], [48, 34.66],
+    'F 调降号左缘必须 48rpx、锚点落在第三线(61rpx)');
 
   const dots = timedHarness.renderComponent(TimedAnswerStaff, {
     ...base, meter: '2/4', capacityMeter: '2/4', keySignature: '',
     events: [{ midi: 64, duration: 0.75, barIndex: 0 }, { midi: 69, duration: -0.75, rest: true, barIndex: 0 }],
   });
-  const rest = dots.nodes.find((node) => node.type?.name === 'MusicRest');
-  assert.deepEqual([rest.props.x, rest.props.kind], [149.625, 'eighth'], 'rests must retain their time position and SMuFL kind');
-  assert.deepEqual(dots.nodes.filter((node) => node.type === 'Ellipse').map((node) => [node.props.cx, node.props.cy]),
-    [[127.9, 63], [158.625, 43]], 'note and rest dots must use the mini-program line/space anchors');
-
+  const rest = timedNamed(dots, 'MusicRest')[0];
+  assert.deepEqual([rest.props.x, rest.props.kind], [329, 'eighth'],
+    '休止符必须保持时间位置（rpx）与 SMuFL 字形');
+  assert.deepEqual(
+    timedNamed(dots, 'MusicDot').map((node) => [Math.round(node.props.noteRightX * 100) / 100, node.props.centerY]),
+    [[157.85, 83.5], [336.41, 53.5]],
+    '音符附点与休止符附点必须共用同一套行/间锚点（rpx）',
+  );
   const isolated = timedHarness.renderComponent(TimedAnswerStaff, {
     ...base, meter: '2/4', capacityMeter: '2/4', keySignature: '',
     events: [{ midi: 64, duration: 1, barIndex: 0 }, { midi: 69, duration: 0.5, barIndex: 0 }, { midi: 69, duration: -0.5, rest: true, barIndex: 0 }],
   });
-  const stems = isolated.nodes.filter((node) => node.type === 'Line' && node.props.strokeWidth === '1.5');
-  assert.deepEqual(stems.map((node) => [node.props.x1, node.props.y1, node.props.y2]), [[120.9, 69, 41], [164.4, 54, 26]], 'isolated stems must start inside their noteheads and retain native length');
-  const flag = isolated.nodes.find((node) => node.type?.name === 'MusicFlag');
-  assert.deepEqual([flag.props.stemX, flag.props.stemEndY, flag.props.beamCount, flag.props.direction], [164.4, 26, 1, 'up'], 'an unbeamed eighth note must attach its flag to the stem end');
-
+  assert.deepEqual(timedLineNodes(isolated).filter((node) => /^s-\d+$/.test(node.key))
+    .map((node) => [node.props.x1, node.props.y1, node.props.y2]),
+  [[154.85, 45.64, 91], [244.85, 23.14, 68.5]], '孤立符干必须从符头内部起笔并保持 45.36rpx 长度');
+  const flag = timedNamed(isolated, 'MusicFlag');
+  assert.equal(flag.length, 1, '只有八分音符需要独立符尾（四分音符不得挂符尾）');
+  assert.deepEqual([flag[0].props.stemX, flag[0].props.stemEndY, flag[0].props.beamCount, flag[0].props.direction],
+    [244.85, 23.14, 1, 'up'], '独立符尾必须挂在符干末端');
+  assert.deepEqual(timedBeams(isolated, 'b'), [], '孤立音符不得生成连符杠');
 });
 
 timedCheck('barline and final-bar bounds', () => {
   const props = { events: [], meter: '', capacityMeter: '6/8', keySignature: '', barOffset: 2, barCount: 2, disabled: true, emptyText: '' };
   const continuation = timedHarness.renderComponent(TimedAnswerStaff, { ...props, isFinalSystem: false });
-  assert.ok(!continuation.nodes.some((node) => node.type === 'SvgText' && node.props.fontSize === '17'), 'hidden meter must not emit time-signature text');
-  const bars = continuation.nodes.filter((node) => node.key === 'bar-0' || node.key === 'bar-1');
-  assert.deepEqual(bars.map((node) => [node.props.x1, node.props.y1, node.props.y2]), [[104, 28, 68], [217, 28, 68]], 'system and internal barlines must retain their exact horizontal and shared vertical anchors');
-  const terminal = continuation.nodes.find((node) => node.key === 'terminal-bar');
-  assert.deepEqual([terminal.props.x1, terminal.props.y1, terminal.props.y2, terminal.props.strokeWidth], [330, 28, 68, 1], 'continuation terminal line must use shared barline bounds');
+  assert.deepEqual(timedGlyphNames(continuation), ['clef'], '续行必须只画谱号，不画拍号字形');
+  const bars = continuation.nodes.filter((node) => /^bar-/.test(node.key));
+  // 空谱面固定两小节：小程序 FIXED_BAR_LEFT_COMPACT 112 / FIXED_BAR_RIGHT_COMPACT 8 → 小节线 367rpx。
+  assert.deepEqual(bars.map((node) => [node.props.x1, node.props.y1, node.props.y2]), [[367, 31, 91]],
+    '小节线必须落在 horizontalLayout 的小节边界上，且与谱线首/末线同高（31/91rpx）');
+  assert.ok(!continuation.nodes.some((node) => /^endline-/.test(node.key)),
+    '非末行不得画结束线（小程序 answer-staff 只在 last 时给 .endline）');
 
   const final = timedHarness.renderComponent(TimedAnswerStaff, { ...props, isFinalSystem: true });
-  const finalLines = final.nodes.filter((node) => node.key === 'final-bar-thin' || node.key === 'final-bar-thick');
-  assert.deepEqual(finalLines.map((node) => [node.props.x1, node.props.y1, node.props.y2, node.props.strokeWidth]), [[326, 28, 68, 1], [330, 28, 68, '3']], 'the final thick stroke may change width but never barline height');
+  const endlines = final.nodes.filter((node) => /^endline-/.test(node.key));
+  assert.deepEqual(endlines.map((node) => [node.props.x1, node.props.y1, node.props.y2, node.props.strokeWidth]), [
+    [VIEWBOX_WIDTH_RPX - layout.ENDLINE_WIDTH + layout.ENDLINE_THIN / 2, 31, 91, layout.ENDLINE_THIN],
+    [VIEWBOX_WIDTH_RPX - layout.ENDLINE_THICK / 2, 31, 91, layout.ENDLINE_THICK],
+  ], '结束线必须是「细 2rpx + 粗 4rpx、总宽 12rpx」双线，且与普通小节线同高');
 });
 
 timedCheck('rests and secondary beams', () => {
   const events = [0.5, -0.5, 0.5, 0.5, ...Array(8).fill(0.25)].map((duration, index) => ({ midi: 69, duration, rest: duration < 0, barIndex: index < 4 ? 0 : 1 }));
   const render = timedHarness.renderComponent(TimedAnswerStaff, { events, meter: '2/4', capacityMeter: '2/4', keySignature: '', barOffset: 0, barCount: 2, isFinalSystem: true, disabled: true, emptyText: '' });
-  assert.equal(render.nodes.filter((node) => node.type === 'Line' && /^beam-\d+$/.test(node.key)).length, 3, 'rests break runs and do not shift subsequent beat groups');
-  assert.equal(render.nodes.filter((node) => node.type === 'Line' && /^beam-2-\d+$/.test(node.key)).length, 2, 'secondary beams stop with their primary beat groups');
+  assert.equal(timedBeams(render, 'b').length, 3, '休止符必须断开连符杠，且不影响后续拍组的小节归属');
+  assert.equal(timedBeams(render, 'b2').length, 2, '次级符杠必须与主符杠同组（四音一组各一条）');
+  assert.equal(timedBeams(render, 'bl').length, 0, '四音一组不应退化成短杠 beamlet');
+  assert.equal(timedNamed(render, 'MusicRest').length, 1, '这条谱面只应有一个休止符');
+
+  const downward = timedHarness.renderComponent(TimedAnswerStaff, {
+    events: [{ midi: 72, duration: 0.5, barIndex: 0 }, { midi: 72, duration: 0.25, barIndex: 0 }],
+    meter: '2/4', capacityMeter: '2/4', keySignature: '', barOffset: 0, barCount: 1,
+    isFinalSystem: true, disabled: true, emptyText: '',
+  });
+  const primary = timedBeams(downward, 'b')[0];
+  const secondary = timedBeams(downward, 'b2')[0] || timedBeams(downward, 'bl')[0];
+  assert.ok(primary && secondary, '朝下的符干必须同时画出主符杠与次级符杠');
+  assert.ok(secondary.props.y1 < primary.props.y1,
+    '谱线以下的朝下符干，次级符杠必须在主符杠上方（BEAM_GAP 朝内收）');
 });
 
 timedCheck('read-only preview systems', () => {
@@ -829,6 +1054,22 @@ for (const type of ['rhythm', 'melody']) timedCheck(`${type} editing workflow`, 
   staffRows(render())[0].props.onStaffTap(0, 64, 'E4');
   assert.equal(answer.events[0].rest, true);
   assert.equal(answer.events[0].duration, -0.25);
+  if (type === 'rhythm') {
+    // 小程序 practice.js：inputTie 只对节奏题开放，且与休止符互斥。
+    assert.ok(button('休止符开启'), '开启休止符后必须显示开启态');
+    button('写连音线').props.onPress();
+    assert.ok(button('连音线开启'), '开启连音线后必须显示开启态');
+    assert.ok(button('写休止符'), '开连音线必须自动把休止符关掉（两者互斥）');
+    button('四分').props.onPress();
+    staffRows(render())[0].props.onStaffTap(0, 67, 'G4');
+    // ⚠️ events 是「按小节排序」的，最后写入的那条不一定是数组末位 —— 与 undo() 同口径取 inputOrder 最大者。
+    const latest = answer.events.reduce((best, event) => Number(event.inputOrder) > Number(best.inputOrder) ? event : best, answer.events[0]);
+    assert.equal(latest.tieToNext, true, '开启连音线后写入的音必须带 tieToNext');
+    assert.equal(latest.rest, undefined, '连音线与休止符不能同时生效');
+  } else {
+    assert.ok(!button('写连音线'), '旋律题不得暴露连音线输入（小程序只对节奏题开放 inputTie）');
+    assert.ok(!answer.events.some((event) => event.tieToNext), '旋律题的事件不得带连音线');
+  }
   const comparison = render({ unlocked: false, disabled: true, showCorrect: true, reviewCorrect: false });
   const rows = staffRows(comparison);
   assert.deepEqual(rows.map((row) => [row.props.barOffset, row.props.barCount, row.props.isFinalSystem]), [[0, 2, false], [0, 2, false], [2, 2, true], [2, 2, true]], 'user and correct rows share two-measure system boundaries');
@@ -850,6 +1091,8 @@ const { PianoKeyboard } = pianoHarness.load('./src/components/piano-keyboard.tsx
 const announcements = [];
 pianoHarness.mocks['react-native'].AccessibilityInfo.announceForAccessibility = (text) => announcements.push(text);
 const flattenStyle = (style) => Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean).map(flattenStyle)) : style || {};
+// 键盘面按小程序 .keyboard 的底色定位；padding 会随小程序 5rpx 令牌变化，不能当特征值用。
+const isKeyboardSurface = (style) => Boolean(style.height) && String(style.backgroundColor).toUpperCase() === '#0C0D10';
 const childText = (node) => node == null || typeof node === 'boolean' ? '' : Array.isArray(node) ? node.map(childText).join('')
   : typeof node === 'object' ? childText(node.props?.children) : String(node);
 const descendantNodes = (node) => {
@@ -879,7 +1122,7 @@ const lockCoverStyle = flattenStyle(lockCover.props.style);
 assert.equal(lockCoverStyle.alignItems, 'center');
 assert.equal(lockCoverStyle.justifyContent, 'center');
 const pianoSurfaceStyle = pianoHarness.renderComponent(PianoKeyboard, {}).nodes.map((node) => flattenStyle(node.props.style))
-  .find((style) => style.height && style.padding === 3);
+  .find(isKeyboardSurface);
 assert.deepEqual(
   { top: lockCoverStyle.top, height: lockCoverStyle.height, bottom: lockCoverStyle.bottom },
   { top: 0, height: pianoSurfaceStyle.height, bottom: undefined },
@@ -931,7 +1174,7 @@ for (const compact of [false, true]) {
   assert.equal(blacks.length, 11);
   assert.ok(whites.every((style) => !style.minWidth), 'dense piano keys must retain flexible widths');
   assert.ok(blacks.every((style) => parseFloat(style.left) >= 0 && parseFloat(style.left) + parseFloat(style.width) <= 100), 'black keys must fit inside the keybed');
-  const keyboardStyle = render.nodes.map((node) => flattenStyle(node.props.style)).find((style) => style.height && style.padding === 3);
+  const keyboardStyle = render.nodes.map((node) => flattenStyle(node.props.style)).find(isKeyboardSurface);
   assert.equal(keyboardStyle.width, '100%', 'the G3–A5 keyboard must fit the available 320-point stage without horizontal scrolling');
   const keybedWidth = 320 - keyboardStyle.padding * 2;
   assert.ok(blacks.every((style) => (parseFloat(style.left) + parseFloat(style.width)) * keybedWidth / 100 <= keybedWidth),
@@ -950,7 +1193,7 @@ for (const compact of [false, true]) {
   assert.ok(blackHeight >= 44 && keybedHeight - blackHeight - 2 * whites[0].borderWidth >= 44, 'black and exposed white key hit depths must remain at least 44 pt');
 }
 
-console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 14 beam fixtures and 2 timed workflows checked)`);
+console.log(`practice parity contract passed (${files.length} source files, ${pitchCases.length} pitch workflows, 14 beam fixtures, 6 staff-anchor fixtures and 2 timed editing workflows checked)`);
 
 async function flushAsyncEffects() {
   for (let count = 0; count < 12; count += 1) await Promise.resolve();
@@ -1018,7 +1261,8 @@ async function flushAsyncEffects() {
   let noteLifecycle, settleNote;
   manual.mocks['@/services/audio-engine'].playPianoNote = (midi, volume, options) => {
     assert.equal(midi, 62);
-    assert.equal(volume, 0.78);
+    // 音量默认值引用 audio-settings 常量，不写死数字 —— 改默认音量时不用回来改测试。
+    assert.equal(volume, Number(/DEFAULT_AUDIO_VOLUME\s*=\s*(\d+)/.exec(audioSettings)[1]) / 100);
     noteLifecycle = options;
     return new Promise((resolve) => { settleNote = resolve; });
   };
@@ -1135,9 +1379,16 @@ async function flushAsyncEffects() {
   let examRender = renderExam();
   const examComponents = (Component) => examRender.nodes.filter((node) => node.type === Component);
   assert.equal(examComponents(ExamAnswerStaff).length, 3, 'mock exam must render basic user answers through shared AnswerStaff');
-  assert.equal(examComponents(ExamStaffPreview).length, 1, 'mock exam must render a basic choice through shared StaffPreview');
-  assert.equal(examComponents(realNotation.NotationStaff).length, 1, 'mock exam must render a timed choice through shared NotationStaff');
+  // 小程序 exam.wxml：选择题的**每个**选项都是一条 <answer-staff>，所以两个选项 = 两条 StaffPreview。
+  const choiceStaffs = examComponents(ExamStaffPreview);
+  assert.equal(choiceStaffs.length, 2, 'mock exam must render every choice option through the shared StaffPreview');
+  assert.deepEqual(choiceStaffs.map((staff) => staff.props.meter), ['', '6/8'], '选项谱面必须各自保留拍号（A 无拍号 / B 6/8）');
+  assert.ok(choiceStaffs.every((staff) => staff.props.events.length > 0), '选项谱面必须原样收到选项事件，不得被拆成单音');
+  // 路由里已不存在 NotationStaff（旧只读包装，当前无消费方）：小程序只有一种 answer-staff ——
+  // 选择题的每个选项 → StaffPreview，听记题 → NotationEditor，内部再出共享 TimedAnswerStaff。
+  assert.equal(examComponents(realNotation.NotationStaff).length, 0, '路由不得再引用已退休的 NotationStaff 只读包装');
   assert.equal(examComponents(realNotation.NotationEditor).length, 1, 'mock exam must render timed user answers through shared NotationEditor');
+  assert.equal(examComponents(realNotation.TimedAnswerStaff).length, 2, '节奏听记 3 小节 → 2 个系统行，每行一个共享 TimedAnswerStaff');
   assert.ok(examRender.nodes.some((node) => node.type === 'Svg'), 'shared mock-exam consumers must reach real native SVG staff output');
   assert.equal(examComponents(ExamAnswerStaff)[0].props.disabled, true, 'unplayed mock-exam question must keep its shared answer staff locked');
   assert.ok(examComponents(ExamAnswerStaff).slice(1).every((staff) => staff.props.disabled === false), 'previously unlocked mock-exam answers must remain editable before submission');
@@ -1156,7 +1407,7 @@ async function flushAsyncEffects() {
   examRender = renderExam();
   assert.deepEqual(examRender.nodes.filter((node) => node.type === ExamAnswerStaff)[0].props.pitches, [60], 'unlocked shared answer staff must update the mock-exam session');
 
-  const submitExam = examRender.nodes.find((node) => node.type === 'Pressable' && childText(node.props.children) === '提交整张试卷');
+  const submitExam = examRender.nodes.find((node) => node.type === 'Pressable' && childText(node.props.children) === '交 卷');
   submitExam.props.onPress();
   assert.equal(typeof confirmExam, 'function', 'mock-exam finish control must reach the confirmation boundary');
   await confirmExam();

@@ -36,6 +36,21 @@ export function accidentalGlyphForPitch(midi: number, preferred?: string) {
   return accidental === '#' ? '♯' : accidental === 'b' ? '♭' : accidental === 'n' ? '♮' : '';
 }
 
+/**
+ * 谱面标注口径（小程序 staff-notation.js）：
+ *   - 调号已含的升/降号不重复标注（G 大调的 F 不画 ♯）；
+ *   - 被调号改变的自然音须显示还原号（G 大调里写 F♮）；
+ *   - 其余按记谱本身。
+ */
+export function staffAccidental(midi: number, preferred: string | undefined, keySignature: string): '' | '#' | 'b' | 'n' {
+  const parts = pitchSpellingParts(midi, preferred);
+  const keyAccidental = keySignature === 'G' && parts.letter === 'F' ? '#'
+    : keySignature === 'F' && parts.letter === 'B' ? 'b' : '';
+  if (parts.accidental === keyAccidental) return '';
+  if (!parts.accidental && keyAccidental) return 'n';
+  return parts.accidental as '' | '#' | 'b' | 'n';
+}
+
 /** Hide accidentals already supplied by the key signature; keep explicit naturals. */
 export function accidentalGlyphForKeySignature(midi: number, preferred: string | undefined, keySignature: string) {
   const parts = pitchSpellingParts(midi, preferred);

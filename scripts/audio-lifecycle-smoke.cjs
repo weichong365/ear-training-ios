@@ -121,8 +121,8 @@ process.once('beforeExit', () => assert.ok(completed, 'audio regression must fin
   lifecycle.players[0].emit?.({ playing: true, currentTime: 0 });
   assert.deepEqual(signals, ['start'], 'the native playing event must start the key highlight');
   assert.equal(await slowNote, 'started');
-  const noteTimer = [...lifecycle.timers].find((timer) => timer.ms === 1850);
-  assert.ok(noteTimer, 'the full 1.85-second lifetime must begin with audible playback');
+  const noteTimer = [...lifecycle.timers].find((timer) => timer.ms === 4000);
+  assert.ok(noteTimer, 'the full 4-second lifetime must begin with audible playback');
   noteTimer.callback();
   assert.deepEqual(signals, ['start', 'finish'], 'audio disposal must end the key highlight exactly once');
   assert.equal(lifecycle.events.removed, 1);
@@ -156,10 +156,10 @@ process.once('beforeExit', () => assert.ok(completed, 'audio regression must fin
   const ended = loadEngine(async () => undefined);
   let ends = 0;
   await ended.engine.playPianoNote(69, 0.5, { onFinish: () => { ends += 1; } });
-  ended.players[0].emit({ playing: false, didJustFinish: true, currentTime: 1.85 });
+  ended.players[0].emit({ playing: false, didJustFinish: true, currentTime: 4.0 });
   assert.equal(ends, 1, 'the native end event must release the highlight without waiting for the fallback timer');
   assert.equal(ended.timers.size, 0);
-  ended.players[0].emit({ playing: false, didJustFinish: true, currentTime: 1.85 });
+  ended.players[0].emit({ playing: false, didJustFinish: true, currentTime: 4.0 });
   assert.equal(ends, 1, 'duplicate end events must not reset later UI state');
 
   const pending = deferred();

@@ -1,15 +1,36 @@
 /**
  * 整题 PCM 渲染器
  *
- * 输入：G3-A5 每个半音一份定音 PCM16 样本 + 题目数据
+ * 输入：G3-A5 每个半音一份定音样本（运行期来自包内 mp3 的 WebAudio 解码，
+ *       测试里来自合成波形）+ 题目数据
  * 输出：一段连续的单声道 PCM16 WAV。播放阶段不再移调、解码或逐音符调度。
+ *
+ * ⚠️ 采样率不写死。包内是 44.1kHz 的 mp3，但 WebAudio 的 decodeAudioData 会把结果
+ * 重采样到**宿主音频上下文的采样率** —— Chromium(含微信开发者工具) 默认 48kHz，
+ * 微信真机通常是 44.1kHz。所以实际采样率由 bank 里的样本携带，渲染器读它、
+ * 并把同一个值写进 WAV 头，这样无论宿主解出多少，时间轴与播放速度都自洽。
  */
-// 钢琴采样统一为 16kHz，进一步压缩主包体积（16kHz 对听记足够）。
-const SAMPLE_RATE = 16000;
+const DEFAULT_SAMPLE_RATE = 44100;
+// 兼容旧引用名；渲染时实际用的是 resolveSampleRate() 的结果。
+const SAMPLE_RATE = DEFAULT_SAMPLE_RATE;
 const STANDARD_MIDI = 69;
+// 标准参考音（A4）的力度。2026-09-20 由 0.78 提到 0.94，与单音题同档：
+// 它原本只是时间轴上的第 0 个 note，跟着题目音共用一张力度表，被顺手塞了偏低的 0.78；
+// 而单音题在换 4 秒采样那轮提到了 0.94 ⇒ 实测标准音比题目音轻 1.62 dB，
+// 用户真机听感反馈「标准音的力度比后面的音小」。标准音是考纲要求的定调基准，
+// 与题目音等响反而更好用 —— 区分「这是标准音」靠的是音色与时序（固定 A4、提前 1.7 秒单独响），
+// 不该靠音量。改动需与 ios-app/src/core/legacy/pcm-renderer.js 同步（ios-sync.test.js 逐字节校验）。
+const STANDARD_VELOCITY = 0.94;
 const STANDARD_START = 0.08;
 const QUESTION_START = 1.78;
 const RELEASE_SECONDS = 0.08;
+// 仅用 0.5ms 消除 MP3 延迟补偿后首帧不为零造成的波形跳变；
+// 更长淡入会明显压低钢琴最前端的琴槌瞬态。
+const NOTE_ATTACK_SECONDS = 0.0005;
+// 单音题与复盘钢琴：让钢琴音自然衰减完整（包内采样长 4.00s）。
+const NOTE_DURATION = 4.0;
+const SEQUENTIAL_NOTE_SECONDS = 2.0;
+const HARMONIC_NOTE_SECONDS = 4.0;
 
 function toArrayBuffer(data) {
   if (data instanceof ArrayBuffer) return data;
@@ -67,11 +88,30 @@ function parsePcm16Wav(data) {
     offset = body + size + (size % 2);
   }
   if (!format || dataOffset < 0) throw new Error('WAV 缺少 fmt 或 data 区块');
-  if (format.audioFormat !== 1 || format.channels !== 1 || format.bitsPerSample !== 16 || format.sampleRate !== SAMPLE_RATE) {
-    throw new Error(`音色格式必须是 mono PCM16 ${SAMPLE_RATE}Hz`);
+  if (format.audioFormat !== 1 || format.channels !== 1 || format.bitsPerSample !== 16
+      || !(format.sampleRate > 0)) {
+    throw new Error('音色格式必须是 mono PCM16 WAV');
   }
   const pcmBuffer = arrayBuffer.slice(dataOffset, dataOffset + dataSize);
-  return { sampleRate: SAMPLE_RATE, samples: new Int16Array(pcmBuffer) };
+  return { sampleRate: format.sampleRate, samples: new Int16Array(pcmBuffer) };
+}
+
+/** 解析本次渲染要用的采样率：显式参数 > bank 内样本 > 默认值。 */
+function resolveSampleRate(bank, explicit) {
+  const given = Number(explicit);
+  if (given > 0) return given;
+  if (bank) {
+    for (const key in bank) {
+      const item = bank[key];
+      if (item && Number(item.sampleRate) > 0) return Number(item.sampleRate);
+    }
+  }
+  return DEFAULT_SAMPLE_RATE;
+}
+
+/** 样本可能是解码后的 Float32（±1），也可能是解析出来的 Int16。 */
+function sampleScale(samples) {
+  return Object.prototype.toString.call(samples) === '[object Float32Array]' ? 1 : 1 / 32768;
 }
 
 function addNote(events, midi, start, duration, velocity = 0.86, release = RELEASE_SECONDS) {
@@ -84,22 +124,28 @@ function buildQuestionTimeline(question) {
   let end = 0;
 
   if (question.type !== 'rhythm') {
-    addNote(events, STANDARD_MIDI, STANDARD_START, 1.35, 0.78);
+    addNote(events, STANDARD_MIDI, STANDARD_START, 1.35, STANDARD_VELOCITY);
     end = QUESTION_START;
   }
 
   switch (question.type) {
     case 'single':
-      addNote(events, question.midis[0], QUESTION_START, 1.77, 0.94);
-      end = QUESTION_START + 1.92;
+      // 单音题放宽到整段采样长度，让钢琴尾巴自然衰减完（原来 1.77s 是 16kHz 采样的物理上限）。
+      addNote(events, question.midis[0], QUESTION_START, NOTE_DURATION, 0.94);
+      end = QUESTION_START + NOTE_DURATION + RELEASE_SECONDS;
       break;
     case 'interval':
       if (question.harmonic) {
-        question.midis.forEach((midi) => addNote(events, midi, QUESTION_START, 1.65, 0.68));
-        end = QUESTION_START + 1.8;
+        question.midis.forEach((midi) => addNote(
+          events, midi, QUESTION_START, HARMONIC_NOTE_SECONDS - RELEASE_SECONDS, 0.68
+        ));
+        end = QUESTION_START + HARMONIC_NOTE_SECONDS;
       } else {
-        question.midis.forEach((midi, index) => addNote(events, midi, QUESTION_START + index * 0.72, 0.64, 0.84));
-        end = QUESTION_START + question.midis.length * 0.72 + 0.15;
+        question.midis.forEach((midi, index) => addNote(
+          events, midi, QUESTION_START + index * SEQUENTIAL_NOTE_SECONDS,
+          SEQUENTIAL_NOTE_SECONDS - RELEASE_SECONDS, 0.84
+        ));
+        end = QUESTION_START + question.midis.length * SEQUENTIAL_NOTE_SECONDS;
       }
       break;
     case 'intervalConnection':
@@ -111,12 +157,11 @@ function buildQuestionTimeline(question) {
     case 'chord':
       // 和弦听记必须是柱式和弦：所有采样写入完全相同的起始帧。
       // 旧逻辑每个音错开 35ms，会在真机上听成轻微琶音。
-      // 不同音高的钢琴采样自然衰减时长差异很大（高音约 0.5s、低音约 1.8s 才衰减完），
-      // 若按采样自然衰减混音，低音会拖尾、高音提前消失，听成“尾音参差”。
-      // 因此把持续时长收敛到 1.3s（此时绝大多数和弦音仍可闻），并统一 0.3s release 渐隐，
-      // 让所有音在同一时刻平滑结束，保证“同时开始、同时结束”。
-      question.midis.forEach((midi) => addNote(events, midi, QUESTION_START, 1.3, 0.58, 0.3));
-      end = QUESTION_START + 1.7;
+      // 三个音统一保持 4 秒可听窗口，其中最后 0.3 秒同步渐隐，保证同时开始、同时结束。
+      question.midis.forEach((midi) => addNote(
+        events, midi, QUESTION_START, HARMONIC_NOTE_SECONDS - 0.3, 0.58, 0.3
+      ));
+      end = QUESTION_START + HARMONIC_NOTE_SECONDS;
       break;
     case 'melody': {
       const beatSeconds = 60 / question.bpm;
@@ -172,33 +217,40 @@ function buildQuestionTimeline(question) {
   return { events, duration: end };
 }
 
-function mixNote(output, sample, event) {
+function mixNote(output, sample, event, sampleRate) {
+  const rate = Number(sampleRate) > 0 ? Number(sampleRate) : DEFAULT_SAMPLE_RATE;
   const release = Math.max(0.02, Number(event.release) || RELEASE_SECONDS);
-  const startFrame = Math.max(0, Math.round(event.start * SAMPLE_RATE));
-  const requestedFrames = Math.round((event.duration + release) * SAMPLE_RATE);
+  const startFrame = Math.max(0, Math.round(event.start * rate));
+  const requestedFrames = Math.round((event.duration + release) * rate);
   const frames = Math.min(sample.length, requestedFrames, output.length - startFrame);
   if (frames <= 0) return;
-  const releaseFrames = Math.min(frames, Math.round(release * SAMPLE_RATE));
+  const scale = sampleScale(sample);
+  const attackFrames = Math.min(frames, Math.max(1, Math.round(NOTE_ATTACK_SECONDS * rate)));
+  const releaseFrames = Math.min(frames, Math.round(release * rate));
   const releaseStart = frames - releaseFrames;
   for (let index = 0; index < frames; index++) {
-    const envelope = index < releaseStart ? 1 : (frames - index) / Math.max(1, releaseFrames);
-    output[startFrame + index] += (sample[index] / 32768) * event.velocity * envelope;
+    const attackEnvelope = Math.min(1, index / attackFrames);
+    const releaseEnvelope = index < releaseStart ? 1 : (frames - index) / Math.max(1, releaseFrames);
+    const envelope = attackEnvelope * releaseEnvelope;
+    output[startFrame + index] += (sample[index] * scale) * event.velocity * envelope;
   }
 }
 
-function mixClick(output, event) {
-  const startFrame = Math.max(0, Math.round(event.start * SAMPLE_RATE));
-  const frames = Math.min(Math.round(0.08 * SAMPLE_RATE), output.length - startFrame);
+function mixClick(output, event, sampleRate) {
+  const rate = Number(sampleRate) > 0 ? Number(sampleRate) : DEFAULT_SAMPLE_RATE;
+  const startFrame = Math.max(0, Math.round(event.start * rate));
+  const frames = Math.min(Math.round(0.08 * rate), output.length - startFrame);
   const frequency = event.accent ? 1760 : 1180;
   const amplitude = event.accent ? 0.68 : 0.5;
   for (let index = 0; index < frames; index++) {
     const envelope = Math.pow(1 - index / frames, 3);
-    const phase = 2 * Math.PI * frequency * index / SAMPLE_RATE;
+    const phase = 2 * Math.PI * frequency * index / rate;
     output[startFrame + index] += Math.sin(phase) * amplitude * envelope;
   }
 }
 
-function encodePcm16Wav(samples) {
+function encodePcm16Wav(samples, sampleRate) {
+  const rate = Number(sampleRate) > 0 ? Number(sampleRate) : DEFAULT_SAMPLE_RATE;
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
   const writeText = (offset, text) => {
@@ -211,8 +263,8 @@ function encodePcm16Wav(samples) {
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, 1, true);
-  view.setUint32(24, SAMPLE_RATE, true);
-  view.setUint32(28, SAMPLE_RATE * 2, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
   writeText(36, 'data');
@@ -228,21 +280,23 @@ function encodePcm16Wav(samples) {
   return buffer;
 }
 
-function renderQuestionWav(question, bank) {
+function renderQuestionWav(question, bank, sampleRate) {
+  const rate = resolveSampleRate(bank, sampleRate);
   const timeline = buildQuestionTimeline(question);
-  const frameCount = Math.max(1, Math.ceil(timeline.duration * SAMPLE_RATE));
+  const frameCount = Math.max(1, Math.ceil(timeline.duration * rate));
   const output = new Float32Array(frameCount);
   timeline.events.forEach((event) => {
     if (event.type === 'click') {
-      mixClick(output, event);
+      mixClick(output, event, rate);
       return;
     }
     const item = bank[event.midi];
     if (!item || !item.samples) throw new Error(`缺少 MIDI ${event.midi} 定音采样`);
-    mixNote(output, item.samples, event);
+    mixNote(output, item.samples, event, rate);
   });
   return {
-    arrayBuffer: encodePcm16Wav(output),
+    arrayBuffer: encodePcm16Wav(output, rate),
+    sampleRate: rate,
     duration: timeline.duration,
     events: timeline.events
   };
@@ -250,16 +304,21 @@ function renderQuestionWav(question, bank) {
 
 function renderNoteWav(sample, options = {}) {
   if (!sample || !sample.samples) throw new Error('定音采样未准备完成');
-  const duration = Math.max(0.08, Number(options.duration) || 1.77);
+  const rate = Number(sample.sampleRate) || DEFAULT_SAMPLE_RATE;
+  const duration = Math.max(0.08, Number(options.duration) || NOTE_DURATION);
   const release = Math.max(0.02, Number(options.release) || RELEASE_SECONDS);
   const velocity = Math.max(0, Math.min(1, Number(options.velocity) || 0.94));
-  const output = new Float32Array(Math.ceil((duration + release) * SAMPLE_RATE));
-  mixNote(output, sample.samples, { start: 0, duration, release, velocity });
-  return { arrayBuffer: encodePcm16Wav(output), duration: duration + release };
+  const output = new Float32Array(Math.ceil((duration + release) * rate));
+  mixNote(output, sample.samples, { start: 0, duration, release, velocity }, rate);
+  return { arrayBuffer: encodePcm16Wav(output, rate), sampleRate: rate, duration: duration + release };
 }
 
 module.exports = {
   SAMPLE_RATE,
+  DEFAULT_SAMPLE_RATE,
+  NOTE_DURATION,
+  NOTE_ATTACK_SECONDS,
+  resolveSampleRate,
   parsePcm16Wav,
   buildQuestionTimeline,
   renderQuestionWav,

@@ -1,62 +1,47 @@
-import { memo, useEffect, useRef, useState } from 'react';
-import { GestureResponderEvent, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { G, Line } from 'react-native-svg';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { GestureResponderEvent, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Brand, Radius, Shadows, TouchTarget, TypeScale } from '@/constants/theme';
+import { StaffNotation } from '@/components/staff-notation';
+import { Btn } from '@/constants/button-tokens';
+import { Brand, Shadows, TypeScale } from '@/constants/theme';
+import { defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
+import { buildStaffGeometry } from '@/core/staff-notation-geometry';
 import {
-  MUSIC_STAFF_VIEW_BOX,
-  MUSIC_STAFF_LEFT,
-  MUSIC_STAFF_RIGHT,
-  MUSIC_STAFF_WRITABLE_LEFT_INSET,
-  MUSIC_STAFF_WRITABLE_RIGHT_INSET,
-  MusicAccidental,
-  MusicNotehead,
-  musicAccidentalX,
-  musicLedgerBounds,
-} from '@/components/music-glyphs';
-import { accidentalColumns, barlineBounds, chordHeadOffsets, ledgerLineYs, STAFF_LINE_YS, STAFF_MIDDLE_LINE_Y, STAFF_STROKE_WIDTH } from '@/core/music-notation';
-import { accidentalGlyphForPitch, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
-import { naturalMidiFromStaffTapY, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
+  DEFAULT_STAFF_WIDTH_RPX,
+  EMPTY_FONT_SIZE,
+  EMPTY_HEIGHT,
+  EMPTY_TOP,
+  RPX_TO_PT,
+  STAFF_HEIGHT_RPX,
+  STAFF_SHELL_BORDER,
+  STAFF_SHELL_RADIUS,
+  type StaffEvent,
+} from '@/core/staff-layout';
+import { ANSWER_STAFF_HEIGHT, naturalMidiFromStaffSvgY, staffViewBoxWidth } from '@/core/staff-coordinate';
 
-const STAFF_HEIGHT = 122;
+/**
+ * 五线谱答题区域 —— 绘制与标注逻辑全部交给 @/components/staff-notation
+ * （小程序 components/staff-notation 的 1:1 移植），本文件只保留命中/拖动/临时记号浮层。
+ *   · viewBox 用 rpx（0 0 实测宽 140），画布高 70pt ⇒ 1 单位 = 0.5pt；
+ *   · 命中容差 42/20rpx、分栏 58rpx、正确谱面右移 80rpx，全部照搬小程序 answer-staff.js/wxss；
+ *   · 调号已含的升降号不重复标注、被调号改变的自然音画还原号（在 staff-notation 内统一处理）。
+ */
+
 const DOUBLE_TAP_MS = 320;
-const STAFF_CENTER_Y = STAFF_MIDDLE_LINE_Y * STAFF_HEIGHT / 96;
-function naturalSpelling(midi: number) {
-  return defaultPitchSpelling(midi);
-}
+/** 可写音域 G3–A5，与小程序 answer-staff.js 的 MIN_STEP/MAX_STEP 一致 */
+const MIN_MIDI = 55;
+const MAX_MIDI = 81;
+/** .answer-hit-layer left: 58rpx —— 分栏命中区的基准点 */
+const SLOT_HIT_LEFT = 58;
+/** .answer-correct-overlay-separated translateX(80rpx) */
+const SEPARATE_CORRECT_DX = 80;
+/** closestTarget 容差（rpx）：固定双小节谱面里符头左侧可能被小节线/临时记号占用 */
+const TAP_DX = 42;
+const TAP_DY = 20;
+/** 浮层菜单实测宽（rpx），首帧给个保守值 */
+const MENU_FALLBACK_WIDTH_RPX = 156;
 
-function noteFromY(y: number, keySignature: string) {
-  const naturalMidi = naturalMidiFromStaffTapY(y, STAFF_HEIGHT, 55, 81);
-  const natural = naturalSpelling(naturalMidi);
-  if (keySignature === 'G' && natural.startsWith('F')) return { midi: naturalMidi + 1, spelling: natural.replace('F', 'F#') };
-  if (keySignature === 'F' && natural.startsWith('B')) return { midi: naturalMidi - 1, spelling: natural.replace('B', 'Bb') };
-  return { midi: naturalMidi, spelling: natural };
-}
-
-function writtenMidi(midi: number, spelling?: string) {
-  return naturalMidiForPitchSpelling(midi, spelling);
-}
-
-function writtenPitches(pitches: number[], spellings: string[]) {
-  const written: number[] = [];
-  pitches.forEach((midi, index) => {
-    if (Number.isFinite(midi)) written[index] = writtenMidi(midi, spellings[index]);
-  });
-  return written;
-}
-
-function accidentalGlyph(midi: number, spelling?: string) {
-  return accidentalGlyphForPitch(midi, spelling);
-}
-
-function pressPoint(event: GestureResponderEvent, width: number, height: number) {
-  const native = event.nativeEvent as typeof event.nativeEvent & { offsetX?: number; offsetY?: number };
-  return {
-    x: Number(native.locationX ?? native.offsetX ?? width / 2) * 320 / Math.max(1, width),
-    y: Number(native.locationY ?? native.offsetY ?? height / 2) * STAFF_HEIGHT / Math.max(1, height),
-  };
-}
-
+/** @deprecated 小程序答题谱只有 140rpx 一种尺寸；保留 prop 仅为兼容既有调用。 */
 type AnswerStaffProps = {
   compact?: boolean;
   pitches: number[];
@@ -70,7 +55,13 @@ type AnswerStaffProps = {
   correctPitches?: number[];
   correctSpellings?: string[];
   showCorrect?: boolean;
+  /** 小程序 separate-correct：正确谱面整体右移 80rpx（和弦/和声音程用） */
+  separateCorrect?: boolean;
+  /** 结束时画双小节线（小程序 .endline，answer-staff 的 last） */
+  last?: boolean;
   keySignature?: string;
+  meter?: string;
+  barCount?: number;
   emptyText?: string;
   onChange?: (pitches: number[], spellings: string[]) => void;
   onDragChange?: (dragging: boolean) => void;
@@ -78,8 +69,11 @@ type AnswerStaffProps = {
 
 type Target = { index: number; slot: number; x: number; y: number; midi: number; spelling: string };
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 export const AnswerStaff = memo(function AnswerStaff({
-  compact = false,
   pitches,
   spellings = [],
   slots = 1,
@@ -91,13 +85,18 @@ export const AnswerStaff = memo(function AnswerStaff({
   correctPitches = [],
   correctSpellings = [],
   showCorrect = false,
+  separateCorrect = false,
+  last = false,
   keySignature = '',
+  meter = '',
+  barCount = 0,
   emptyText = '点击五线谱写入音符',
   onChange,
   onDragChange,
 }: AnswerStaffProps) {
-  const [menuTarget, setMenuTarget] = useState<number | null>(null);
-  const [layout, setLayout] = useState({ width: 320, height: STAFF_HEIGHT });
+  const [menuTarget, setMenuTarget] = useState<{ index: number; x: number; y: number } | null>(null);
+  const [menuWidth, setMenuWidth] = useState(MENU_FALLBACK_WIDTH_RPX);
+  const [layout, setLayout] = useState({ width: 0, height: ANSWER_STAFF_HEIGHT });
   const gesture = useRef<{ target: Target | null; slot: number; startY: number; moved: boolean } | null>(null);
   const pendingTap = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTap = useRef<{ index: number; time: number } | null>(null);
@@ -108,31 +107,93 @@ export const AnswerStaff = memo(function AnswerStaff({
     if (pendingTap.current) clearTimeout(pendingTap.current);
   }, []);
 
-  const noteX = (index: number, values = pitches, valueSpellings = spellings) => {
+  /** 实际容器宽 → viewBox 宽（rpx）。与小程序「绝对 rpx 定位 + 容器 100% 宽」等价。 */
+  const viewBoxWidth = staffViewBoxWidth(layout.width);
+
+  /** 参与排布的事件：NaN 槽位不参与，但保留原槽位号（小程序 sequenceEvents） */
+  const events: StaffEvent[] = useMemo(() => {
+    const filled = pitches
+      .map((midi, index) => ({ midi, index }))
+      .filter((item) => isFiniteNumber(item.midi));
+    if (stacked) return filled.length ? [{ midis: filled.map((item) => item.midi), dur: 4, inputSlot: 0 }] : [];
+    return filled.map((item) => ({ midis: [item.midi], dur: 4, inputSlot: item.index }));
+  }, [pitches, stacked]);
+
+  /** 正确谱面：小程序 answer-staff 的 correct-events 叠层（symbols-only + 可选右移 80rpx） */
+  const correctEvents: StaffEvent[] = useMemo(() => {
+    const filled = correctPitches
+      .map((midi, index) => ({ midi, index }))
+      .filter((item) => isFiniteNumber(item.midi));
     if (stacked) {
-      const writtenValues = writtenPitches(values, valueSpellings);
-      return 166 + chordHeadOffsets(writtenValues)[index];
+      return filled.length
+        ? [{ midis: filled.map((item) => item.midi), spellings: filled.map((item) => correctSpellings[item.index] || ''), dur: 4, inputSlot: 0 }]
+        : [];
     }
-    const slot = Math.min(Math.max(0, index), Math.max(0, slots - 1));
-    return 76 + ((slot + 0.5) / Math.max(1, slots)) * 224;
-  };
-  const targets: Target[] = pitches.flatMap((midi, index) => Number.isFinite(midi) ? [{
-    index,
-    slot: stacked ? 0 : index,
-    x: noteX(index),
-    y: staffSvgYFromWrittenMidi(writtenMidi(midi, spellings[index])) * STAFF_HEIGHT / 96,
-    midi,
-    spelling: spellings[index] || defaultPitchSpelling(midi),
-  }] : []);
+    return filled.map((item) => ({
+      midis: [item.midi],
+      spellings: correctSpellings[item.index] ? [correctSpellings[item.index]] : [],
+      dur: 4,
+      inputSlot: item.index,
+    }));
+  }, [correctPitches, correctSpellings, stacked]);
+
+  /**
+   * 几何单源：音符中心 / 临时记号 / 加线 / 命中锚点全部来自 staff-notation 的 rpx 布局，
+   * 与小程序 answer-staff.js hitTargets(horizontal.centers + dx) 逐值一致。
+   */
+  const geometry = useMemo(
+    () => buildStaffGeometry(events, { width: DEFAULT_STAFF_WIDTH_RPX, meter, beamMeter: meter, keySignature, barCount, answerSlots: stacked ? 1 : slots }),
+    [events, keySignature, meter, barCount, slots, stacked],
+  );
+
+  /** NaN 槽位不参与排布，但保留原槽位号（小程序 sequenceEvents 的 inputSlot） */
+  const filledSlots = useMemo(
+    () => pitches.map((midi, index) => ({ midi, index })).filter((item) => isFiniteNumber(item.midi)),
+    [pitches],
+  );
+
+  const targets: Target[] = geometry.targets.map((target) => {
+    const entry = stacked ? filledSlots[target.noteIndex] : filledSlots[target.eventIndex];
+    const index = entry ? entry.index : target.noteIndex;
+    return {
+      index,
+      slot: stacked ? 0 : index,
+      x: target.x,
+      y: target.y,
+      midi: target.midi,
+      spelling: spellings[index] || target.spelling || defaultPitchSpelling(target.midi),
+    };
+  });
+
+  function viewBoxPoint(event: GestureResponderEvent, width: number, height: number) {
+    const native = event.nativeEvent as typeof event.nativeEvent & { offsetX?: number; offsetY?: number };
+    return {
+      x: Number(native.locationX ?? native.offsetX ?? width / 2) * viewBoxWidth / Math.max(1, width),
+      y: Number(native.locationY ?? native.offsetY ?? height / 2) * STAFF_HEIGHT_RPX / Math.max(1, height),
+    };
+  }
+
+  function slotFromX(x: number) {
+    const span = (viewBoxWidth - SLOT_HIT_LEFT) / Math.max(1, slots);
+    return Math.max(0, Math.min(slots - 1, Math.floor((x - SLOT_HIT_LEFT) / Math.max(1, span))));
+  }
 
   function closestTarget(x: number, y: number) {
     return targets.reduce<{ target: Target | null; distance: number }>((best, target) => {
       const dx = Math.abs(target.x - x);
       const dy = Math.abs(target.y - y);
-      if (dx > 42 || dy > 24) return best;
+      if (dx > TAP_DX || dy > TAP_DY) return best;
       const value = dx * dx + dy * dy * 2;
       return value < best.distance ? { target, distance: value } : best;
     }, { target: null, distance: Infinity }).target;
+  }
+
+  function noteFromY(y: number) {
+    const naturalMidi = naturalMidiFromStaffSvgY(y, MIN_MIDI, MAX_MIDI);
+    const natural = defaultPitchSpelling(naturalMidi);
+    if (keySignature === 'G' && natural.startsWith('F')) return { midi: naturalMidi + 1, spelling: natural.replace('F', 'F#') };
+    if (keySignature === 'F' && natural.startsWith('B')) return { midi: naturalMidi - 1, spelling: natural.replace('B', 'Bb') };
+    return { midi: naturalMidi, spelling: natural };
   }
 
   function replaceNote(index: number, midi: number, spelling: string) {
@@ -156,13 +217,13 @@ export const AnswerStaff = memo(function AnswerStaff({
   }
 
   function write(slot: number, y: number) {
-    const note = noteFromY(y, keySignature);
+    const note = noteFromY(y);
     if (stacked) {
       const existing = latest.current.pitches.indexOf(note.midi);
       if (existing >= 0) return erase(existing);
-      if (latest.current.pitches.filter(Number.isFinite).length >= maxStack) return;
-      const filled = latest.current.pitches.flatMap((midi, index) => Number.isFinite(midi)
-        ? [{ midi, spelling: latest.current.spellings[index] || defaultPitchSpelling(midi) }] : []);
+      if (latest.current.pitches.filter(isFiniteNumber).length >= maxStack) return;
+      const filled = latest.current.pitches.flatMap((midi, index) => (isFiniteNumber(midi)
+        ? [{ midi, spelling: latest.current.spellings[index] || defaultPitchSpelling(midi) }] : []));
       onChange?.([...filled.map((value) => value.midi), note.midi], [...filled.map((value) => value.spelling), note.spelling]);
       return;
     }
@@ -172,8 +233,8 @@ export const AnswerStaff = memo(function AnswerStaff({
   function onGrant(event: GestureResponderEvent) {
     if (disabled) return;
     setMenuTarget(null);
-    const point = pressPoint(event, layout.width, layout.height);
-    const slot = stacked ? 0 : Math.max(0, Math.min(slots - 1, Math.floor((point.x - 76) / (224 / Math.max(1, slots)))));
+    const point = viewBoxPoint(event, layout.width, layout.height);
+    const slot = stacked ? 0 : slotFromX(point.x);
     const precise = closestTarget(point.x, point.y);
     const region = !stacked && slots > 1 ? targets.find((target) => target.slot === slot) || null : null;
     gesture.current = { target: precise || region, slot, startY: point.y, moved: false };
@@ -182,11 +243,11 @@ export const AnswerStaff = memo(function AnswerStaff({
   function onMove(event: GestureResponderEvent) {
     const current = gesture.current;
     if (!current?.target || disabled) return;
-    const point = pressPoint(event, layout.width, layout.height);
+    const point = viewBoxPoint(event, layout.width, layout.height);
     if (Math.abs(point.y - current.startY) < 4) return;
     if (!current.moved) onDragChange?.(true);
     current.moved = true;
-    const note = noteFromY(point.y, keySignature);
+    const note = noteFromY(point.y);
     replaceNote(current.target.index, note.midi, note.spelling);
   }
 
@@ -195,7 +256,7 @@ export const AnswerStaff = memo(function AnswerStaff({
     gesture.current = null;
     onDragChange?.(false);
     if (!current || disabled || current.moved) return;
-    const point = pressPoint(event, layout.width, layout.height);
+    const point = viewBoxPoint(event, layout.width, layout.height);
     const target = closestTarget(point.x, point.y);
     if (!target) return write(current.slot, point.y);
     const now = Date.now();
@@ -210,7 +271,7 @@ export const AnswerStaff = memo(function AnswerStaff({
     lastTap.current = { index: target.index, time: now };
     if (pendingTap.current) clearTimeout(pendingTap.current);
     pendingTap.current = setTimeout(() => {
-      setMenuTarget(target.index);
+      setMenuTarget({ index: target.index, x: target.x, y: target.y });
       pendingTap.current = null;
     }, DOUBLE_TAP_MS);
   }
@@ -221,40 +282,31 @@ export const AnswerStaff = memo(function AnswerStaff({
   }
 
   function chooseAccidental(value: '' | '#' | 'b' | 'n') {
-    if (menuTarget === null || disabled) return;
-    const midi = latest.current.pitches[menuTarget];
-    const naturalMidi = naturalMidiForPitchSpelling(midi, latest.current.spellings[menuTarget]);
-    const base = naturalSpelling(naturalMidi);
+    if (!menuTarget || disabled) return;
+    const midi = latest.current.pitches[menuTarget.index];
+    const naturalMidi = naturalMidiForPitchSpelling(midi, latest.current.spellings[menuTarget.index]);
+    const base = defaultPitchSpelling(naturalMidi);
     const offset = value === '#' ? 1 : value === 'b' ? -1 : 0;
-    replaceNote(menuTarget, naturalMidi + offset, value ? base.replace(/^([A-G])/, `$1${value}`) : base);
+    replaceNote(menuTarget.index, naturalMidi + offset, value ? base.replace(/^([A-G])/, `$1${value}`) : base);
     setMenuTarget(null);
   }
 
-  const activeColor = tone === 'green' ? '#2e8b6f' : tone === 'red' ? Brand.danger : ink ? '#141414' : Brand.ink;
-  const barline = barlineBounds();
-  const renderNotes = (values: number[], valueSpellings: string[], color: string, offset = 0) => {
-    const writtenValues = writtenPitches(values, valueSpellings);
-    const accidentalColumn = accidentalColumns(writtenValues);
-    return values.map((midi, index) => {
-    if (!Number.isFinite(midi)) return null;
-    const spelling = valueSpellings[index];
-    const written = writtenValues[index];
-    const x = noteX(index, values, valueSpellings) + offset;
-    const y = staffSvgYFromWrittenMidi(written);
-    const glyph = accidentalGlyph(midi, spelling);
-    const ledger = musicLedgerBounds(x);
-    return <G key={`${color}-${midi}-${index}`}>
-      {ledgerLineYs(written).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={ledger.x1} x2={ledger.x2} y1={ledgerY} y2={ledgerY} stroke={color} strokeWidth={STAFF_STROKE_WIDTH} />)}
-      {!!glyph && <MusicAccidental x={musicAccidentalX(x, accidentalColumn[index])} y={y} glyph={glyph} color={color} />}
-      <MusicNotehead x={x} y={y} kind="whole" color={color} />
-    </G>;
-    });
-  };
+  /** 小程序 .answer-slot 的分隔虚线：整壳高、2rpx、容器等分 */
+  const slotDividers = Array.from({ length: Math.max(0, slots - 1) }, (_, index) => (
+    SLOT_HIT_LEFT + (index + 1) * (viewBoxWidth - SLOT_HIT_LEFT) / Math.max(1, slots)
+  ));
+
+  const menuLeft = menuTarget
+    ? Math.max(60, Math.min(viewBoxWidth - menuWidth, menuTarget.x - menuWidth / 2)) * RPX_TO_PT
+    : 0;
+  const menuTop = menuTarget
+    ? Math.max(4, Math.min(48, menuTarget.y > 48 ? menuTarget.y - 46 : menuTarget.y + 12)) * RPX_TO_PT
+    : 0;
 
   return (
     <View style={[styles.shell, ink && styles.inkShell, tone === 'red' && styles.wrongShell, tone === 'green' && styles.correctShell]}>
       <View
-        style={[styles.touchArea, compact && styles.compactTouchArea]}
+        style={styles.touchArea}
         onLayout={(event: LayoutChangeEvent) => setLayout(event.nativeEvent.layout)}
         onStartShouldSetResponder={() => !disabled}
         onMoveShouldSetResponder={() => !disabled}
@@ -266,24 +318,44 @@ export const AnswerStaff = memo(function AnswerStaff({
         accessibilityRole={disabled ? 'image' : 'button'}
         accessibilityState={disabled ? undefined : { disabled: false }}
         accessibilityLabel={disabled ? '五线谱谱面' : '五线谱答题区域'}>
-        <Svg viewBox={MUSIC_STAFF_VIEW_BOX} preserveAspectRatio="none" width="100%" height="100%">
-          {STAFF_LINE_YS.map((y) => <Line key={y} x1={MUSIC_STAFF_LEFT} x2={MUSIC_STAFF_RIGHT} y1={y} y2={y} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />)}
-          {Array.from({ length: Math.max(1, slots) - 1 }, (_, index) => (
-            <Line key={`slot-${index}`} x1={76 + (index + 1) * 224 / Math.max(1, slots)} x2={76 + (index + 1) * 224 / Math.max(1, slots)} y1="28" y2="68" stroke="#D6D9DF" strokeDasharray="3 3" />
-          ))}
-          <Line key="final-bar-thin" x1="304" x2="304" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />
-          <Line key="final-bar-thick" x1="308" x2="308" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth="3" />
-          {renderNotes(pitches, spellings, activeColor)}
-          {showCorrect && renderNotes(correctPitches, correctSpellings, '#2e8b6f', stacked ? 38 : 30)}
-        </Svg>
-        <Image source={require('../../assets/images/g-clef.png')} resizeMode="contain" style={[styles.clef, compact && styles.compactClef]} />
-        {!pitches.some(Number.isFinite) && <Text style={[styles.emptyText, compact && styles.compactEmptyText, { pointerEvents: 'none' }]}>{emptyText}</Text>}
+        {/* 谱号/调号/拍号/谱线/小节线 + 考生答案：与小程序 staff-notation 逐值同源 */}
+        <StaffNotation
+          events={events}
+          viewBoxWidth={viewBoxWidth}
+          width={DEFAULT_STAFF_WIDTH_RPX}
+          meter={meter}
+          beamMeter={meter}
+          keySignature={keySignature}
+          barCount={barCount}
+          answerSlots={stacked ? 1 : slots}
+          tone={tone}
+          ink={ink}
+          last={last}
+          slotDividers={disabled ? [] : slotDividers}
+        />
+        {/* 正确谱面叠层：symbols-only（只画音符层）+ 和弦/和声音程右移 80rpx */}
+        {showCorrect && (
+          <StaffNotation
+            events={correctEvents}
+            viewBoxWidth={viewBoxWidth}
+            width={DEFAULT_STAFF_WIDTH_RPX}
+            meter={meter}
+            beamMeter={meter}
+            keySignature={keySignature}
+            barCount={barCount}
+            answerSlots={stacked ? 1 : slots}
+            tone="green"
+            symbolsOnly
+            offsetX={separateCorrect ? SEPARATE_CORRECT_DX : 0}
+          />
+        )}
+        {!pitches.some(isFiniteNumber) && <Text pointerEvents="none" style={styles.emptyText}>{emptyText}</Text>}
       </View>
-      {menuTarget !== null && !disabled && (
-        <View style={styles.menu}>
+      {menuTarget && !disabled && (
+        <View onLayout={(event: LayoutChangeEvent) => setMenuWidth(event.nativeEvent.layout.width / RPX_TO_PT)} style={[styles.menu, { left: menuLeft, top: menuTop }]}>
           <Text style={styles.menuLabel}>临时记号</Text>
-          {([['', '无'], ['#', '♯'], ['b', '♭'], ['n', '♮']] as const).map(([value, label]) => (
-            <Pressable accessibilityRole="button" accessibilityLabel={`临时记号${label}`} key={label} onPress={() => chooseAccidental(value)} style={styles.menuButton}><Text style={styles.menuButtonText}>{label}</Text></Pressable>
+          {([['', '无'], ['b', '♭'], ['n', '♮'], ['#', '♯']] as const).map(([value, label]) => (
+            <Pressable accessibilityRole="button" accessibilityLabel={`临时记号${label}`} hitSlop={Btn.staff.accidentalHitSlop} key={label} onPress={() => chooseAccidental(value)} style={styles.menuButton}><Text style={styles.menuButtonText}>{label}</Text></Pressable>
           ))}
         </View>
       )}
@@ -292,18 +364,20 @@ export const AnswerStaff = memo(function AnswerStaff({
 });
 
 const styles = StyleSheet.create({
-  shell: { overflow: 'visible', borderRadius: Radius.card, borderWidth: 1, borderColor: Brand.border, backgroundColor: '#FFFFFF' },
+  /** 小程序 .answer-staff-shell：1rpx solid #d9dde8 / radius 12rpx（1:1 → 0.5pt / 6pt） */
+  shell: { overflow: 'visible', borderRadius: STAFF_SHELL_RADIUS, borderWidth: STAFF_SHELL_BORDER * RPX_TO_PT, borderColor: '#D9DDE8', backgroundColor: '#FFFFFF' },
   inkShell: { borderColor: '#141414' },
-  touchArea: { height: STAFF_HEIGHT, overflow: 'hidden', borderRadius: Radius.card },
-  compactTouchArea: { height: 96 },
-  wrongShell: { borderColor: '#E5B5AA', backgroundColor: '#FFF9F7' },
-  correctShell: { borderColor: '#A9D4BB', backgroundColor: '#F8FFFA' },
-  clef: { position: 'absolute', left: 6, top: STAFF_CENTER_Y - 101 / 2, width: 40, height: 101 },
-  compactClef: { top: STAFF_MIDDLE_LINE_Y - 82 / 2, width: 36, height: 82 },
-  emptyText: { position: 'absolute', left: MUSIC_STAFF_WRITABLE_LEFT_INSET, right: MUSIC_STAFF_WRITABLE_RIGHT_INSET, top: STAFF_CENTER_Y - 9, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' },
-  compactEmptyText: { top: STAFF_MIDDLE_LINE_Y - 9 },
-  menu: { position: 'absolute', zIndex: 5, top: -59, right: 8, flexDirection: 'row', alignItems: 'center', gap: 5, padding: 6, borderRadius: Radius.control, backgroundColor: Brand.ivory, borderWidth: 1, borderColor: Brand.border, ...Shadows.floating },
+  wrongShell: { borderColor: '#D76B77', backgroundColor: '#FFFAFA' },
+  correctShell: { borderColor: '#55A891', backgroundColor: '#FBFFFD' },
+  /** 命中层 = 壳体内容盒（壳宽 − 2×1rpx）：viewBox 由它换算 ⇒ 1 单位恒等于 0.5pt */
+  touchArea: { height: ANSWER_STAFF_HEIGHT, overflow: 'hidden', borderRadius: STAFF_SHELL_RADIUS },
+  // 小程序 .staff-notation .empty：left/right 0、top 31rpx、height 60rpx、font-size 20rpx
+  emptyText: { position: 'absolute', left: 0, right: 0, top: EMPTY_TOP * RPX_TO_PT, height: EMPTY_HEIGHT * RPX_TO_PT, color: Brand.muted, fontSize: EMPTY_FONT_SIZE * RPX_TO_PT, lineHeight: EMPTY_HEIGHT * RPX_TO_PT, textAlign: 'center', pointerEvents: 'none' },
+  // 小程序 .accidental-menu（44rpx 高 / padding 4rpx / gap 4rpx / 10rpx / 1rpx 描边）
+  menu: { position: 'absolute', zIndex: 5, flexDirection: 'row', alignItems: 'center', ...Btn.staff.accidentalMenu, backgroundColor: Brand.ivory, borderColor: Brand.border, borderWidth: Btn.staff.accidentalMenu.borderWidth, ...Shadows.floating },
+  /** 小程序浮层没有标题；App 保留「临时记号」标签做可读性，行高小于芯片高，不撑高菜单 */
   menuLabel: { marginHorizontal: 4, color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' },
-  menuButton: { width: TouchTarget, height: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forestSoft },
-  menuButtonText: { color: Brand.forest, fontSize: 15, fontWeight: '800' },
+  // 小程序 .accidental-choice（46 × 34rpx / 7rpx）
+  menuButton: { ...Btn.staff.accidentalChoice, alignItems: 'center', justifyContent: 'center', backgroundColor: Brand.forestSoft },
+  menuButtonText: { color: Brand.forest, ...Btn.staff.accidentalGlyph, fontWeight: '800' },
 });

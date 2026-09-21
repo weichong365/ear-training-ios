@@ -4,7 +4,8 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import type { PurchasesPackage } from 'react-native-purchases';
 
 import { AppIcon, type AppIconName } from '@/components/app-icon';
-import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
+import { Btn, hitSlopVertical, TOUCH_TARGET } from '@/constants/button-tokens';
+import { Brand, Radius, TypeScale } from '@/constants/theme';
 import type { PracticeMode } from '@/core';
 import { useSubscription } from '@/services/subscription';
 
@@ -173,7 +174,7 @@ export default function SubscribeScreen() {
         <View style={styles.setupCard}>
           <Text style={styles.setupTitle}>{configured ? '正在读取订阅方案' : '订阅服务等待配置'}</Text>
           <Text style={styles.setupBody}>{configured ? '请检查网络，或稍后重新读取 App Store 商品。' : '完成 App Store Connect 与 RevenueCat 商品关联后，这里会自动显示本地价格。'}</Text>
-          {configured ? <Pressable accessibilityRole="button" onPress={refresh} style={styles.retryButton}><Text style={styles.retryText}>重新读取</Text></Pressable> : null}
+          {configured ? <Pressable accessibilityRole="button" hitSlop={hitSlopVertical(43)} onPress={refresh} style={styles.retryButton}><Text style={styles.retryText}>重新读取</Text></Pressable> : null}
         </View>
       )}
 
@@ -185,11 +186,11 @@ export default function SubscribeScreen() {
       {selected ? <Text style={styles.renewalText}>{freeTrial ? `${freeTrial}免费，之后 ${selected.product.priceString}${periodSuffix(selected)}。` : `${selected.product.priceString}${periodSuffix(selected)}。`}订阅会自动续期，可随时在 Apple ID 设置中取消。</Text> : null}
 
       <View style={styles.linkRow}>
-        <Pressable accessibilityRole="button" disabled={busy} onPress={restoreAccess} style={styles.linkButton}><Text style={styles.link}>恢复购买</Text></Pressable>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={restoreAccess} hitSlop={hitSlopVertical(24)} style={styles.linkButton}><Text style={styles.link}>恢复购买</Text></Pressable>
         <Text style={styles.linkDivider}>·</Text>
-        <Pressable accessibilityRole="link" onPress={() => router.push(TERMS_ROUTE)} style={styles.linkButton}><Text style={styles.link}>订阅与使用条款</Text></Pressable>
+        <Pressable accessibilityRole="link" onPress={() => router.push(TERMS_ROUTE)} hitSlop={hitSlopVertical(24)} style={styles.linkButton}><Text style={styles.link}>订阅与使用条款</Text></Pressable>
         <Text style={styles.linkDivider}>·</Text>
-        <Pressable accessibilityRole="link" onPress={() => router.push('/privacy')} style={styles.linkButton}><Text style={styles.link}>隐私政策</Text></Pressable>
+        <Pressable accessibilityRole="link" onPress={() => router.push('/privacy')} hitSlop={hitSlopVertical(24)} style={styles.linkButton}><Text style={styles.link}>隐私政策</Text></Pressable>
       </View>
       <Text style={styles.appleNote}>付款将由 Apple ID 确认。免费试用仅适用于符合 Apple 条件的新订阅用户；取消后仍可使用至当前试用或订阅期结束。</Text>
     </ScrollView>
@@ -208,12 +209,14 @@ const styles = StyleSheet.create({
   trialPillText: { color: '#E8CB73', fontSize: TypeScale.caption, fontWeight: '800' },
   benefitCard: { padding: 16, gap: 15, borderRadius: Radius.card, backgroundColor: Brand.ivory, borderWidth: 1, borderColor: Brand.border },
   benefitRow: { flexDirection: 'row', alignItems: 'center' },
-  benefitIcon: { width: TouchTarget, height: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forestSoft },
+  benefitIcon: { width: TOUCH_TARGET, height: TOUCH_TARGET, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forestSoft },
   benefitCopy: { flex: 1, marginLeft: 11 },
   benefitTitle: { color: Brand.ink, fontSize: TypeScale.subheadline, fontWeight: '800' },
   benefitBody: { marginTop: 3, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18 },
   plans: { gap: 8 },
-  plan: { minHeight: 72, padding: 14, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.card, borderWidth: 1.5, borderColor: Brand.border, backgroundColor: Brand.ivory },
+  // 小程序 .plan-card（26 18 22rpx / 22rpx）：iOS 因 Apple IAP 要求保留单选圈 + 价格行，
+  // 只同步内边距与圆角，不做成小程序的并排两列。
+  plan: { ...Btn.membership.planCard, flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: Brand.border, backgroundColor: Brand.ivory },
   planSelected: { borderColor: Brand.forest, backgroundColor: Brand.successSoft },
   pressed: { opacity: 0.72 },
   radio: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1.5, borderColor: '#9BB3A4' },
@@ -222,26 +225,30 @@ const styles = StyleSheet.create({
   planCopy: { flex: 1, marginLeft: 10 },
   planTitleLine: { flexDirection: 'row', alignItems: 'center' },
   planTitle: { color: Brand.ink, fontSize: TypeScale.subheadline, fontWeight: '800' },
-  recommended: { marginLeft: 7, paddingHorizontal: 7, paddingVertical: 3, overflow: 'hidden', borderRadius: 7, color: Brand.textOnAccent, backgroundColor: Brand.forest, fontSize: 11, fontWeight: '800' },
+  recommended: { ...Btn.membership.planTag, marginLeft: 7, overflow: 'hidden', color: Brand.textOnAccent, backgroundColor: Brand.forest },
   planMeta: { marginTop: 4, color: Brand.muted, fontSize: TypeScale.caption },
   planPrice: { color: Brand.forestDeep, fontSize: TypeScale.headline, fontWeight: '900' },
   planSuffix: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '600' },
   setupCard: { padding: 16, borderRadius: Radius.card, borderWidth: 1, borderColor: '#E4C989', backgroundColor: Brand.warningSoft },
   setupTitle: { color: Brand.warning, fontSize: TypeScale.subheadline, fontWeight: '900' },
   setupBody: { marginTop: 6, color: Brand.warning, fontSize: TypeScale.footnote, lineHeight: 20 },
-  retryButton: { minHeight: TouchTarget, alignSelf: 'flex-start', marginTop: 10, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: '#F0D895' },
+  // 小程序会员页无重试按钮（走 Toast 自动重试）；就近取全局 .btn-plain 盒
+  retryButton: { ...Btn.global.plain, alignSelf: 'flex-start', marginTop: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0D895' },
   retryText: { color: '#624B10', fontSize: TypeScale.footnote, fontWeight: '800' },
   error: { paddingHorizontal: 6, color: Brand.danger, fontSize: TypeScale.footnote, lineHeight: 19, textAlign: 'center' },
-  primaryButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest },
-  primaryText: { color: Brand.textOnAccent, fontSize: TypeScale.subheadline, fontWeight: '900' },
+  /** 小程序会员页 .purchase-btn · 96rpx / 22rpx / 30rpx w700 */
+  primaryButton: { ...Btn.membership.purchase, alignItems: 'center', justifyContent: 'center', backgroundColor: Brand.forest },
+  primaryText: { color: Brand.textOnAccent, fontSize: Btn.membership.purchase.fontSize, fontWeight: '900' },
   disabled: { opacity: 0.45 },
-  secondaryButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1.5, borderColor: Brand.forest, backgroundColor: Brand.ivory },
-  secondaryText: { color: Brand.forest, fontSize: TypeScale.subheadline, fontWeight: '900' },
+  /** 小程序无同款次级按钮，就近取全局 .btn-plain · 86rpx / 24rpx / 28rpx w600 */
+  secondaryButton: { ...Btn.global.plain, alignItems: 'center', justifyContent: 'center', borderColor: Brand.forest, backgroundColor: Brand.ivory },
+  secondaryText: { color: Brand.forest, fontSize: Btn.global.plain.fontSize, fontWeight: '900' },
   renewalText: { paddingHorizontal: 9, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' },
   linkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', columnGap: 4 },
-  linkButton: { minHeight: TouchTarget, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  link: { color: Brand.forest, fontSize: TypeScale.caption, fontWeight: '800', textDecorationLine: 'underline' },
-  linkDivider: { color: Brand.disabled, fontSize: TypeScale.caption },
+  /** 小程序会员页底部只有一行不可点的 .footer-tip（20rpx）→ 链接按该字号收窄 */
+  linkButton: { ...Btn.global.textLink, alignItems: 'center', justifyContent: 'center' },
+  link: { color: Brand.forest, fontSize: Btn.global.textLink.fontSize, fontWeight: '800', textDecorationLine: 'underline' },
+  linkDivider: { color: Brand.disabled, fontSize: Btn.global.textLink.fontSize },
   appleNote: { paddingHorizontal: 7, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' },
   activeHero: { padding: 26, alignItems: 'center', borderRadius: Radius.hero, backgroundColor: Brand.forestDeep },
   activeMark: { width: 62, height: 62, alignItems: 'center', justifyContent: 'center', borderRadius: 31, backgroundColor: '#FFFFFF' },

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>练耳搭子 · App Store Connect 上架操作手册</title>
+<style>
+:root{--cream:#F6F0E3;--ivory:#FFFDF7;--ink:#1B211D;--muted:#5F6F65;--forest:#1D6B4D;--forest-deep:#103C2B;--forest-soft:#DCEDE3;--border:#D4DED7;--gold:#B78922;--warning-soft:#FBF0CF;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;background:var(--cream);color:var(--ink);line-height:1.75;-webkit-font-smoothing:antialiased;}
+.wrap{max-width:900px;margin:0 auto;padding:30px 28px 80px;}
+header{background:var(--forest);color:#fff;border-radius:24px;padding:40px 36px;margin-bottom:30px;}
+header h1{margin:0;font-size:32px;font-weight:900;letter-spacing:1px;}
+header .sub{margin-top:10px;font-size:17px;opacity:.88;}
+.toc{background:var(--ivory);border:1.5px solid var(--border);border-radius:18px;padding:24px 28px;margin-bottom:30px;}
+.toc h2{margin:0 0 14px;font-size:20px;font-weight:800;color:var(--forest);}
+.toc ol{margin:0;padding-left:22px;font-size:16px;color:var(--ink);}
+.toc li{margin:6px 0;}
+.toc a{color:var(--forest);text-decoration:none;font-weight:600;}
+section{background:var(--ivory);border:1.5px solid var(--border);border-radius:18px;padding:30px 32px;margin-bottom:22px;}
+section h2{margin:0 0 16px;font-size:24px;font-weight:800;color:var(--forest);display:flex;align-items:center;gap:12px;}
+section h2 .num{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;background:var(--forest);color:#fff;font-size:18px;font-weight:900;flex-shrink:0;}
+section h3{margin:20px 0 10px;font-size:18px;font-weight:800;color:var(--ink);}
+section p{margin:8px 0;font-size:16px;color:var(--ink);}
+section ul{margin:8px 0 8px 0;padding-left:22px;font-size:16px;}
+section li{margin:5px 0;color:var(--ink);}
+section .field{background:var(--cream);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin:10px 0;font-family:ui-monospace,Menlo,monospace;font-size:15px;color:var(--ink);white-space:pre-wrap;word-break:break-all;}
+section .tip{background:var(--warning-soft);border-left:4px solid var(--gold);border-radius:0 10px 10px 0;padding:14px 18px;margin:14px 0;font-size:15px;color:#8A671E;}
+section .tip b{color:#5C4314;}
+.warn{background:#F8E7E3;border-left:4px solid #B84F4A;border-radius:0 10px 10px 0;padding:14px 18px;margin:14px 0;font-size:15px;color:#7A3633;}
+.warn b{color:#5C2926;}
+.note{background:var(--forest-soft);border-left:4px solid var(--forest);border-radius:0 10px 10px 0;padding:14px 18px;margin:14px 0;font-size:15px;color:var(--forest-deep);}
+.note b{color:var(--forest-deep);}
+.table{width:100%;border-collapse:collapse;margin:14px 0;font-size:15px;}
+.table th,.table td{padding:10px 12px;border:1px solid var(--border);text-align:left;vertical-align:top;}
+.table th{background:var(--cream);font-weight:800;}
+.btn{display:inline-block;margin:6px 0;padding:10px 18px;background:var(--forest);color:#fff;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;}
+.kbd{display:inline-block;padding:2px 8px;background:#F4EAD5;border:1px solid var(--border);border-radius:5px;font-family:ui-monospace,monospace;font-size:13px;color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>练耳搭子 · App Store Connect 上架操作手册</h1>
+  <div class="sub">所有字段已预先填好，照着抄即可 · 最后一步选构建 + 提交审核</div>
+</header>
+
+<div class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s1">登录 App Store Connect</a></li>
+    <li><a href="#s2">填 App 基本信息（名称、分类、隐私政策 URL）</a></li>
+    <li><a href="#s3">填版本元数据（副标题、描述、关键词、截图）</a></li>
+    <li><a href="#s4">填 App 隐私（App Privacy）</a></li>
+    <li><a href="#s5">填 App 审核信息（联系方式 + 审核备注）</a></li>
+    <li><a href="#s6">等构建上传后选构建 + 提交审核</a></li>
+    <li><a href="#s7">常见被打回原因 + 应对</a></li>
+  </ol>
+</div>
+
+<section id="s1">
+  <h2><span class="num">1</span>登录 App Store Connect</h2>
+  <p>打开 <a class="btn" href="https://appstoreconnect.apple.com" target="_blank">appstoreconnect.apple.com</a>，用你的 Apple ID 登录（与 Apple Developer 账号一致）。</p>
+  <p>首次登录需要同意协议。在「协议」标签页确认所有协议已签署（Developmental Agreement 等）。</p>
+  <div class="tip">如果某个协议没签，「我的 App」会锁定无法创建 App。签完所有协议后等 5–10 分钟刷新。</div>
+</section>
+
+<section id="s2">
+  <h2><span class="num">2</span>填 App 基本信息</h2>
+  <p>左侧栏点「我的 App」→ 找到 <b>练耳搭子-音乐艺考听音训练</b>（ascAppId <code>6806168169</code>，bundleId <code>com.lianerdazi.app</code>）→ 点进去。</p>
+  <p>如果列表里没看到，需要先点 <kbd class="kbd">+</kbd> 新建 App：</p>
+  <ul>
+    <li>平台：<b>iOS</b></li>
+    <li>名称：<code>练耳搭子-音乐艺考听音训练</code></li>
+    <li>主要语言：<b>简体中文</b></li>
+    <li>套装 ID：<code>com.lianerdazi.app</code></li>
+    <li>SKU：随便填一个唯一标识，比如 <code>lianerdazi-001</code></li>
+    <li>用户访问权限：<b>完全访问权限</b></li>
+  </ul>
+
+  <h3>2.1 在「App 信息」标签页填</h3>
+  <table class="table">
+    <tr><th>字段</th><th>填什么</th></tr>
+    <tr><td>副标题（30 字符内）</td><td><div class="field">视唱练耳·音程和弦节奏专项训练</div></td></tr>
+    <tr><td>类别</td><td>主类 <b>教育</b>，次类 <b>教育</b></td></tr>
+    <tr><td>隐私政策 URL</td><td><div class="field">https://9d8f3d05d7bd4dffba64da1c72efd67b.app.workbuddy.link/privacy.html</div></td></tr>
+    <tr><td>技术支持 URL</td><td><div class="field">https://9d8f3d05d7bd4dffba64da1c72efd67b.app.workbuddy.link/support.html</div></td></tr>
+    <tr><td>营销 URL（可选）</td><td>留空</td></tr>
+    <tr><td>版权</td><td><div class="field">韦冲</div></td></tr>
+    <tr><td>价格</td><td><b>免费</b>（0 元）</td></tr>
+  </table>
+  <div class="note">名称一旦保存，后续修改需要重新提交审核。务必确认「练耳搭子-音乐艺考听音训练」准确无误。</div>
+</section>
+
+<section id="s3">
+  <h2><span class="num">3</span>填版本元数据</h2>
+  <p>左侧栏点「<b>+ 版本或平台</b>」→ 选 <b>iOS</b> → 选 <b>1.0.0</b>（首次发布）→ 创建。</p>
+
+  <h3>3.1 描述（约 400 字）</h3>
+  <div class="field">练耳搭子是专为音乐艺考生打造的视唱练耳专项训练工具，覆盖全国 31 个省市区统考题型，按目标省份的出题框架精准练习，让你在家也能还原考场听音体验。
+
+【核心训练】
+· 单音、音组、音程、和弦、节奏、旋律六大听辨题型
+· 每题贴合真实考场流程：标准音先行 → 预备拍 → 正题播放
+· 施坦威真实钢琴采样音色，还原考场听感
+
+【模拟考试】
+· 按各省统考结构生成完整电子卷面，21 个作答单元、满分 30 分
+· 五线谱谱面作答，交卷后逐题回放与解析
+
+【智能学习】
+· 错题自动聚合复盘，答对即移除
+· 按薄弱题型自动调整出题比例，强化训练更高效
+· 练习统计实时跟踪正确率与成长趋势
+
+【离线可用】
+· 全部音频内置，无需联网即可练习
+· 练习数据本地保存，保护你的隐私
+
+适合音乐艺考生、音乐特长生和视唱练耳自学者。</div>
+
+  <h3>3.2 关键词（100 字符内，英文逗号分隔）</h3>
+  <div class="field">练耳,视唱练耳,音乐艺考,音程,和弦,节奏,旋律,听音,乐理,音乐考试,音乐特长生,音准</div>
+  <div class="tip">不要用空格分隔，用英文逗号。字符数 100 内含标点。</div>
+
+  <h3>3.3 技术支持 URL / 营销 URL / 版本号 / 版权</h3>
+  <p>技术支持 URL 同上（2.1 已填）。版本号 <b>1.0.0</b>。版权 <b>韦冲</b>。</p>
+
+  <h3>3.4 截图（最关键的一步）</h3>
+  <p>点「<b>截屏</b>」区域上传 5 张 1290×2796 PNG：</p>
+  <table class="table">
+    <tr><th>顺序</th><th>本地路径</th><th>展示内容</th></tr>
+    <tr><td>1（首图，决定 70% 点击率）</td><td><code>02-home.png</code></td><td>首页训练模块</td></tr>
+    <tr><td>2</td><td><code>01-province.png</code></td><td>选省页（31 省按地区分组）</td></tr>
+    <tr><td>3</td><td><code>03-practice.png</code></td><td>听辨答题页（五线谱 + 钢琴键盘）</td></tr>
+    <tr><td>4</td><td><code>04-exam.png</code></td><td>模拟考试（21 题 30 分）</td></tr>
+    <tr><td>5</td><td><code>05-stats.png</code></td><td>练习统计 + 智能强化</td></tr>
+  </table>
+  <p>路径：<code>F:\WorkBuddy\练耳大师\ios-app\app-store-pages\screenshots\</code></p>
+  <div class="warn">截图必须 <b>1290×2796</b> 像素、PNG 格式、不可带 alpha 通道。尺寸不对会被拒。本地已是合规尺寸，可直接上传。</div>
+
+  <h3>3.5 推广文本 / 新功能</h3>
+  <p>推广文本（170 字符内）选填，建议：<div class="field">首版上线 · 覆盖全国 31 省统考题型 · 标准音先行流程还原艺考考场</div></p>
+  <p>「此版本的新增内容」选填，留空即可（首版无更新说明）。</p>
+</section>
+
+<section id="s4">
+  <h2><span class="num">4</span>填 App 隐私（App Privacy）</h2>
+  <p>左侧栏点「<b>App 隐私</b>」标签页 → 点「<b>开始</b>」回答问题。</p>
+  <p>本版本不收集任何数据，所有答案都选「<b>否</b>」：</p>
+  <ul>
+    <li>你或你的 App 是否会从该 App 收集任何数据？<b>否</b></li>
+    <li>所有后续问题（联系信息、健康健身、财务信息、位置、敏感信息、联系人、使用数据、诊断、购买、用户内容、浏览历史、标识符、搜索）全部选「<b>否</b>」</li>
+  </ul>
+  <div class="note">选完后页面顶部会显示「<b>Data Not Collected</b>」绿色徽章。发布后 App Store 会显示「No Data Collected」标签。</div>
+  <div class="tip">App 内不收集数据 + 隐私政策已声明 + 隐私标签选 No Data Collected = 三处一致。审核员最关注这一致性。</div>
+</section>
+
+<section id="s5">
+  <h2><span class="num">5</span>填 App 审核信息</h2>
+  <p>左侧栏点「<b>App 审核</b>」→「版本信息」下方的「<b>联系信息</b>」区域。</p>
+  <table class="table">
+    <tr><th>字段</th><th>填什么</th></tr>
+    <tr><td>姓</td><td><div class="field">韦冲</div></td></tr>
+    <tr><td>名</td><td>留空（中文姓名不分姓和名，写在「姓」里）</td></tr>
+    <tr><td>电话号码</td><td><div class="field">+86 17200745651</div></td></tr>
+    <tr><td>电子邮件</td><td><div class="field">weixiaodao365@gmail.com</div></td></tr>
+  </table>
+
+  <h3>5.1 审核备注（Review Notes）</h3>
+  <p>在「App 审核备注」里填这段中文：</p>
+  <div class="field">练耳搭子是一款面向音乐艺考生的视唱练耳训练工具，无需注册登录即可使用全部功能。
+本版本为免费应用，不包含任何内购、订阅、广告或第三方追踪 SDK；所有练习数据仅保存在设备本地。
+音频为内置离线钢琴采样（bitKlavier Grand，Steinway D，Dan Trueman / Princeton University，
+CC BY 4.0 许可，已在应用内「关于」页署名），无网络依赖。
+如审核需要，可直接安装使用，无需演示账号。</div>
+  <div class="tip">审核备注是给审核员看的说明，写清楚「无登录、无 IAP、无追踪」能极大降低被打回概率。</div>
+
+  <h3>5.2 演示账号（Demo Account）</h3>
+  <p>本 App 不需要登录，留空即可。审核员「无需演示账号」也能审核通过。</p>
+</section>
+
+<section id="s6">
+  <h2><span class="num">6</span>等构建上传后选构建 + 提交审核</h2>
+  <p>这一节在你升级 EAS 套餐（<b>$19/月 Starter</b>）或等 10/1 免费额度恢复后，告诉我「已升级」或「额度恢复了」之后执行。我会触发 EAS 构建命令：</p>
+  <div class="field">cd "F:\WorkBuddy\练耳大师\ios-app" && \
+  unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY && \
+  npx eas-cli build --platform ios --profile production --non-interactive --auto-submit --no-wait</div>
+  <p>EAS 构建约 10–20 分钟。成功后会自动把 <code>.ipa</code> 上传到 App Store Connect 的「构建」列表。</p>
+
+  <h3>6.1 选构建</h3>
+  <p>回到 App Store Connect → 「我的 App」→ 练耳搭子 → 「1.0.0」→ 滚到「构建」区域 → 选中刚上传的构建（看 buildNumber = 36 或更新的那个）→ 点「<b>完成</b>」。</p>
+
+  <h3>6.2 选版本发布方式</h3>
+  <ul>
+    <li><b>自动发布此版本</b>（审核通过后立即上架）—— 推荐首版</li>
+    <li>手动发布此版本（审核通过后你手动点发布）</li>
+  </ul>
+
+  <h3>6.3 提交审核</h3>
+  <p>滚到「<b>构建</b>」下面，点右上角「<b>添加以供审核</b>」→ 弹窗确认 → 选「<b>提交以供审核</b>」。</p>
+  <div class="note">首次提交会要求再次确认出口合规（用了 <code>usesNonExemptEncryption=false</code>，选「<b>是</b>，使用豁免加密」即可，因为 App 不含任何加密功能）。</div>
+
+  <h3>6.4 等待审核结果</h3>
+  <p>通常 24–48 小时内出结果。可在 App Store Connect →「活动」查看进度。如果被打回，会有邮件 + 后台红色提示，给出具体原因，我们针对性修复后再提交。</p>
+</section>
+
+<section id="s7">
+  <h2><span class="num">7</span>常见被打回原因 + 应对</h2>
+  <h3>5.1.1 隐私问题</h3>
+  <p>原因：隐私标签和数据收集不一致，或隐私政策 URL 无法访问。</p>
+  <p>应对：确保「App 隐私选 No Data Collected」+「隐私政策 URL 实际可打开」+「App 内不收集数据」三处一致。</p>
+
+  <h3>2.1 截图与 App 不符</h3>
+  <p>原因：截图展示了 App 没有的功能。</p>
+  <p>应对：5 张截图都基于真实 iOS 界面设计，1:1 还原，可放心。</p>
+
+  <h3>4.0 重复 App</h3>
+  <p>原因：被认为和已有 App 重复。</p>
+  <p>应对：练耳搭子定位「音乐艺考视唱练耳」，垂直细分领域，不冲突。</p>
+
+  <h3>Guideline 2.3 - 隐藏或伪装功能</h3>
+  <p>原因：App 里有功能入口但不可用，或故意隐藏订阅等。</p>
+  <p>应对：首版纯免费，App 内无任何「订阅」「购买」入口（已清理干净）。</p>
+
+  <div class="warn">如果被打回，<b>不要慌</b>。把 App Review 的反馈原文发给我，我帮你分析原因并修复代码，48 小时内可重新提交。</div>
+</section>
+
+<div class="note" style="text-align:center;font-size:14px;margin-top:30px;">
+  © 2026 练耳搭子 · 本手册为内部上架操作指南，非公开页面
+</div>
+
+</div>
+</body></html>

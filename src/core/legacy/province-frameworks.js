@@ -45,7 +45,7 @@ var PROVINCE_FRAMEWORKS = {
         { key: 'group', title: '听记音组', count: 4, repeats: 3, points: 4, cue: 'standardTone', groupSizes: [3, 3, 5, 5], answerMode: 'staff' },
         { key: 'interval', title: '听记音程', count: 4, repeats: 3, points: 2, cue: 'standardTone', melodicCount: 2, harmonicCount: 2, answerMode: 'staff' },
         { key: 'chord', title: '听记和弦', count: 4, repeats: 3, points: 3, cue: 'standardTone', answerMode: 'staff' },
-        { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: 4, cue: 'countIn', bars: 8, systems: 2, meter: '2/4', answerMode: 'rhythmStaff' },
+        { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: 4, cue: 'countIn', bars: 8, systems: 2, answerMode: 'rhythmStaff' },
         { key: 'melody', title: '单声部旋律', count: 1, repeats: 6, points: 14.5, cue: 'standardTone+countIn', bars: 8, systems: 2, meter: '3/4', keySignature: 'F', answerMode: 'melodyStaff' }
       ]
     }]
@@ -83,8 +83,8 @@ var PROVINCE_FRAMEWORKS = {
         {
           key: 'rhythm', title: '听写节奏', count: 2, repeats: 4, points: 24, cue: 'tempoCue', answerMode: 'rhythmStaff',
           items: [
-            { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 4, points: 12, cue: 'tempoCue', bars: 4, systems: 2, meter: '2/4', answerMode: 'rhythmStaff' },
-            { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 4, points: 12, cue: 'tempoCue', bars: 4, systems: 2, meter: '3/4', answerMode: 'rhythmStaff' }
+            { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 4, points: 12, cue: 'tempoCue', bars: 4, systems: 2, answerMode: 'rhythmStaff' },
+            { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 4, points: 12, cue: 'tempoCue', bars: 4, systems: 2, answerMode: 'rhythmStaff' }
           ]
         },
         {
@@ -113,7 +113,7 @@ var PROVINCE_FRAMEWORKS = {
         { key: 'group', title: '旋律音组', count: 4, repeats: 3, repeatSource: 'fallback', points: null, cue: 'standardTone', groupSizes: [3, 3, 5, 5], answerMode: 'staff' },
         { key: 'interval', title: '旋律音程与和声音程', count: 6, repeats: 3, repeatSource: 'fallback', points: null, cue: 'standardTone', melodicCount: 3, harmonicCount: 3, answerMode: 'staff' },
         { key: 'chord', title: '和弦', count: 6, repeats: 3, repeatSource: 'fallback', points: null, cue: 'standardTone', answerMode: 'staff' },
-        { key: 'rhythm', title: '节奏', count: 1, repeats: 3, repeatSource: 'fallback', points: null, cue: 'countIn', bars: 8, systems: 2, meter: '6/8', answerMode: 'rhythmStaff' },
+        { key: 'rhythm', title: '节奏', count: 1, repeats: 3, repeatSource: 'fallback', points: null, cue: 'countIn', bars: 8, systems: 2, answerMode: 'rhythmStaff' },
         {
           key: 'melody', title: '单声部旋律', count: 2, repeats: 3, repeatSource: 'fallback', points: null, cue: 'standardTone+countIn', answerMode: 'melodyStaff',
           items: [
@@ -143,8 +143,8 @@ var PROVINCE_FRAMEWORKS = {
         {
           key: 'rhythm', title: '节奏', count: 2, repeats: 3, repeatSource: 'fallback', points: null, cue: 'countIn', answerMode: 'rhythmStaff',
           items: [
-            { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 3, repeatSource: 'fallback', points: null, cue: 'countIn', bars: 8, systems: 2, meter: '2/4', answerMode: 'rhythmStaff' },
-            { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 3, repeatSource: 'fallback', points: null, cue: 'countIn', bars: 8, systems: 2, meter: '3/4', answerMode: 'rhythmStaff' }
+            { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 3, repeatSource: 'fallback', points: null, cue: 'countIn', bars: 8, systems: 2, answerMode: 'rhythmStaff' },
+            { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 3, repeatSource: 'fallback', points: null, cue: 'countIn', bars: 8, systems: 2, answerMode: 'rhythmStaff' }
           ]
         },
         {
@@ -235,7 +235,7 @@ var PROVINCE_FRAMEWORKS = {
           { key: 'group', title: '旋律音组', count: 2, repeats: 3, points: 10, cue: 'standardTone', groupSizes: [5, 5], answerMode: 'staff' },
           { key: 'interval', title: '和声音程', count: 5, repeats: 3, points: 10, cue: 'standardTone', melodicCount: 0, harmonicCount: 5, answerMode: 'staff' },
           { key: 'chord', title: '和弦', count: 5, repeats: 3, points: 15, cue: 'standardTone', answerMode: 'staff' },
-          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: 12, cue: 'countIn', bars: 6, systems: 2, meter: '3/4', answerMode: 'rhythmStaff' },
+          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: 12, cue: 'countIn', bars: 6, systems: 2, answerMode: 'rhythmStaff' },
           {
             key: 'melody', title: '单声部旋律', count: 2, repeats: 6, points: 48, cue: 'standardTone+countIn', answerMode: 'melodyStaff',
             items: [
@@ -257,8 +257,8 @@ var PROVINCE_FRAMEWORKS = {
           {
             key: 'rhythm', title: '节奏', count: 2, repeats: 4, points: 23, cue: 'countIn', answerMode: 'rhythmStaff',
             items: [
-              { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 4, points: null, cue: 'countIn', bars: 6, systems: 2, meter: '2/4', answerMode: 'rhythmStaff' },
-              { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 4, points: null, cue: 'countIn', bars: 6, systems: 2, meter: '3/4', answerMode: 'rhythmStaff' }
+              { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 4, points: null, cue: 'countIn', bars: 6, systems: 2, answerMode: 'rhythmStaff' },
+              { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 4, points: null, cue: 'countIn', bars: 6, systems: 2, answerMode: 'rhythmStaff' }
             ]
           },
           { key: 'melody', title: '单声部旋律', count: 1, repeats: 6, points: 33, cue: 'standardTone+countIn', bars: 8, systems: 2, meter: '6/8', keySignature: 'F', answerMode: 'melodyStaff' }
@@ -282,7 +282,7 @@ var PROVINCE_FRAMEWORKS = {
         { key: 'group', title: '旋律音组', count: 2, repeats: 3, points: 4, cue: 'standardTone', groupSizes: [3, 5], answerMode: 'staff' },
         { key: 'interval', title: '旋律音程与和声音程', count: 2, repeats: 3, points: 4, cue: 'standardTone', melodicCount: 1, harmonicCount: 1, answerMode: 'staff' },
         { key: 'chord', title: '和弦', count: 2, repeats: 3, points: 4, cue: 'standardTone', answerMode: 'staff' },
-        { key: 'rhythm', title: '节奏', count: 1, repeats: 5, points: 4, cue: 'countIn', bars: 4, systems: 1, meter: '3/4', answerMode: 'rhythmStaff' },
+        { key: 'rhythm', title: '节奏', count: 1, repeats: 5, points: 4, cue: 'countIn', bars: 4, systems: 1, answerMode: 'rhythmStaff' },
         { key: 'melody', title: '单声部旋律', count: 1, repeats: 6, points: 8, cue: 'standardTone+countIn', bars: 8, systems: 2, meter: '4/4', keySignature: 'G', answerMode: 'melodyStaff' }
       ]
     }]
@@ -304,7 +304,7 @@ var PROVINCE_FRAMEWORKS = {
           { key: 'group', title: '旋律音组', count: 4, repeats: 3, points: null, cue: 'standardTone', groupSizes: [3, 3, 5, 5], answerMode: 'staff' },
           { key: 'interval', title: '旋律音程与和声音程', count: 5, repeats: 3, points: null, cue: 'standardTone', melodicCount: 3, harmonicCount: 2, answerMode: 'staff' },
           { key: 'chord', title: '和弦', count: 5, repeats: 3, points: null, cue: 'standardTone', answerMode: 'staff' },
-          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: null, cue: 'countIn', bars: 4, systems: 1, meter: '3/4', answerMode: 'rhythmStaff' },
+          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: null, cue: 'countIn', bars: 4, systems: 1, answerMode: 'rhythmStaff' },
           { key: 'melody', title: '单声部旋律', count: 1, repeats: 5, points: null, cue: 'standardTone+tonicChord+countIn', bars: 8, systems: 2, meter: '2/4', keySignature: 'G', answerMode: 'melodyStaff' }
         ]
       },
@@ -317,7 +317,7 @@ var PROVINCE_FRAMEWORKS = {
           { key: 'group', title: '旋律音组', count: 4, repeats: 3, points: null, cue: 'standardTone', groupSizes: [3, 3, 5, 5], answerMode: 'staff' },
           { key: 'interval', title: '旋律音程与和声音程', count: 5, repeats: 3, points: null, cue: 'standardTone', melodicCount: 3, harmonicCount: 2, answerMode: 'staff' },
           { key: 'chord', title: '和弦', count: 5, repeats: 3, points: null, cue: 'standardTone', answerMode: 'staff' },
-          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: null, cue: 'countIn', bars: 4, systems: 1, meter: '4/4', answerMode: 'rhythmStaff' },
+          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: null, cue: 'countIn', bars: 4, systems: 1, answerMode: 'rhythmStaff' },
           { key: 'melody', title: '单声部旋律', count: 1, repeats: 5, points: null, cue: 'standardTone+tonicChord+countIn', bars: 8, systems: 2, meter: '3/4', keySignature: 'F', answerMode: 'melodyStaff' }
         ]
       }
@@ -341,7 +341,7 @@ var PROVINCE_FRAMEWORKS = {
           { key: 'interval', title: '旋律音程与和声音程', count: 5, repeats: 3, points: 15, cue: 'standardTone', melodicCount: 2, harmonicCount: 3, answerMode: 'staff' },
           { key: 'connection', title: '和声音程连接', count: 1, repeats: 3, points: 10, cue: 'standardTone', intervalCount: 5, answerMode: 'staff' },
           { key: 'chord', title: '和弦', count: 5, repeats: 3, points: 15, cue: 'standardTone', answerMode: 'staff' },
-          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: 15, cue: 'countIn', bars: 4, systems: 1, meter: '2/4', answerMode: 'rhythmStaff' },
+          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: 15, cue: 'countIn', bars: 4, systems: 1, answerMode: 'rhythmStaff' },
           { key: 'melody', title: '单声部旋律', count: 1, repeats: 6, points: 24, cue: 'standardTone+countIn', bars: 8, systems: 2, meter: '3/4', keySignature: 'G', answerMode: 'melodyStaff' }
         ]
       },
@@ -355,7 +355,7 @@ var PROVINCE_FRAMEWORKS = {
           { key: 'interval', title: '旋律音程与和声音程', count: 5, repeats: 3, points: 15, cue: 'standardTone', melodicCount: 2, harmonicCount: 3, answerMode: 'staff' },
           { key: 'connection', title: '和声音程连接', count: 1, repeats: 3, points: 10, cue: 'standardTone', intervalCount: 5, answerMode: 'staff' },
           { key: 'chord', title: '和弦', count: 5, repeats: 3, points: 15, cue: 'standardTone', answerMode: 'staff' },
-          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: 15, cue: 'countIn', bars: 4, systems: 1, meter: '2/4', answerMode: 'rhythmStaff' },
+          { key: 'rhythm', title: '节奏', count: 1, repeats: 4, points: 15, cue: 'countIn', bars: 4, systems: 1, answerMode: 'rhythmStaff' },
           { key: 'melody', title: '单声部旋律', count: 1, repeats: 6, points: 24, cue: 'standardTone+countIn', bars: 8, systems: 2, meter: '3/4', keySignature: 'F', answerMode: 'melodyStaff' }
         ]
       }
@@ -378,7 +378,7 @@ var PROVINCE_FRAMEWORKS = {
         { key: 'interval', title: '旋律音程听记', count: 3, repeats: 3, points: 6, cue: 'standardTone', melodicCount: 3, harmonicCount: 0, answerMode: 'staff+quality', qualityRequired: true },
         { key: 'interval', title: '和声音程听记', count: 8, repeats: 3, points: 16, cue: 'standardTone', melodicCount: 0, harmonicCount: 8, answerMode: 'staff+quality', qualityRequired: true },
         { key: 'chord', title: '和弦听记', count: 8, repeats: 3, points: 16, cue: 'standardTone', answerMode: 'staff+quality', qualityRequired: true },
-        { key: 'rhythm', title: '节奏听记', count: 1, repeats: 5, points: 20, cue: 'countIn', bars: 8, systems: 2, meter: '2/4', answerMode: 'rhythmStaff' },
+        { key: 'rhythm', title: '节奏听记', count: 1, repeats: 5, points: 20, cue: 'countIn', bars: 8, systems: 2, answerMode: 'rhythmStaff' },
         { key: 'melody', title: '旋律听记', count: 1, repeats: 6, points: 26, cue: 'standardTone+tonicChord+countIn', bars: 8, systems: 2, meter: '3/4', keySignature: 'G', answerMode: 'melodyStaff' }
       ]
     }]
@@ -402,8 +402,8 @@ var PROVINCE_FRAMEWORKS = {
         {
           key: 'rhythm', title: '节奏听记', count: 2, repeats: 5, points: 22, cue: 'countIn', answerMode: 'rhythmStaff',
           items: [
-            { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 5, points: 11, cue: 'countIn', bars: 4, systems: 1, meter: '2/4', answerMode: 'rhythmStaff' },
-            { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 5, points: 11, cue: 'countIn', bars: 4, systems: 1, meter: '3/4', answerMode: 'rhythmStaff' }
+            { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 5, points: 11, cue: 'countIn', bars: 4, systems: 1, answerMode: 'rhythmStaff' },
+            { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 5, points: 11, cue: 'countIn', bars: 4, systems: 1, answerMode: 'rhythmStaff' }
           ]
         },
         {
@@ -437,8 +437,8 @@ var PROVINCE_FRAMEWORKS = {
           {
             key: 'rhythm', title: '节奏听写', count: 2, repeats: 4, points: 26, cue: 'tempoCue', answerMode: 'rhythmStaff',
             items: [
-              { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 4, points: 14, cue: 'tempoCue', bars: 4, systems: 1, meter: '2/4', answerMode: 'rhythmStaff' },
-              { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 4, points: 12, cue: 'tempoCue', bars: 4, systems: 1, meter: '3/4', answerMode: 'rhythmStaff' }
+              { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 4, points: 14, cue: 'tempoCue', bars: 4, systems: 1, answerMode: 'rhythmStaff' },
+              { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 4, points: 12, cue: 'tempoCue', bars: 4, systems: 1, answerMode: 'rhythmStaff' }
             ]
           },
           {
@@ -463,8 +463,8 @@ var PROVINCE_FRAMEWORKS = {
           {
             key: 'rhythm', title: '节奏听写', count: 2, repeats: 4, points: 26, cue: 'tempoCue', answerMode: 'rhythmStaff',
             items: [
-              { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 4, points: 14, cue: 'tempoCue', bars: 4, systems: 1, meter: '2/4', answerMode: 'rhythmStaff' },
-              { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 4, points: 12, cue: 'tempoCue', bars: 4, systems: 1, meter: '6/8', answerMode: 'rhythmStaff' }
+              { key: 'rhythm1', title: '节奏 1', count: 1, repeats: 4, points: 14, cue: 'tempoCue', bars: 4, systems: 1, answerMode: 'rhythmStaff' },
+              { key: 'rhythm2', title: '节奏 2', count: 1, repeats: 4, points: 12, cue: 'tempoCue', bars: 4, systems: 1, answerMode: 'rhythmStaff' }
             ]
           },
           {
@@ -495,7 +495,7 @@ var PROVINCE_FRAMEWORKS = {
           { key: 'group', title: '音组听记', count: 4, repeats: 4, points: 16, cue: 'standardTone', groupSizes: [3, 3, 5, 5], answerMode: 'staff' },
           { key: 'interval', title: '音程听记', count: 8, repeats: 4, points: 16, cue: 'standardTone', melodicCount: 4, harmonicCount: 4, answerMode: 'staff' },
           { key: 'chord', title: '和弦听记', count: 6, repeats: 4, points: 18, cue: 'standardTone', answerMode: 'staff' },
-          { key: 'rhythm', title: '节奏听记', count: 1, repeats: 6, points: 12, cue: 'countIn', bars: 8, systems: 2, meter: '4/4', answerMode: 'rhythmStaff' },
+          { key: 'rhythm', title: '节奏听记', count: 1, repeats: 6, points: 12, cue: 'countIn', bars: 8, systems: 2, answerMode: 'rhythmStaff' },
           { key: 'melody', title: '旋律听记', count: 1, repeats: 6, points: 24, cue: 'standardTone+countIn', bars: 8, systems: 2, meter: '3/4', keySignature: 'G', answerMode: 'melodyStaff' }
         ]
       },
@@ -508,7 +508,7 @@ var PROVINCE_FRAMEWORKS = {
           { key: 'group', title: '音组听记', count: 4, repeats: 4, points: 16, cue: 'standardTone', groupSizes: [3, 3, 5, 5], answerMode: 'staff' },
           { key: 'interval', title: '音程听记', count: 8, repeats: 4, points: 16, cue: 'standardTone', melodicCount: 4, harmonicCount: 4, answerMode: 'staff' },
           { key: 'chord', title: '和弦听记', count: 6, repeats: 4, points: 18, cue: 'standardTone', answerMode: 'staff' },
-          { key: 'rhythm', title: '节奏听记', count: 1, repeats: 6, points: 12, cue: 'countIn', bars: 8, systems: 2, meter: '2/4', answerMode: 'rhythmStaff' },
+          { key: 'rhythm', title: '节奏听记', count: 1, repeats: 6, points: 12, cue: 'countIn', bars: 8, systems: 2, answerMode: 'rhythmStaff' },
           { key: 'melody', title: '旋律听记', count: 1, repeats: 6, points: 24, cue: 'standardTone+countIn', bars: 8, systems: 2, meter: '4/4', keySignature: 'F', answerMode: 'melodyStaff' }
         ]
       }
@@ -532,7 +532,7 @@ var PROVINCE_FRAMEWORKS = {
         { key: 'group', title: '旋律音组', count: 4, repeats: 3, repeatSource: 'fallback', points: null, cue: 'standardTone', groupSizes: [3, 3, 5, 5], answerMode: 'staff' },
         { key: 'interval', title: '旋律音程与和声音程', count: 5, repeats: 3, repeatSource: 'fallback', points: null, cue: 'standardTone', melodicCount: 3, harmonicCount: 2, answerMode: 'staff+quality', qualityRequired: true },
         { key: 'chord', title: '和弦', count: 4, repeats: 3, repeatSource: 'fallback', points: null, cue: 'standardTone', answerMode: 'staff+quality', qualityRequired: true },
-        { key: 'rhythm', title: '节奏', count: 1, repeats: 3, repeatSource: 'fallback', points: null, cue: 'countIn', bars: 4, systems: 1, meter: '2/4', answerMode: 'rhythmStaff' },
+        { key: 'rhythm', title: '节奏', count: 1, repeats: 3, repeatSource: 'fallback', points: null, cue: 'countIn', bars: 4, systems: 1, answerMode: 'rhythmStaff' },
         { key: 'melody', title: '单声部旋律', count: 1, repeats: 3, repeatSource: 'fallback', points: null, cue: 'standardTone+countIn', bars: 8, systems: 2, meter: '3/4', keySignature: 'G', answerMode: 'melodyStaff' }
       ]
     }]

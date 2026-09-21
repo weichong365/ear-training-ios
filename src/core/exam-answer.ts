@@ -10,6 +10,10 @@ export type NotationEvent = {
   spelling?: string;
   barIndex?: number;
   inputOrder?: number;
+  /** 连至下一音（小程序 `tieToNext`）—— 参与判题签名，见 answer-sync.eventSignature */
+  tieToNext?: boolean;
+  /** 由前一音连入（小程序 `tieFromPrevious`）—— 跨谱行时只有入弧 */
+  tieFromPrevious?: boolean;
 };
 
 export type AccidentalMode = 'none' | 'sharp' | 'flat' | 'natural';

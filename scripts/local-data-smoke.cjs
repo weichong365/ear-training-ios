@@ -32,7 +32,7 @@ function loadLocalData(storage) {
   const module = { exports: {} };
   const localRequire = (id) => {
     if (id === '@react-native-async-storage/async-storage') return storage;
-    if (id === '@/core/audio-settings') return { DEFAULT_AUDIO_VOLUME: 78, parseStoredVolume: (value, fallback = 78) => Number.isFinite(Number(value)) ? Number(value) : fallback };
+    if (id === '@/core/audio-settings') return { DEFAULT_AUDIO_VOLUME: 80, parseStoredVolume: (value, fallback = 80) => Number.isFinite(Number(value)) ? Number(value) : fallback };
     if (id === '@/core/provinces') return { PROVINCES: [] };
     if (id === '../core/local-data-normalize.js') return require('../src/core/local-data-normalize.js');
     throw new Error(`unexpected local-data dependency: ${id}`);

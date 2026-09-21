@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root {
+    --cream: #F6F0E3;
+    --ivory: #FFFDF7;
+    --ink: #1B211D;
+    --muted: #5F6F65;
+    --forest: #1D6B4D;
+    --forest-deep: #103C2B;
+    --forest-soft: #DCEDE3;
+    --border: #D4DED7;
+    --gold: #B78922;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif; }
+  .canvas { width: 1290px; height: 2796px; background: var(--cream); position: relative; overflow: hidden; }
+
+  /* iOS Status Bar */
+  .statusbar { height: 180px; padding: 0 70px; display: flex; align-items: center; justify-content: space-between; position: relative; }
+  .statusbar .time { font-size: 54px; font-weight: 700; color: var(--ink); margin-left: 30px; }
+  .statusbar .right { display: flex; align-items: center; gap: 18px; }
+  .statusbar .right svg { display: block; }
+  .dynamic-island { position: absolute; left: 50%; top: 36px; transform: translateX(-50%); width: 360px; height: 110px; background: #000; border-radius: 55px; }
+
+  /* Nav */
+  .nav { height: 200px; padding: 0 60px; display: flex; align-items: center; justify-content: space-between; }
+  .nav .back { width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; }
+  .nav .back svg { width: 56px; height: 56px; }
+  .nav .title { font-size: 54px; font-weight: 800; color: var(--ink); letter-spacing: 1px; }
+
+  /* Head */
+  .head { padding: 40px 60px 30px; }
+  .head .h1 { font-size: 80px; font-weight: 900; color: var(--ink); letter-spacing: -1px; line-height: 1.1; }
+  .head .sub { margin-top: 30px; font-size: 40px; color: var(--muted); line-height: 1.5; }
+
+  /* Region block */
+  .region-block { padding: 30px 60px 0; }
+  .region-title { font-size: 44px; font-weight: 800; color: var(--forest); margin-bottom: 28px; letter-spacing: 2px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .grid-1 { display: flex; flex-direction: column; gap: 20px; }
+
+  /* Province card */
+  .card { background: var(--ivory); border: 2px solid var(--border); border-radius: 28px; padding: 36px 34px; min-height: 240px; position: relative; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; }
+  .card-name { font-size: 50px; font-weight: 900; color: var(--ink); }
+  .card-name-row { display: flex; align-items: center; gap: 16px; }
+  .generic-tag { font-size: 26px; color: var(--forest); background: var(--forest-soft); padding: 8px 18px; border-radius: 10px; font-weight: 700; }
+  .card-summary { margin-top: 18px; font-size: 32px; color: var(--muted); line-height: 1.4; }
+  .card-check { width: 56px; height: 56px; border-radius: 18px; background: var(--forest-soft); display: flex; align-items: center; justify-content: center; }
+  .card-selected { border: 3px solid var(--forest); background: #F0F8F3; }
+
+  /* Footnote */
+  .footnote { position: absolute; bottom: 60px; left: 60px; right: 60px; text-align: center; font-size: 32px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <!-- Status bar -->
+  <div class="statusbar">
+    <div class="time">9:41</div>
+    <div class="dynamic-island"></div>
+    <div class="right">
+      <!-- signal -->
+      <svg width="60" height="44" viewBox="0 0 60 44"><rect x="0" y="28" width="10" height="16" rx="2" fill="#1B211D"/><rect x="14" y="20" width="10" height="24" rx="2" fill="#1B211D"/><rect x="28" y="10" width="10" height="34" rx="2" fill="#1B211D"/><rect x="42" y="0" width="10" height="44" rx="2" fill="#1B211D"/></svg>
+      <!-- wifi -->
+      <svg width="56" height="40" viewBox="0 0 56 40"><path d="M28 36 L34 30 A6 6 0 0 0 22 30 Z" fill="#1B211D"/><path d="M28 24 Q38 14 50 24 L46 28 Q38 20 28 28 Q18 20 10 28 L6 24 Q18 14 28 24 Z" fill="#1B211D"/><path d="M28 8 Q44 -8 56 8 L52 12 Q40 4 28 12 Q16 4 4 12 L0 8 Q12 -8 28 8 Z" fill="#1B211D"/></svg>
+      <!-- battery -->
+      <svg width="80" height="40" viewBox="0 0 80 40"><rect x="0" y="0" width="72" height="40" rx="8" fill="none" stroke="#1B211D" stroke-width="3"/><rect x="74" y="12" width="6" height="16" rx="2" fill="#1B211D"/><rect x="6" y="6" width="56" height="28" rx="4" fill="#1B211D"/></svg>
+    </div>
+  </div>
+
+  <!-- Nav -->
+  <div class="nav">
+    <div class="back"></div>
+    <div class="title">选择省份</div>
+    <div class="back"></div>
+  </div>
+
+  <!-- Head -->
+  <div class="head">
+    <div class="h1">先选你所在的省份</div>
+    <div class="sub">系统会按该省音乐统考的题型，<br/>生成对应的专项练习模块</div>
+  </div>
+
+  <!-- 华北 -->
+  <div class="region-block">
+    <div class="region-title">华北</div>
+    <div class="grid-2">
+      <div class="card card-selected">
+        <div class="card-head">
+          <div class="card-name-row">
+            <div class="card-name">北京</div>
+            <div class="generic-tag">通用模板</div>
+          </div>
+          <div class="card-check">
+            <svg width="34" height="34" viewBox="0 0 34 34"><path d="M8 17 L14 23 L26 11" fill="none" stroke="#1D6B4D" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+        <div class="card-summary">单音 · 音组 · 音程</div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-name-row">
+            <div class="card-name">天津</div>
+            <div class="generic-tag">通用模板</div>
+          </div>
+          <svg width="32" height="32" viewBox="0 0 32 32"><path d="M12 8 L20 16 L12 24" fill="none" stroke="#2D7C59" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="card-summary">单音 · 音组 · 音程</div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-name-row">
+            <div class="card-name">河北</div>
+          </div>
+          <svg width="32" height="32" viewBox="0 0 32 32"><path d="M12 8 L20 16 L12 24" fill="none" stroke="#2D7C59" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="card-summary">单音 · 音组 · 音程 · 和弦 · 旋律</div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-name-row">
+            <div class="card-name">山西</div>
+          </div>
+          <svg width="32" height="32" viewBox="0 0 32 32"><path d="M12 8 L20 16 L12 24" fill="none" stroke="#2D7C59" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="card-summary">单音 · 音组 · 音程 · 和弦 · 节奏</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 东北 -->
+  <div class="region-block">
+    <div class="region-title">东北</div>
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-name-row">
+            <div class="card-name">辽宁</div>
+          </div>
+        </div>
+        <div class="card-summary">单音 · 音组 · 音程 · 和弦 · 旋律</div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-name-row">
+            <div class="card-name">吉林</div>
+            <div class="generic-tag">通用模板</div>
+          </div>
+        </div>
+        <div class="card-summary">单音 · 音组 · 音程</div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-name-row">
+            <div class="card-name">黑龙江</div>
+          </div>
+        </div>
+        <div class="card-summary">单音 · 音组 · 音程 · 和弦 · 节奏</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 华东 -->
+  <div class="region-block">
+    <div class="region-title">华东</div>
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-name-row">
+            <div class="card-name">上海</div>
+            <div class="generic-tag">通用模板</div>
+          </div>
+        </div>
+        <div class="card-summary">单音 · 音组 · 音程</div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-name-row">
+            <div class="card-name">江苏</div>
+          </div>
+        </div>
+        <div class="card-summary">单音 · 音组 · 音程 · 和弦 · 旋律</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">省份可随时在首页顶部切换，已选省份会保存在本机</div>
+</div>
+</body>
+</html>

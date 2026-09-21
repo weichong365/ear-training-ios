@@ -7,7 +7,7 @@ import { Brand, Radius, TypeScale } from '@/constants/theme';
 import { getExamResults, getPracticeStats, type ExamResultRecord, type PracticeStats } from '@/services/local-data';
 
 const TYPE_NAMES: Record<PracticeType, string> = {
-  single: '单音', group: '旋律音组', interval: '音程', connection: '和声音程连接', chord: '和弦', chordQuality: '和弦性质', chordPitch: '和弦音高', rhythm: '节奏', melody: '旋律',
+  single: '单音', group: '音组', interval: '音程', connection: '和声连接', chord: '和弦', chordQuality: '和弦性质', chordPitch: '和弦音高', rhythm: '节奏', melody: '旋律',
 };
 
 export default function StatsScreen() {
@@ -117,7 +117,9 @@ export default function StatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: Brand.cream },
+  // 状态栏下沿的分隔线：ScrollView 顶边正好落在 sceneStyle 的 paddingTop（= insets.top）处，
+  // 所以加 borderTop 就等于把线贴在状态栏下方，与底部 tabBar 上沿同一条（Brand.hairline）。
+  page: { flex: 1, backgroundColor: Brand.cream, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Brand.hairline },
   content: { padding: 16, paddingBottom: 44, gap: 14 },
   hero: { padding: 20, borderRadius: Radius.hero, backgroundColor: Brand.forest },
   title: { color: Brand.textOnAccent, fontSize: TypeScale.title2, fontWeight: '900', letterSpacing: -0.3 },

@@ -59,14 +59,11 @@ for (const type of ['single', 'interval', 'chord', 'rhythm', 'melody']) {
       const barEvents = question.bars.map((bar) => bar.map(() => ({
         midi: question.midis[cursor], duration: question.durs[cursor++]
       })));
-      const sounding = (bar) => bar.filter((event) => event.duration > 0);
-      assert.equal(sounding(barEvents[2])[0].midi, sounding(barEvents[0])[0].midi, '第二句没有保留主题起音');
-      assert.equal(sounding(barEvents[6])[0].midi, sounding(barEvents[0])[0].midi, '第四句没有再现主题起音');
-      assert.notDeepEqual(barEvents[2], barEvents[0], '第二句仍在机械复制第一句');
-      assert.notDeepEqual(barEvents[6], barEvents[0], '第四句仍在机械复制第一句');
-      question.phrases.forEach((phrase) => {
-        const notes = barEvents.slice(phrase.startBar - 1, phrase.endBar).flat().filter((event) => event.duration > 0);
-        assert.ok(Math.abs(notes.at(-1).midi - notes.at(-2).midi) <= 2, `${phrase.name}没有以级进收束`);
+      assert.equal(barEvents.length, 8, '2025 旋律题库原题必须保留完整 8 小节');
+      assert.equal(cursor, question.durs.length, '旋律小节与扁平时值序列没有完整对应');
+      assert.ok(question.sourcePaper > 0, '旋律题缺少原题来源编号');
+      barEvents.flat().filter((event) => event.duration > 0).forEach((event) => {
+        assert.ok(event.midi >= 55 && event.midi <= 81, `旋律音高超出采样范围：${event.midi}`);
       });
     }
   }

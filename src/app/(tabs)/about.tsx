@@ -3,7 +3,8 @@ import Constants from 'expo-constants';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppIcon } from '@/components/app-icon';
-import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
+import { Btn, hitSlopVertical } from '@/constants/button-tokens';
+import { Brand, Radius, TypeScale } from '@/constants/theme';
 import { clearLocalPracticeData } from '@/services/local-data';
 
 const PRIVACY_ROUTE = '/privacy' as Href;
@@ -49,14 +50,18 @@ export default function AboutScreen() {
         <Text style={styles.privacyTitle}>首版最小化收集数据</Text>
         <Text style={styles.privacyBody}>当前 iOS 工程不接入广告、追踪 SDK 或微信登录，练习记录、错题和模拟考试进度默认保存在本机。</Text>
         <View style={styles.linkRow}>
-          <Pressable accessibilityRole="link" onPress={() => router.push(PRIVACY_ROUTE)} style={styles.linkButton}><Text style={styles.linkText}>隐私政策</Text></Pressable>
-          <Pressable accessibilityRole="link" onPress={() => router.push(SUPPORT_ROUTE)} style={styles.linkButton}><Text style={styles.linkText}>使用帮助</Text></Pressable>
+          <Pressable accessibilityRole="link" hitSlop={hitSlopVertical(Btn.about.inviteButton.height)} onPress={() => router.push(PRIVACY_ROUTE)} style={styles.linkButton}><Text style={styles.linkText}>隐私政策</Text></Pressable>
+          <Pressable accessibilityRole="link" hitSlop={hitSlopVertical(Btn.about.inviteButton.height)} onPress={() => router.push(SUPPORT_ROUTE)} style={styles.linkButton}><Text style={styles.linkText}>使用帮助</Text></Pressable>
         </View>
-        <Pressable accessibilityRole="button" onPress={clearData} style={styles.clearButton}><Text style={styles.clearText}>清除本机练习数据</Text></Pressable>
+        <Pressable accessibilityRole="button" hitSlop={hitSlopVertical(Btn.about.inviteButton.height)} onPress={clearData} style={styles.clearButton}><Text style={styles.clearText}>清除本机练习数据</Text></Pressable>
       </View>
 
       <View style={styles.copyright}>
-        <Text style={styles.copyrightText}>钢琴音色：内置离线定音采样</Text>
+        <Text style={styles.copyrightText}>钢琴采样：bitKlavier Grand（new Steinway D）</Text>
+        <Text style={styles.copyrightText}>Dan Trueman 制作 · Princeton University 录制</Text>
+        <Text style={styles.copyrightText}>许可 CC BY 4.0 · creativecommons.org/licenses/by/4.0</Text>
+        <Text style={styles.copyrightText}>来源 bitklavier.com/the-bitklavier-grand</Text>
+        <Text style={styles.copyrightText}>本项目做了裁切、单声道、音高校准与响度归一</Text>
         <Text style={styles.copyrightText}>© 2026 练耳搭子</Text>
       </View>
     </ScrollView>
@@ -64,7 +69,9 @@ export default function AboutScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: Brand.cream },
+  // 状态栏下沿的分隔线：ScrollView 顶边正好落在 sceneStyle 的 paddingTop（= insets.top）处，
+  // 所以加 borderTop 就等于把线贴在状态栏下方，与底部 tabBar 上沿同一条（Brand.hairline）。
+  page: { flex: 1, backgroundColor: Brand.cream, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Brand.hairline },
   content: { padding: 18, paddingBottom: 45, gap: 12 },
   brandCard: { padding: 27, alignItems: 'center', borderRadius: Radius.hero, backgroundColor: Brand.forestDeep },
   mark: { width: 70, height: 70, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.hero, borderWidth: 1, borderColor: 'rgba(255,255,255,.18)', backgroundColor: 'rgba(255,255,255,.10)' },
@@ -82,10 +89,10 @@ const styles = StyleSheet.create({
   privacyTitle: { color: Brand.ink, fontSize: TypeScale.headline, fontWeight: '900' },
   privacyBody: { marginTop: 7, color: Brand.muted, fontSize: TypeScale.footnote, lineHeight: 20 },
   linkRow: { marginTop: 12, flexDirection: 'row', gap: 8 },
-  linkButton: { flex: 1, minHeight: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forestSoft },
-  linkText: { color: Brand.forest, fontSize: TypeScale.footnote, fontWeight: '800' },
-  clearButton: { minHeight: TouchTarget, marginTop: 14, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.dangerSoft },
-  clearText: { color: Brand.danger, fontSize: TypeScale.footnote, fontWeight: '800' },
+  linkButton: { flex: 1, ...Btn.about.inviteButton, alignItems: 'center', justifyContent: 'center', backgroundColor: Brand.forestSoft },
+  linkText: { color: Brand.forest, fontSize: Btn.about.inviteButton.fontSize, fontWeight: '800' },
+  clearButton: { ...Btn.about.inviteButton, marginTop: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: Brand.dangerSoft },
+  clearText: { color: Brand.danger, fontSize: Btn.about.inviteButton.fontSize, fontWeight: '800' },
   copyright: { marginTop: 12, alignItems: 'center', gap: 5 },
   copyrightText: { color: Brand.muted, fontSize: TypeScale.caption },
 });

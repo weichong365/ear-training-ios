@@ -1,18 +1,44 @@
 import { memo, useMemo, useState } from 'react';
-import { GestureResponderEvent, Image, LayoutChangeEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Ellipse, G, Line, Text as SvgText } from 'react-native-svg';
+import { GestureResponderEvent, LayoutChangeEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
-import { MusicAccidental, MusicFlag, MusicNotehead, MusicRest, noteheadHalfWidth } from '@/components/music-glyphs';
+import { StaffNotation } from '@/components/staff-notation';
+import { Btn, hitSlopFor } from '@/constants/button-tokens';
+import { Brand, TypeScale } from '@/constants/theme';
 import { meterBeatScale, meterCapacity, splitBars, sumDuration, targetTimedEvents } from '@/core/answer-sync';
 import type { ExamAnswer, NotationEvent } from '@/core/exam-answer';
-import { augmentationDotY, barlineBounds, beamGroupAtBeat, durationNotation, fitTupletBeamY, ledgerLineYs, noteheadStemStart, STAFF_LINE_YS, STAFF_MIDDLE_LINE_Y, STAFF_STROKE_WIDTH, staffStepFromWrittenMidi, stemDirectionForWrittenMidis, type DurationNotation, type StemDirection } from '@/core/music-notation';
-import { accidentalGlyphForKeySignature, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
+import { defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
 import type { ExamQuestion } from '@/core/provinces';
-import { naturalMidiFromStaffSvgY, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
+import { buildStaffGeometry } from '@/core/staff-notation-geometry';
+import {
+  DEFAULT_STAFF_WIDTH_RPX,
+  EMPTY_FONT_SIZE,
+  EMPTY_HEIGHT,
+  EMPTY_TOP,
+  FIXED_BAR_LEFT_COMPACT,
+  FIXED_BAR_RIGHT_COMPACT,
+  RPX_TO_PT,
+  STAFF_HEIGHT_RPX,
+  STAFF_SHELL_BORDER,
+  STAFF_SHELL_RADIUS,
+  type StaffEvent,
+} from '@/core/staff-layout';
+import { ANSWER_STAFF_HEIGHT, naturalMidiFromStaffSvgY, staffViewBoxWidth } from '@/core/staff-coordinate';
 
-const STAFF_HEIGHT = 96;
-const STAFF_CENTER_Y = STAFF_MIDDLE_LINE_Y;
+/**
+ * 听记谱面（节奏 / 旋律）书写与预览。
+ *
+ * 绘制全部交给 @/components/staff-notation（小程序 components/staff-notation 的 1:1 移植）：
+ * viewBox 用 rpx、画布高 70pt，音符 x 直接取小程序 horizontalLayout 的 centers，
+ * 字形尺寸取 Bravura 在 lineGap=15rpx 下的实测裁切盒 —— 与小程序的绝对 rpx 定位一致。
+ */
+
+/** 小程序 answer-staff.js 的 closestTarget 容差（单位 rpx） */
+const TAP_DX = 42;
+const TAP_DY = 20;
+/** 可写音域 G3–A5，与小程序 answer-staff.js 的 MIN_STEP/MAX_STEP 一致 */
+const MIN_MIDI = 55;
+const MAX_MIDI = 81;
+
 const METERS = ['2/4', '3/4', '4/4', '3/8', '6/8'];
 const KEYS = [
   { value: 'C', label: 'C 大调' },
@@ -50,16 +76,19 @@ function writtenMidi(event: NotationEvent) {
   return naturalMidiForPitchSpelling(event.midi, event.spelling);
 }
 
-function accidentalGlyph(event: NotationEvent, keySignature: string) {
-  return accidentalGlyphForKeySignature(event.midi, event.spelling, keySignature);
-}
-
-function pressPoint(event: GestureResponderEvent, width: number, height: number) {
+/** 触摸点 → 谱面 rpx 坐标 */
+function pressPoint(event: GestureResponderEvent, width: number, height: number, viewBoxWidth: number) {
   const native = event.nativeEvent as typeof event.nativeEvent & { offsetX?: number; offsetY?: number };
   return {
-    x: Number(native.locationX ?? native.offsetX ?? width / 2) * 340 / Math.max(1, width),
-    y: Number(native.locationY ?? native.offsetY ?? height / 2) * STAFF_HEIGHT / Math.max(1, height),
+    x: Number(native.locationX ?? native.offsetX ?? width / 2) * viewBoxWidth / Math.max(1, width),
+    y: Number(native.locationY ?? native.offsetY ?? height / 2) * STAFF_HEIGHT_RPX / Math.max(1, height),
   };
+}
+
+/** practice.js onTimedStaffTap：固定小节布局的可用宽度为 630 − 112 − 8（rpx） */
+function barIndexFromX(x: number, barCount: number) {
+  const barWidth = (DEFAULT_STAFF_WIDTH_RPX - FIXED_BAR_LEFT_COMPACT - FIXED_BAR_RIGHT_COMPACT) / Math.max(1, barCount);
+  return Math.max(0, Math.min(barCount - 1, Math.floor((x - FIXED_BAR_LEFT_COMPACT) / Math.max(1, barWidth))));
 }
 
 function decorateSequentialBars(events: NotationEvent[], capacity: number) {
@@ -90,247 +119,112 @@ type TimedStaffProps = {
   ink?: boolean;
   tone?: 'red' | 'green' | '';
   emptyText: string;
+  /** 小程序 answer-staff 的 width（rpx）；缺省=630（设计宽，不是容器宽） */
+  staffWidth?: number;
   onStaffTap?: (barIndex: number, midi: number, spelling: string) => void;
   onEventTap?: (event: NotationEvent) => void;
 };
 
-type RenderedNotation = {
-  item: NotationEvent;
-  index: number;
-  beat: number;
-  beamGroup: number;
-  localBar: number;
-  x: number;
-  y: number;
-  written: number;
-  notation: DurationNotation;
-  direction: StemDirection;
-  headHalfWidth: number;
-};
+export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, capacityMeter, keySignature, barOffset, barCount, isFinalSystem, disabled, ink = false, tone = '', emptyText, staffWidth, onStaffTap, onEventTap }: TimedStaffProps) {
+  const [layout, setLayout] = useState({ width: 0, height: ANSWER_STAFF_HEIGHT });
+  /** 实测容器宽 → viewBox 宽（rpx）；指定 staffWidth 时以它为准（与小程序 style.width 等价） */
+  const layoutWidth = staffWidth || DEFAULT_STAFF_WIDTH_RPX;
+  const viewBoxWidth = staffWidth || staffViewBoxWidth(layout.width);
+  const beamMeter = capacityMeter || meter;
 
-type StemLine = { key: string; x: number; y1: number; y2: number };
-type BeamLine = { key: string; x1: number; x2: number; y: number };
-type FlagMark = { key: string; stemX: number; stemEndY: number; beamCount: number; direction: StemDirection };
-type TupletMark = { key: string; x: number; y: number };
+  /** NotationEvent → 小程序 staff-notation 的事件形状；barIndex 归一化到本系统（0/1） */
+  const staffEvents: StaffEvent[] = useMemo(() => events.map((item, index) => ({
+    midis: [item.midi],
+    spellings: item.spelling ? [item.spelling] : [],
+    dur: Number(item.duration) || 1,
+    rest: Boolean(item.rest),
+    barIndex: Number.isInteger(item.barIndex) ? Number(item.barIndex) - barOffset : undefined,
+    tieToNext: Boolean(item.tieToNext),
+    // 跨系统时上游会显式写 tieFromPrevious；同系统内直接看前一个音是否连出。
+    tieFromPrevious: Boolean(item.tieFromPrevious) || (index > 0 && Boolean(events[index - 1].tieToNext)),
+  })), [events, barOffset]);
 
-function buildStemLayout(notes: RenderedNotation[]) {
-  const stems: StemLine[] = [];
-  const beams: BeamLine[] = [];
-  const flags: FlagMark[] = [];
-  const tuplets: TupletMark[] = [];
-  const stemLength = 27;
-  const tupletGap = 4;
-  const tupletHeight = 9;
-  const beamThickness = 4;
-  let run: RenderedNotation[] = [];
-
-  function stemStart(note: RenderedNotation, direction = note.direction) {
-    return noteheadStemStart(note.x, note.y, note.headHalfWidth, direction);
-  }
-
-  function addIndependent(note: RenderedNotation) {
-    const start = stemStart(note);
-    const stemEndY = note.direction === 'up' ? note.y - stemLength : note.y + stemLength;
-    stems.push({ key: `stem-${note.index}`, x: start.x, y1: start.y, y2: stemEndY });
-    if (note.notation.beamCount) {
-      flags.push({ key: `flag-${note.index}`, stemX: start.x, stemEndY, beamCount: note.notation.beamCount, direction: note.direction });
-    }
-  }
-
-  function flushRun() {
-    if (run.length === 1) addIndependent(run[0]);
-    if (run.length >= 2) {
-      const anchor = run.reduce((best, note) => Math.abs(staffStepFromWrittenMidi(note.written) - 4) > Math.abs(staffStepFromWrittenMidi(best.written) - 4) ? note : best, run[0]);
-      const direction = anchor.direction;
-      const starts = run.map((note) => stemStart(note, direction));
-      let beamY = direction === 'up'
-        ? Math.min(...run.map((note) => note.y - stemLength))
-        : Math.max(...run.map((note) => note.y + stemLength));
-      if (run.some((note) => note.notation.tuplet)) {
-        beamY = fitTupletBeamY(beamY, direction, STAFF_HEIGHT, tupletHeight, tupletGap, beamThickness);
-      }
-      beams.push({ key: `beam-${run[0].index}`, x1: starts[0].x, x2: starts[starts.length - 1].x, y: beamY });
-      run.forEach((note, index) => stems.push({
-        key: `stem-${note.index}`,
-        x: starts[index].x,
-        y1: starts[index].y,
-        y2: beamY,
-      }));
-
-      let subRun: number[] = [];
-      const flushSubRun = () => {
-        if (!subRun.length) return;
-        const secondaryY = beamY + (direction === 'up' ? 5.5 : -5.5);
-        if (subRun.length >= 2) {
-          beams.push({ key: `beam-2-${run[subRun[0]].index}`, x1: starts[subRun[0]].x, x2: starts[subRun[subRun.length - 1]].x, y: secondaryY });
-        } else {
-          const position = subRun[0];
-          const pointsRight = position === 0;
-          beams.push({ key: `beamlet-${run[position].index}`, x1: starts[position].x + (pointsRight ? 0 : -9), x2: starts[position].x + (pointsRight ? 9 : 0), y: secondaryY });
-        }
-        subRun = [];
-      };
-      run.forEach((note, index) => {
-        if (note.notation.beamCount >= 2) subRun.push(index);
-        else flushSubRun();
-      });
-      flushSubRun();
-    }
-    run = [];
-  }
-
-  notes.forEach((note) => {
-    if (note.item.rest || !note.notation.hasStem) {
-      flushRun();
-      return;
-    }
-    if (note.notation.beamCount > 0) {
-      if (run.length && run[run.length - 1].localBar !== note.localBar) flushRun();
-      if (run.length && run[run.length - 1].beamGroup !== note.beamGroup) flushRun();
-      if (run.length && !!run[run.length - 1].notation.tuplet !== !!note.notation.tuplet) flushRun();
-      run.push(note);
-      return;
-    }
-    flushRun();
-    addIndependent(note);
-  });
-  flushRun();
-
-  // 三连音「3」放横梁外侧，x 对齐组内中间音符（与小程序 staff-notation 同步）。
-  let tripletGroup: RenderedNotation[] = [];
-  const dist = (note: RenderedNotation) => Math.abs(staffStepFromWrittenMidi(note.written) - 4);
-  const flushTriplet = () => {
-    if (!tripletGroup.length) return;
-    const anchor = tripletGroup.reduce((best, note) => (dist(note) > dist(best) ? note : best), tripletGroup[0]);
-    const middle = tripletGroup[Math.floor(tripletGroup.length / 2)];
-    let y;
-    if (anchor.direction === 'up') {
-      const beamY = fitTupletBeamY(Math.min(...tripletGroup.map((note) => note.y - stemLength)), 'up', STAFF_HEIGHT, tupletHeight, tupletGap, beamThickness);
-      y = beamY - tupletGap;
-    } else {
-      const beamY = fitTupletBeamY(Math.max(...tripletGroup.map((note) => note.y + stemLength)), 'down', STAFF_HEIGHT, tupletHeight, tupletGap, beamThickness);
-      y = beamY + beamThickness + tupletGap + tupletHeight;
-    }
-    tuplets.push({ key: `tuplet-${tripletGroup[0].index}`, x: middle.x, y });
-    tripletGroup = [];
-  };
-  notes.forEach((note) => {
-    const isTuplet = !!note.notation.tuplet && !note.item.rest;
-    if (!isTuplet) { flushTriplet(); return; }
-    if (tripletGroup.length && note.localBar !== tripletGroup[tripletGroup.length - 1].localBar) flushTriplet();
-    if (tripletGroup.length && note.beamGroup !== tripletGroup[tripletGroup.length - 1].beamGroup) flushTriplet();
-    tripletGroup.push(note);
-  });
-  flushTriplet();
-
-  return { stems, beams, flags, tuplets };
-}
-
-export const TimedAnswerStaff = memo(function TimedAnswerStaff({ events, meter, capacityMeter, keySignature, barOffset, barCount, isFinalSystem, disabled, ink = false, tone = '', emptyText, onStaffTap, onEventTap }: TimedStaffProps) {
-  const [layout, setLayout] = useState({ width: 340, height: STAFF_HEIGHT });
-  const capacity = meterCapacity(capacityMeter || meter, 4);
-  const noteStart = 104;
-  const barWidth = (330 - noteStart) / Math.max(1, barCount);
-  const positioned = useMemo(() => Array.from({ length: barCount }, (_, localBar) => {
-    const values = events.filter((item) => Number(item.barIndex) === barOffset + localBar || (!Number.isInteger(item.barIndex) && localBar === 0));
-    let beat = 0;
-    return values.map((item) => {
-      const current = { item, beat, localBar };
-      beat += Math.abs(item.duration);
-      return current;
-    });
-  }).flat(), [barCount, barOffset, events]);
-  const rendered = useMemo<RenderedNotation[]>(() => positioned.map(({ item, beat, localBar }, index) => {
-    const x = noteStart + localBar * barWidth + 13 + beat / capacity * (barWidth - 26);
-    const written = writtenMidi(item);
-    const notation = durationNotation(item.duration);
-    return {
-      item,
-      index,
-      beat,
-      beamGroup: beamGroupAtBeat(beat, capacityMeter || meter),
-      localBar,
-      x,
-      y: staffSvgYFromWrittenMidi(written),
-      written,
-      notation,
-      direction: stemDirectionForWrittenMidis([written]),
-      headHalfWidth: noteheadHalfWidth(notation.headKind),
-    };
-  }), [barWidth, capacity, capacityMeter, meter, positioned]);
-  const stemLayout = useMemo(() => buildStemLayout(rendered), [rendered]);
-  const color = tone === 'green' ? '#2e8b6f' : tone === 'red' ? Brand.danger : ink ? '#141414' : Brand.ink;
-  const staffLine = ink ? '#141414' : '#596169';
-  const barline = barlineBounds();
-  const finalBarX = noteStart + barCount * barWidth;
+  const geometry = useMemo(() => buildStaffGeometry(staffEvents, {
+    width: layoutWidth,
+    meter,
+    beamMeter,
+    keySignature,
+    barCount,
+  }), [staffEvents, layoutWidth, meter, beamMeter, keySignature, barCount]);
 
   function tap(event: GestureResponderEvent) {
     if (disabled) return;
-    const point = pressPoint(event, layout.width, layout.height);
-    const localBar = Math.max(0, Math.min(barCount - 1, Math.floor((point.x - noteStart) / barWidth)));
-    const nearest = positioned.reduce<{ event: NotationEvent | null; distance: number }>((best, value) => {
-      const x = noteStart + value.localBar * barWidth + 13 + value.beat / capacity * (barWidth - 26);
-      const y = staffSvgYFromWrittenMidi(writtenMidi(value.item)) * STAFF_HEIGHT / 96;
-      const distance = Math.pow(point.x - x, 2) + Math.pow(point.y - y, 2) * 2;
-      return Math.abs(point.x - x) < 28 && Math.abs(point.y - y) < 22 && distance < best.distance ? { event: value.item, distance } : best;
-    }, { event: null, distance: Infinity }).event;
-    if (nearest) return onEventTap?.(nearest);
-    const naturalMidi = naturalMidiFromStaffSvgY(point.y * 96 / STAFF_HEIGHT, 55, 81);
+    const point = pressPoint(event, layout.width, layout.height, viewBoxWidth);
+    const nearest = geometry.targets.reduce<{ target: (typeof geometry.targets)[number] | null; distance: number }>((best, target) => {
+      const dx = Math.abs(target.x - point.x);
+      const dy = Math.abs(target.y - point.y);
+      if (dx > TAP_DX || dy > TAP_DY) return best;
+      const distance = dx * dx + dy * dy * 2;
+      return distance < best.distance ? { target, distance } : best;
+    }, { target: null, distance: Infinity }).target;
+    if (nearest) {
+      onEventTap?.(events[nearest.eventIndex]);
+      return;
+    }
+    const naturalMidi = naturalMidiFromStaffSvgY(point.y, MIN_MIDI, MAX_MIDI);
     const note = applyKeySignature(naturalMidi, keySignature);
-    onStaffTap?.(barOffset + localBar, note.midi, note.spelling);
+    onStaffTap?.(barOffset + barIndexFromX(point.x, barCount), note.midi, note.spelling);
   }
 
-  return <Pressable accessibilityRole={disabled ? 'image' : 'button'} accessibilityState={disabled ? undefined : { disabled: false }} disabled={disabled} onPress={tap} onLayout={(event: LayoutChangeEvent) => setLayout(event.nativeEvent.layout)} style={[styles.staffShell, ink && styles.inkStaff, tone === 'red' && styles.wrongStaff, tone === 'green' && styles.correctStaff]} accessibilityLabel={disabled ? '五线谱谱例' : '两小节五线谱答题区域'}>
-    <Svg viewBox="0 0 340 96" preserveAspectRatio="none" width="100%" height="100%">
-      {STAFF_LINE_YS.map((y) => <Line key={y} x1="12" x2="330" y1={y} y2={y} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />)}
-      {keySignature === 'G' && <MusicAccidental x={57} y={staffSvgYFromWrittenMidi(77)} glyph="♯" color={Brand.ink} />}
-      {keySignature === 'F' && <MusicAccidental x={57} y={staffSvgYFromWrittenMidi(71)} glyph="♭" color={Brand.ink} />}
-      {!!meter && <><SvgText x="82" y={STAFF_LINE_YS[1]} fontSize="17" fontWeight="700" textAnchor="middle" alignmentBaseline="central" fill={Brand.ink}>{meter.split('/')[0]}</SvgText><SvgText x="82" y={STAFF_LINE_YS[3]} fontSize="17" fontWeight="700" textAnchor="middle" alignmentBaseline="central" fill={Brand.ink}>{meter.split('/')[1]}</SvgText></>}
-      {Array.from({ length: barCount }, (_, index) => <Line key={`bar-${index}`} x1={noteStart + index * barWidth} x2={noteStart + index * barWidth} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />)}
-      {isFinalSystem ? <>
-        <Line key="final-bar-thin" x1={finalBarX - 4} x2={finalBarX - 4} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />
-        <Line key="final-bar-thick" x1={finalBarX} x2={finalBarX} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth="3" />
-      </> : <Line key="terminal-bar" x1={finalBarX} x2={finalBarX} y1={barline.top} y2={barline.bottom} stroke={staffLine} strokeWidth={STAFF_STROKE_WIDTH} />}
-      {rendered.map(({ item, index, x, y, written, notation }, renderedIndex) => {
-        const glyph = accidentalGlyph(item, keySignature);
-        return <G key={`${item.inputOrder || index}-${rendered[renderedIndex].localBar}-${rendered[renderedIndex].beat}`}>
-          {item.rest ? <>
-            <MusicRest x={x} kind={notation.restKind} color={color} />
-            {!!notation.dotCount && <Ellipse cx={x + 9} cy={43} rx="1.65" ry="1.65" fill={color} />}
-          </> : <>
-            {ledgerLineYs(written).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={x - 11} x2={x + 11} y1={ledgerY} y2={ledgerY} stroke={color} strokeWidth={STAFF_STROKE_WIDTH} />)}
-            {!!glyph && <MusicAccidental x={x - 15} y={y} glyph={glyph} color={color} />}
-            <MusicNotehead x={x} y={y} kind={notation.headKind} color={color} />
-            {!!notation.dotCount && <Ellipse cx={x + noteheadHalfWidth(notation.headKind) + 5} cy={augmentationDotY(written)} rx="1.65" ry="1.65" fill={color} />}
-          </>}
-        </G>;
-      })}
-      {stemLayout.stems.map((stem) => <Line key={stem.key} x1={stem.x} x2={stem.x} y1={stem.y1} y2={stem.y2} stroke={color} strokeWidth="1.5" />)}
-      {stemLayout.beams.map((beam) => <Line key={beam.key} x1={beam.x1} x2={beam.x2} y1={beam.y} y2={beam.y} stroke={color} strokeWidth="4" strokeLinecap="butt" />)}
-      {stemLayout.flags.map((flag) => <MusicFlag key={flag.key} stemX={flag.stemX} stemEndY={flag.stemEndY} beamCount={flag.beamCount} direction={flag.direction} color={color} />)}
-      {stemLayout.tuplets.map((tuplet) => <SvgText key={tuplet.key} x={tuplet.x} y={tuplet.y} fontSize="9" fontStyle="italic" fontWeight="700" textAnchor="middle" fill={color}>3</SvgText>)}
-    </Svg>
-    <Image source={require('../../assets/images/g-clef.png')} resizeMode="contain" style={styles.timedClef} />
-    {!events.length && <Text style={[styles.emptyText, { pointerEvents: 'none' }]}>{emptyText}</Text>}
-  </Pressable>;
+  return (
+    <View style={[styles.staffShell, ink && styles.inkStaff, tone === 'red' && styles.wrongStaff, tone === 'green' && styles.correctStaff, staffWidth ? { width: staffWidth * RPX_TO_PT } : null]}>
+      <Pressable
+        accessibilityRole={disabled ? 'image' : 'button'}
+        accessibilityState={disabled ? undefined : { disabled: false }}
+        accessibilityLabel={disabled ? '五线谱谱例' : '两小节五线谱答题区域'}
+        disabled={disabled}
+        onPress={tap}
+        onLayout={(event: LayoutChangeEvent) => setLayout(event.nativeEvent.layout)}
+        style={styles.staffTouch}>
+        <StaffNotation
+          events={staffEvents}
+          viewBoxWidth={viewBoxWidth}
+          width={layoutWidth}
+          meter={meter}
+          beamMeter={beamMeter}
+          keySignature={keySignature}
+          barCount={barCount}
+          tone={tone}
+          ink={ink}
+          last={isFinalSystem}
+        />
+        {!events.length && <Text pointerEvents="none" style={styles.emptyText}>{emptyText}</Text>}
+      </Pressable>
+    </View>
+  );
 });
 
-// Read-only compatibility renderer used by the choice-paper preview.  It follows
-// the same two-bars-per-system layout as the mini program answer staff.
-export const NotationStaff = memo(function NotationStaff({ events, meter, keySignature = '', barCount, ink = false }: { events: NotationEvent[]; meter: string; keySignature?: string; barCount: number; ink?: boolean }) {
+/**
+ * 只读谱例（选择题谱面预览 / 答案谱）。
+ * 不给 staffWidth 时按小程序 `answer-staff width="630" bar-count=2` 分行；
+ * 给了 staffWidth 就是小程序 exam.wxml 的 `style="width: {{option.staffWidth}}rpx"` 单谱面。
+ */
+export const NotationStaff = memo(function NotationStaff({ events, meter, keySignature = '', barCount, ink = false, tone = '', staffWidth }: { events: NotationEvent[]; meter: string; keySignature?: string; barCount: number; ink?: boolean; tone?: 'red' | 'green' | ''; staffWidth?: number }) {
   const capacity = meterCapacity(meter, 4);
   const decorated = decorateSequentialBars(events, capacity);
+
+  if (staffWidth) {
+    return <TimedAnswerStaff events={decorated} meter={meter} capacityMeter={meter} keySignature={keySignature} barOffset={0} barCount={Math.max(1, barCount)} isFinalSystem disabled ink={ink} tone={tone} emptyText="" staffWidth={staffWidth} />;
+  }
+
   const systems = Math.max(1, Math.ceil(barCount / 2));
   return <View style={{ gap: 7 }}>{Array.from({ length: systems }, (_, systemIndex) => {
     const barOffset = systemIndex * 2;
     const systemBarCount = Math.min(2, barCount - barOffset);
-    return <TimedAnswerStaff key={systemIndex} events={decorated.filter((event) => Number(event.barIndex) >= barOffset && Number(event.barIndex) < barOffset + systemBarCount)} meter={systemIndex === 0 ? meter : ''} capacityMeter={meter} keySignature={keySignature} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled ink={ink} emptyText="" />;
+    return <TimedAnswerStaff key={systemIndex} events={decorated.filter((event) => Number(event.barIndex) >= barOffset && Number(event.barIndex) < barOffset + systemBarCount)} meter={systemIndex === 0 ? meter : ''} capacityMeter={meter} keySignature={keySignature} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled ink={ink} tone={tone} emptyText="" />;
   })}</View>;
 });
 
 export function NotationEditor({ question, answer, unlocked, disabled, reviewCorrect, showCorrect, ink = false, onChange }: { question: ExamQuestion; answer: ExamAnswer; unlocked: boolean; disabled?: boolean; reviewCorrect?: boolean; showCorrect?: boolean; ink?: boolean; onChange: (answer: ExamAnswer) => void }) {
   const [duration, setDuration] = useState(1);
   const [rest, setRest] = useState(false);
+  /** 小程序 practice.js 的 inputTie：只对节奏题开放，与休止符互斥 */
+  const [tie, setTie] = useState(false);
   const [message, setMessage] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<number | null>(null);
   const isMelody = question.type === 'melody';
@@ -366,9 +260,35 @@ export function NotationEditor({ question, answer, unlocked, disabled, reviewCor
       return;
     }
     const inputOrder = Math.max(0, ...answer.events.map((item) => Number(item.inputOrder) || 0)) + 1;
-    const nextEvent: NotationEvent = rest ? { midi: 69, duration: -duration, rest: true, barIndex, inputOrder } : { midi: isMelody ? midi : 69, spelling: isMelody ? spelling : undefined, duration, barIndex, inputOrder };
+    const nextEvent: NotationEvent = rest
+      ? { midi: 69, duration: -duration, rest: true, barIndex, inputOrder }
+      : {
+        midi: isMelody ? midi : 69,
+        spelling: isMelody ? spelling : undefined,
+        duration,
+        barIndex,
+        inputOrder,
+        // 小程序：只有节奏题会把 inputTie 写进事件；旋律题的谱面无连音线输入
+        ...(isMelody ? {} : { tieToNext: tie }),
+      };
     setMessage('');
     onChange({ ...answer, events: [...answer.events, nextEvent].sort((left, right) => Number(left.barIndex) - Number(right.barIndex)) });
+  }
+
+  /** 小程序 onToggleRest：开休止符就自动关掉连音线（两者互斥） */
+  function toggleRest() {
+    setRest((value) => {
+      if (!value) setTie(false);
+      return !value;
+    });
+  }
+
+  /** 小程序 onToggleTie：开连音线就自动关掉休止符 */
+  function toggleTie() {
+    setTie((value) => {
+      if (!value) setRest(false);
+      return !value;
+    });
   }
   function updateSelected(accidental: '' | '#' | 'b' | 'n' | 'erase') {
     if (selectedOrder === null) return;
@@ -394,15 +314,20 @@ export function NotationEditor({ question, answer, unlocked, disabled, reviewCor
     if (latest) onChange({ ...answer, events: answer.events.filter((event) => event !== latest) });
   }
 
+  /** 跨谱行连音：上一音落在本系统之外时，把 tieFromPrevious 显式补到本系统首音 */
+  const timedAnswerEvents = answer.events.map((event, index) => (
+    index > 0 && answer.events[index - 1].tieToNext ? { ...event, tieFromPrevious: true } : event
+  ));
+
   return <View style={styles.editor}>
     <View style={styles.choiceLine}><Text style={[styles.choiceLabel, ink && styles.choiceLabelInk]}>拍号</Text><View style={styles.options}>{METERS.map((meter) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: answer.meter === meter, disabled: !canEdit }} key={meter} disabled={!canEdit} onPress={() => selectMeter(meter)} style={[styles.choice, ink && styles.choiceInk, answer.meter === meter && (ink ? styles.choiceActiveInk : styles.choiceActive)]}><Text style={[styles.choiceText, ink && styles.choiceTextInk, answer.meter === meter && styles.choiceTextActive]}>{meter}</Text></Pressable>)}</View></View>
     {isMelody && <View style={styles.choiceLine}><Text style={[styles.choiceLabel, ink && styles.choiceLabelInk]}>调号</Text><View style={styles.options}>{KEYS.map((key) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: answer.keySignature === key.value, disabled: !canEdit }} key={key.value} disabled={!canEdit} onPress={() => selectKey(key.value)} style={[styles.choice, styles.keyChoice, ink && styles.choiceInk, answer.keySignature === key.value && (ink ? styles.choiceActiveInk : styles.choiceActive)]}><Text style={[styles.choiceText, ink && styles.choiceTextInk, answer.keySignature === key.value && styles.choiceTextActive]}>{key.label}</Text></Pressable>)}</View></View>}
-    {canEdit && <><View style={[styles.durationToolbar, ink && styles.durationToolbarInk]}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.durationRow}>{DURATION_OPTIONS.map((item) => { const selected = Math.abs(duration - item.value) < 1e-6; return <Pressable accessibilityRole="radio" accessibilityState={{ selected }} key={item.label} onPress={() => setDuration(item.value)} style={[styles.durationChoice, ink && styles.durationChoiceInk, selected && (ink ? styles.choiceActiveInk : styles.choiceActive)]}><Text style={[styles.durationText, ink && styles.durationTextInk, selected && styles.choiceTextActive]}>{item.label}</Text></Pressable>; })}</ScrollView><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: rest }} onPress={() => setRest((value) => !value)} style={[styles.restChoice, ink && styles.restChoiceInk, rest && (ink ? styles.restActiveInk : styles.restActive)]}><Text style={[styles.restText, ink && styles.restTextInk, rest && styles.choiceTextActive]}>{rest ? '休止符开启' : '写休止符'}</Text></Pressable></View><View style={styles.helpRow}><Text style={[styles.helpText, ink && styles.helpTextInk]}>选择时值后，依次点击谱面写入</Text><Pressable accessibilityRole="button" accessibilityState={{ disabled: !answer.events.length }} onPress={undo} disabled={!answer.events.length} style={[styles.undoButton, ink && styles.undoButtonInk]}><Text style={[styles.undoText, ink && styles.undoTextInk]}>撤销</Text></Pressable></View></>}
+    {canEdit && <><View style={[styles.durationToolbar, ink && styles.durationToolbarInk]}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.durationRow}>{DURATION_OPTIONS.map((item) => { const selected = Math.abs(duration - item.value) < 1e-6; return <Pressable accessibilityRole="radio" accessibilityState={{ selected }} key={item.label} onPress={() => setDuration(item.value)} style={[styles.durationChoice, ink && styles.durationChoiceInk, selected && (ink ? styles.choiceActiveInk : styles.choiceActive)]}><Text style={[styles.durationText, ink && styles.durationTextInk, selected && styles.choiceTextActive]}>{item.label}</Text></Pressable>; })}</ScrollView><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: rest }} onPress={toggleRest} style={[styles.restChoice, ink && styles.restChoiceInk, rest && (ink ? styles.restActiveInk : styles.restActive)]}><Text style={[styles.restText, ink && styles.restTextInk, rest && styles.choiceTextActive]}>{rest ? '休止符开启' : '写休止符'}</Text></Pressable>{!isMelody && <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: tie }} onPress={toggleTie} style={[styles.restChoice, ink && styles.restChoiceInk, tie && (ink ? styles.restActiveInk : styles.restActive)]}><Text style={[styles.restText, ink && styles.restTextInk, tie && styles.choiceTextActive]}>{tie ? '连音线开启' : '写连音线'}</Text></Pressable>}</View><View style={styles.helpRow}><Text style={[styles.helpText, ink && styles.helpTextInk]}>选择时值后，依次点击谱面写入</Text><Pressable accessibilityRole="button" accessibilityState={{ disabled: !answer.events.length }} hitSlop={hitSlopFor(Btn.practice.undoLink.minHeight)} onPress={undo} disabled={!answer.events.length} style={[styles.undoButton, ink && styles.undoButtonInk]}><Text style={[styles.undoText, ink && styles.undoTextInk]}>撤销</Text></Pressable></View></>}
     {selectedOrder !== null && canEdit && isMelody && <View style={[styles.accidentalMenu, ink && styles.accidentalMenuInk]}><Text style={[styles.accidentalLabel, ink && styles.choiceLabelInk]}>临时记号</Text>{([['', '无'], ['#', '♯'], ['b', '♭'], ['n', '♮'], ['erase', '擦除']] as const).map(([value, label]) => <Pressable accessibilityRole="button" accessibilityLabel={label === '擦除' ? '擦除所选音符' : `临时记号${label}`} key={label} onPress={() => updateSelected(value)} style={[styles.accidentalButton, ink && styles.accidentalButtonInk]}><Text style={[styles.accidentalText, ink && styles.accidentalTextInk]}>{label}</Text></Pressable>)}</View>}
     {Array.from({ length: systems }, (_, systemIndex) => {
       const barOffset = systemIndex * 2;
       const systemBarCount = Math.min(2, barCount - barOffset);
-      const systemEvents = answer.events.filter((event) => Number(event.barIndex) >= barOffset && Number(event.barIndex) < barOffset + systemBarCount);
+      const systemEvents = timedAnswerEvents.filter((event) => Number(event.barIndex) >= barOffset && Number(event.barIndex) < barOffset + systemBarCount);
       const correctEvents = targetBars.slice(barOffset, barOffset + systemBarCount).flatMap((bar, localBar) => bar.map((event, index) => ({ ...event, barIndex: barOffset + localBar, inputOrder: index + 1 })));
       return <View key={systemIndex} style={styles.systemCard}><View style={styles.systemHead}><Text style={[styles.systemLabel, ink && styles.systemLabelInk]}>第 {barOffset + 1}-{barOffset + systemBarCount} 小节</Text><Text style={[styles.systemBeat, ink && styles.systemBeatInk]}>已写 {roundBeats(sumDuration(systemEvents) * meterBeatScale(answer.meter))} 拍</Text></View><TimedAnswerStaff events={systemEvents} meter={systemIndex === 0 ? answer.meter : ''} capacityMeter={answer.meter} keySignature={isMelody ? answer.keySignature : ''} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled={!canEdit || !answer.meter || (isMelody && !answer.keySignature)} ink={ink} tone={disabled ? reviewCorrect ? 'green' : 'red' : ''} emptyText={emptyText} onStaffTap={(barIndex, midi, spelling) => append(barIndex, midi, spelling)} onEventTap={(event) => setSelectedOrder(Number(event.inputOrder))} />{showCorrect && !reviewCorrect && <View style={styles.standardBlock}><Text style={styles.standardLabel}>{systemIndex === 0 ? `标准答案：${String(question.meter)}${isMelody ? ` · ${String(question.keyName || question.keySignature)}` : ''}` : '标准答案'}</Text><TimedAnswerStaff events={correctEvents} meter={systemIndex === 0 ? String(question.meter || '') : ''} capacityMeter={String(question.meter || '')} keySignature={isMelody ? String(question.keySignature || 'C') : ''} barOffset={barOffset} barCount={systemBarCount} isFinalSystem={systemIndex === systems - 1} disabled ink={ink} tone="green" emptyText="" /></View>}</View>;
     })}
@@ -411,10 +336,29 @@ export function NotationEditor({ question, answer, unlocked, disabled, reviewCor
 }
 
 const styles = StyleSheet.create({
-  editor: { gap: 12 }, choiceLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, choiceLabel: { width: 42, minHeight: TouchTarget, paddingTop: 13, color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, options: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, choice: { minWidth: TouchTarget, minHeight: TouchTarget, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.border, backgroundColor: '#F3F5F2' }, keyChoice: { minWidth: 104 }, choiceActive: { borderColor: Brand.forest, backgroundColor: Brand.forest }, choiceText: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, choiceTextActive: { color: Brand.textOnAccent },
-  durationToolbar: { flexDirection: 'row', gap: 7, padding: 8, borderRadius: Radius.card, backgroundColor: '#EEE7D8' }, durationRow: { gap: 7, paddingRight: 3 }, durationChoice: { minWidth: 76, height: TouchTarget, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.border, backgroundColor: Brand.ivory }, durationText: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, restChoice: { width: 86, height: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, borderWidth: 1, borderColor: '#DEC476', backgroundColor: Brand.warningSoft }, restActive: { borderColor: Brand.gold, backgroundColor: Brand.gold }, restText: { color: Brand.warning, fontSize: 11, fontWeight: '800' },
-  helpRow: { minHeight: TouchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 3 }, helpText: { flex: 1, color: Brand.muted, fontSize: TypeScale.caption }, undoButton: { minWidth: 64, minHeight: TouchTarget, marginLeft: 8, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forestSoft }, undoText: { color: Brand.forest, fontSize: TypeScale.caption, fontWeight: '800' }, accidentalMenu: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, padding: 7, borderRadius: Radius.control, backgroundColor: '#F3F5F2' }, accidentalLabel: { marginHorizontal: 4, color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, accidentalButton: { minWidth: TouchTarget, height: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forestSoft }, accidentalText: { color: Brand.forest, fontSize: TypeScale.footnote, fontWeight: '800' },
-  systemCard: { gap: 8, marginTop: 3 }, systemHead: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 3 }, systemLabel: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, systemBeat: { color: Brand.muted, fontSize: TypeScale.caption, fontVariant: ['tabular-nums'] }, staffShell: { height: STAFF_HEIGHT, overflow: 'hidden', borderRadius: Radius.control, borderWidth: 1, borderColor: Brand.border, backgroundColor: '#FFFFFF' }, inkStaff: { borderColor: '#141414' }, wrongStaff: { borderColor: '#DDAAA1', backgroundColor: '#FFF9F7' }, correctStaff: { borderColor: '#9FCBB1', backgroundColor: '#F8FFFA' }, emptyText: { position: 'absolute', left: 106, right: 10, top: STAFF_CENTER_Y - 9, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' }, standardBlock: { gap: 7, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#B9DACC', borderStyle: 'dashed' }, standardLabel: { color: Brand.success, fontSize: TypeScale.caption, fontWeight: '800' }, error: { color: Brand.danger, fontSize: TypeScale.footnote, lineHeight: 18 },
+  editor: { gap: 12 }, /** 小程序 .choice-line（margin 12rpx 2rpx）/ .choice-pills（gap 8rpx） */
+  choiceLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, /** 小程序 .choice-label（width 68rpx / padding-top 9rpx / 20rpx） */
+  choiceLabel: { width: 34, paddingTop: 4.5, color: Brand.muted, fontSize: Btn.practice.choicePill.fontSize, fontWeight: '700' }, options: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  /** 小程序 .choice-pill（min-width 70rpx / 8 13rpx / 13rpx / 20rpx）—— 芯片仅隔 4rpx，不加 hitSlop 以免抢邻键 */
+  choice: { ...Btn.practice.choicePill, alignItems: 'center', justifyContent: 'center', borderColor: Brand.border, backgroundColor: '#F3F5F2' }, /** 小程序 .key-pill min-width 148rpx */
+  keyChoice: { minWidth: Btn.practice.keyPill.minWidth }, choiceActive: { borderColor: Brand.forest, backgroundColor: Brand.forest }, choiceText: { color: Brand.muted, fontSize: Btn.practice.choicePill.fontSize, fontWeight: '700' }, choiceTextActive: { color: Brand.textOnAccent },
+  /** 小程序 .duration-toolbar（gap 10rpx / padding 10rpx / 17rpx）+ .duration-row（gap 8rpx） */
+  durationToolbar: { flexDirection: 'row', ...Btn.practice.durationToolbar, backgroundColor: '#EEE7D8' }, durationRow: { gap: 4, paddingRight: 4 }, /** 小程序 .duration-pill（min-width 96rpx / height 52rpx / 0 11rpx / 13rpx / 19rpx） */
+  durationChoice: { ...Btn.practice.durationPill, alignItems: 'center', justifyContent: 'center', borderColor: Brand.border, backgroundColor: Brand.ivory }, durationText: { color: Brand.muted, fontSize: Btn.practice.durationPill.fontSize, fontWeight: '700' },
+  /** 小程序 .rest-pill（112 × 52rpx / 13rpx / 18rpx） */
+  restChoice: { ...Btn.practice.restPill, alignItems: 'center', justifyContent: 'center', borderColor: '#DEC476', backgroundColor: Brand.warningSoft }, restActive: { borderColor: Brand.gold, backgroundColor: Brand.gold }, restText: { color: Brand.warning, fontSize: Btn.practice.restPill.fontSize, fontWeight: '800' },
+  helpRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 3 }, /** 小程序 .timed-help 19rpx */ helpText: { flex: 1, color: Brand.muted, fontSize: 9.5 }, /** 小程序 .undo-link（8 13rpx / 13rpx / 20rpx），右侧独立无邻键 → 补满 44pt */ undoButton: { ...Btn.practice.undoLink, alignItems: 'center', justifyContent: 'center', marginLeft: 8, backgroundColor: Brand.forestSoft }, undoText: { color: Brand.forest, fontSize: Btn.practice.undoLink.fontSize, fontWeight: '800' },
+  /** 小程序的临时记号只有谱面字形浮层，没有带文字的记号行 → 就近取 .duration-toolbar 容器盒 + .choice-pill 芯片盒 */
+  accidentalMenu: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', ...Btn.practice.durationToolbar, backgroundColor: '#F3F5F2' }, accidentalLabel: { marginHorizontal: 4, color: Brand.muted, fontSize: Btn.practice.choicePill.fontSize, fontWeight: '700' }, accidentalButton: { ...Btn.practice.choicePill, alignItems: 'center', justifyContent: 'center', backgroundColor: Brand.forestSoft }, accidentalText: { color: Brand.forest, fontSize: Btn.practice.choicePill.fontSize, fontWeight: '800' },
+  systemCard: { gap: 8, marginTop: 3 }, systemHead: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 3 }, systemLabel: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' }, systemBeat: { color: Brand.muted, fontSize: TypeScale.caption, fontVariant: ['tabular-nums'] },
+  /** 小程序 .answer-staff-shell：height 140rpx / border 1rpx / radius 12rpx（1:1 → 70pt / 0.5pt / 6pt） */
+  staffShell: { height: ANSWER_STAFF_HEIGHT, overflow: 'hidden', borderWidth: STAFF_SHELL_BORDER * RPX_TO_PT, borderRadius: STAFF_SHELL_RADIUS, borderColor: Brand.border, backgroundColor: '#FFFFFF' },
+  /** 命中层 = 壳体内容盒（壳宽 − 2×1rpx），viewBox 用它换算 ⇒ 1 单位恒等于 0.5pt */
+  staffTouch: { height: ANSWER_STAFF_HEIGHT, borderRadius: STAFF_SHELL_RADIUS, overflow: 'hidden' },
+  inkStaff: { borderColor: '#141414' }, wrongStaff: { borderColor: '#DDAAA1', backgroundColor: '#FFF9F7' }, correctStaff: { borderColor: '#9FCBB1', backgroundColor: '#F8FFFA' },
+  /** 小程序 .staff-notation .empty：left/right 0、top 31rpx、height 60rpx、font-size 20rpx，文字在其中居中 */
+  emptyText: { position: 'absolute', left: 0, right: 0, top: EMPTY_TOP * RPX_TO_PT, height: EMPTY_HEIGHT * RPX_TO_PT, color: Brand.muted, fontSize: EMPTY_FONT_SIZE * RPX_TO_PT, lineHeight: EMPTY_HEIGHT * RPX_TO_PT, textAlign: 'center' },
+  standardBlock: { gap: 7, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#B9DACC', borderStyle: 'dashed' }, standardLabel: { color: Brand.success, fontSize: TypeScale.caption, fontWeight: '800' }, error: { color: Brand.danger, fontSize: TypeScale.footnote, lineHeight: 18 },
   choiceInk: { borderColor: '#141414', backgroundColor: '#FFFFFF' }, choiceActiveInk: { borderColor: '#141414', backgroundColor: '#141414' }, choiceTextInk: { color: '#141414' },
   durationChoiceInk: { borderColor: '#141414', backgroundColor: '#FFFFFF' }, durationTextInk: { color: '#141414' },
   restChoiceInk: { borderColor: '#141414', backgroundColor: '#FFFFFF' }, restActiveInk: { borderColor: '#141414', backgroundColor: '#141414' }, restTextInk: { color: '#141414' },
@@ -423,5 +367,4 @@ const styles = StyleSheet.create({
   choiceLabelInk: { color: '#141414' }, helpTextInk: { color: '#141414' },
   durationToolbarInk: { backgroundColor: '#F2F2F2' }, accidentalMenuInk: { backgroundColor: '#F2F2F2' },
   systemLabelInk: { color: '#141414' }, systemBeatInk: { color: '#141414' },
-  timedClef: { position: 'absolute', left: 4, top: STAFF_CENTER_Y - 82 / 2, width: 36, height: 82 },
 });

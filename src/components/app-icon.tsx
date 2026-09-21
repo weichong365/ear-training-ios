@@ -1,12 +1,9 @@
 import { SymbolView, type AndroidSymbol, type SFSymbol } from 'expo-symbols';
 import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
-import Svg, { Circle, G, Line, Path, Rect } from 'react-native-svg';
 
 import { Brand } from '@/constants/theme';
 
-type NavigationIconName = 'headphones' | 'wrongbookTab' | 'profile' | 'hand';
-
-export type AppIconName = keyof typeof ICONS | NavigationIconName;
+export type AppIconName = keyof typeof ICONS;
 
 const ICONS = {
   info: ['info.circle', 'info'],
@@ -36,9 +33,6 @@ const ICONS = {
   message: ['bubble.left.and.bubble.right.fill', 'forum'],
 } as const satisfies Record<string, readonly [SFSymbol, AndroidSymbol]>;
 
-const NAV_VIEW_BOX = 48;
-const NAV_STROKE_WIDTH = 2.6;
-
 type AppIconProps = {
   name: AppIconName;
   size?: number;
@@ -46,49 +40,15 @@ type AppIconProps = {
   style?: StyleProp<ViewStyle>;
 };
 
+/**
+ * 通用 SF Symbols / Material Symbols 图标。
+ *
+ * ⚠️ 底部导航（首页 / 错题 / 我的 / 举手）**不走这里** —— 那四个位置用的是小程序原图 PNG，
+ * 见 `src/constants/tab-icons.ts`。历史上这里有一个手绘的导航图标分支
+ * （NAV_VIEW_BOX 48 + strokeWidth 2.6），因与小程序有明显笔触差已删除；
+ * 不要再恢复，`scripts/tab-icon-smoke.cjs` 会拦住。
+ */
 export function AppIcon({ name, size = 22, color = Brand.forest, style }: AppIconProps) {
-  if (name === 'headphones' || name === 'wrongbookTab' || name === 'profile' || name === 'hand') {
-    return (
-      <Svg
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        width={size}
-        height={size}
-        viewBox={`0 0 ${NAV_VIEW_BOX} ${NAV_VIEW_BOX}`}
-        style={[{ width: size, height: size }, style]}>
-        <G fill="none" stroke={color} strokeWidth={NAV_STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round">
-          {name === 'headphones' && (
-            <>
-              <Path d="M10 27v-3a14 14 0 0 1 28 0v3" />
-              <Rect x={8} y={25} width={8} height={16} rx={3} fill={color} stroke="none" />
-              <Rect x={32} y={25} width={8} height={16} rx={3} fill={color} stroke="none" />
-            </>
-          )}
-          {name === 'wrongbookTab' && (
-            <>
-              <Rect x={8} y={10} width={32} height={28} rx={4} />
-              <Line x1={24} y1={14} x2={24} y2={34} />
-            </>
-          )}
-          {name === 'profile' && (
-            <>
-              <Circle cx={19} cy={15} r={7} />
-              <Path d="M8 39c1-11 5-18 12-18 6 0 10 2 16 7" />
-              <Line x1={34} y1={33} x2={41} y2={33} />
-              <Line x1={34} y1={39} x2={41} y2={39} />
-            </>
-          )}
-          {name === 'hand' && (
-            <>
-              <Circle cx={28.7} cy={15.2} r={6.5} />
-              <Path d="M17.8 38.8 17.1 29.6C14.6 27 11.8 23.9 10.1 20.9 8.7 18.4 7.8 15.3 8.7 12.7c.4-1.2 1.3-1.9 2.2-1.8 1.3.1 1.7 1.5 2.3 2.9 1.7 3.9 4.3 6.8 7.5 8.8 2.2 1.4 4.6 2.1 7.2 2.1h5.5c2.9 0 5 2.1 4.9 5L37.6 38.8" />
-            </>
-          )}
-        </G>
-      </Svg>
-    );
-  }
-
   const [ios, material] = ICONS[name];
   return (
     <SymbolView

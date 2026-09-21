@@ -85,7 +85,7 @@ export type PracticeSession = {
   mode: PracticeMode;
   tier?: 1 | 2 | 3;
   questions: PracticeQuestion[];
-  snapshots: Array<PracticeQuestionSnapshot | undefined>;
+  snapshots: (PracticeQuestionSnapshot | undefined)[];
   index: number;
   score: number;
   sessionId: string;

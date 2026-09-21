@@ -4,7 +4,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppIcon } from '@/components/app-icon';
 import type { PracticeType } from '@/core';
-import { Brand, Radius, TouchTarget, TypeScale } from '@/constants/theme';
+import { Btn, hitSlopFor } from '@/constants/button-tokens';
+import { Brand, Radius, TypeScale } from '@/constants/theme';
 import { getWrongRecords, removeWrongRecord, type WrongRecord } from '@/services/local-data';
 
 const TYPE_ORDER: PracticeType[] = ['single', 'group', 'interval', 'connection', 'chord', 'chordQuality', 'chordPitch', 'rhythm', 'melody'];
@@ -61,6 +62,7 @@ export default function WrongbookScreen() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`练习${group.name}新题`}
+                  hitSlop={{ top: hitSlopFor(Btn.practice.undoLink.minHeight).top }}
                   onPress={() => router.push({ pathname: '/practice', params: { type: group.type } })}
                   style={({ pressed }) => [styles.groupPracticeButton, pressed && styles.pressed]}>
                   <Text style={styles.groupPractice}>练习新题</Text>
@@ -98,7 +100,9 @@ export default function WrongbookScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: Brand.cream },
+  // 状态栏下沿的分隔线：ScrollView 顶边正好落在 sceneStyle 的 paddingTop（= insets.top）处，
+  // 所以加 borderTop 就等于把线贴在状态栏下方，与底部 tabBar 上沿同一条（Brand.hairline）。
+  page: { flex: 1, backgroundColor: Brand.cream, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Brand.hairline },
   content: { padding: 16, paddingBottom: 44, gap: 14 },
   hero: { minHeight: 104, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: Radius.hero, backgroundColor: Brand.forest },
   heroIcon: { width: 54, height: 54, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.card, backgroundColor: 'rgba(255,255,255,.14)' },
@@ -114,28 +118,28 @@ const styles = StyleSheet.create({
   summaryHint: { flex: 1, color: Brand.muted, fontSize: TypeScale.caption, lineHeight: 17, textAlign: 'right' },
   listTitle: { marginTop: 2, color: Brand.ink, fontSize: TypeScale.headline, fontWeight: '900' },
   group: { overflow: 'hidden', borderRadius: Radius.card, borderWidth: 1, borderColor: Brand.border, backgroundColor: Brand.ivory },
-  groupHead: { minHeight: 60, paddingLeft: 14, flexDirection: 'row', alignItems: 'center' },
-  groupToggle: { minHeight: 60, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  groupHead: { ...Btn.wrongbook.groupHead, flexDirection: 'row', alignItems: 'center' },
+  groupToggle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Brand.forest },
   groupName: { color: Brand.ink, fontSize: TypeScale.subheadline, fontWeight: '900' },
   groupCount: { minWidth: 25, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8, overflow: 'hidden', color: Brand.forest, backgroundColor: Brand.forestSoft, fontSize: 11, fontWeight: '800', textAlign: 'center' },
-  groupPracticeButton: { minHeight: TouchTarget, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
-  groupPractice: { color: Brand.forest, fontSize: TypeScale.caption, fontWeight: '800' },
+  groupPracticeButton: { ...Btn.practice.undoLink, alignItems: 'center', justifyContent: 'center' },
+  groupPractice: { color: Brand.forest, fontSize: Btn.wrongbook.groupPractice.fontSize, fontWeight: '800' },
   groupBody: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Brand.divider },
-  wrongItem: { minHeight: 70, flexDirection: 'row', alignItems: 'stretch', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Brand.divider },
-  wrongMain: { minHeight: 70, flex: 1, paddingLeft: 12, flexDirection: 'row', alignItems: 'center' },
+  wrongItem: { ...Btn.wrongbook.wrongItem, flexDirection: 'row', alignItems: 'stretch', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Brand.divider },
+  wrongMain: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   index: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: Brand.forestSoft },
   indexText: { color: Brand.forest, fontSize: TypeScale.caption, fontWeight: '800', fontVariant: ['tabular-nums'] },
   itemCopy: { flex: 1, minWidth: 0, marginHorizontal: 10 },
   answer: { color: Brand.ink, fontSize: TypeScale.footnote, fontWeight: '800' },
   meta: { marginTop: 4, color: Brand.muted, fontSize: TypeScale.caption },
   reviewText: { marginRight: 3, color: Brand.forest, fontSize: TypeScale.caption, fontWeight: '800' },
-  removeButton: { width: TouchTarget, minHeight: 70, alignItems: 'center', justifyContent: 'center' },
+  removeButton: { width: 32, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
   empty: { marginTop: 24, padding: 34, alignItems: 'center', borderRadius: Radius.hero, backgroundColor: Brand.ivory, borderWidth: 1, borderColor: Brand.border },
   emptyIcon: { width: 70, height: 70, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.hero, backgroundColor: Brand.forestSoft },
   emptyTitle: { marginTop: 16, color: Brand.ink, fontSize: TypeScale.headline, fontWeight: '900' },
   emptyText: { marginTop: 7, color: Brand.muted, fontSize: TypeScale.footnote, textAlign: 'center' },
-  emptyButton: { minWidth: 190, minHeight: 48, marginTop: 20, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.control, backgroundColor: Brand.forest },
-  emptyButtonText: { color: Brand.textOnAccent, fontSize: TypeScale.subheadline, fontWeight: '900' },
+  emptyButton: { ...Btn.wrongbook.emptyButton, marginTop: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Brand.forest },
+  emptyButtonText: { color: Brand.textOnAccent, fontSize: Btn.wrongbook.emptyButton.fontSize, fontWeight: '600' },
   pressed: { opacity: 0.78 },
 });

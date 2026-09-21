@@ -5,6 +5,7 @@ const {
   randInt, shuffle, byLevel, midiToName
 } = require('./theory');
 const { RHYTHM_BANK_2025 } = require('./rhythm-bank-2025');
+const { MELODY_BANK_2025 } = require('./melody-bank-2025');
 
 
 const EXAM_STANDARD_LEVEL = 3;
@@ -577,7 +578,7 @@ function genRhythmQuestion(difficulty, barCount = 8) {
 }
 
 function genRhythm(difficulty, options = {}) {
-  const question = genExamRhythm(difficulty, 6, '', { ...options, useBank: true });
+  const question = genExamRhythm(difficulty, 6, { ...options, useBank: true });
   return {
     ...question,
     typeName: '节奏听记',
@@ -588,60 +589,6 @@ function genRhythm(difficulty, options = {}) {
 
 
 
-const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
-const MELODY_KEYS = {
-  C: { id: 'C', name: 'C 大调', tonic: 60, scale: MAJOR_SCALE, letters: ['C', 'D', 'E', 'F', 'G', 'A', 'B'], altered: '' },
-  G: { id: 'G', name: 'G 大调', tonic: 67, scale: MAJOR_SCALE, letters: ['G', 'A', 'B', 'C', 'D', 'E', 'F'], altered: '#' },
-  F: { id: 'F', name: 'F 大调', tonic: 65, scale: MAJOR_SCALE, letters: ['F', 'G', 'A', 'B', 'C', 'D', 'E'], altered: 'b' }
-};
-
-
-const MELODY_CONTOURS = [
-  [[0, 1, 2, 4, 3, 2], [2, 3, 4, 3, 2, 1], [0, 1, 2, 4, 3, 2], [3, 2, 1, 4], [4, 5, 6, 5, 4, 3], [3, 4, 5, 4, 3, 2], [2, 3, 4, 2, 1], [2, 1, 0, 0]],
-  [[2, 1, 0, 1, 2, 3], [4, 3, 2, 1, 2], [2, 3, 4, 5, 4, 2], [3, 2, 1, 4], [4, 6, 5, 4, 3], [3, 5, 4, 3, 2], [2, 4, 3, 2, 1], [2, 1, 0, 0]],
-  [[4, 3, 2, 1, 2], [0, 1, 2, 3, 4], [4, 5, 6, 5, 4], [3, 2, 1, 4], [2, 3, 4, 5, 3], [4, 3, 2, 1], [0, 2, 4, 2, 1], [2, 1, 0, 0]]
-];
-
-
-const FOUR_PHRASE_MELODY_TEMPLATES = [
-  [
-    [[0, 1, 2, 4, 3, 2], [2, 3, 4, 3, 1, 2]],
-    [[0, 1, 2, 4, 3, 1], [2, 3, 5, 4, 3, 4]],
-    [[4, 5, 7, 6, 5, 4], [3, 5, 4, 3, 2, 1]],
-    [[0, 1, 2, 4, 3, 1], [2, 3, 2, 1, 0]]
-  ],
-  [
-    [[2, 1, 0, 1, 3, 2], [3, 2, 1, 0, 1, 2]],
-    [[2, 1, 0, 1, 3, 2], [3, 4, 5, 3, 2, 4]],
-    [[4, 6, 5, 7, 6, 4], [5, 4, 3, 2, 0, 1]],
-    [[2, 1, 0, 1, 3, 2], [3, 2, 1, 2, 1, 0]]
-  ],
-  [
-    [[0, 2, 1, 3, 4, 2], [1, 2, 4, 3, 1, 2]],
-    [[0, 2, 1, 3, 4, 2], [2, 4, 5, 3, 2, 4]],
-    [[4, 3, 5, 7, 6, 4], [5, 6, 4, 3, 2, 1]],
-    [[0, 2, 1, 3, 4, 2], [3, 2, 1, 2, 1, 0]]
-  ],
-  [
-    [[4, 3, 2, 0, 1, 2], [1, 3, 2, 4, 3, 2]],
-    [[4, 3, 2, 0, 1, 2], [2, 3, 5, 4, 3, 4]],
-    [[4, 5, 6, 7, 5, 4], [6, 5, 3, 4, 2, 1]],
-    [[4, 3, 2, 0, 1, 2], [3, 2, 4, 1, 0]]
-  ],
-  [
-    [[0, 1, 3, 2, 4, 3], [2, 1, 3, 4, 1, 2]],
-    [[0, 1, 3, 2, 4, 3], [2, 4, 3, 5, 3, 4]],
-    [[4, 6, 5, 7, 6, 5], [4, 5, 3, 2, 0, 1]],
-    [[0, 1, 3, 2, 4, 3], [2, 3, 1, 2, 1, 0]]
-  ],
-  [
-    [[2, 3, 4, 2, 1, 2], [0, 1, 3, 2, 1, 2]],
-    [[2, 3, 4, 2, 1, 2], [3, 5, 4, 2, 3, 4]],
-    [[4, 5, 7, 6, 4, 5], [6, 4, 3, 5, 2, 1]],
-    [[2, 3, 4, 2, 1, 2], [3, 1, 2, 1, 0]]
-  ]
-];
-
 const MELODY_PHRASE_INFO = [
   { name: '第一句', role: '陈述', cadenceDegree: 2 },
   { name: '第二句', role: '呼应', cadenceDegree: 4 },
@@ -649,53 +596,6 @@ const MELODY_PHRASE_INFO = [
   { name: '第四句', role: '收束', cadenceDegree: 0 }
 ];
 
-
-const MELODY_CADENCE_APPROACHES = [
-  [1, 2],
-  [3, 4],
-  [2, 1],
-  [2, 1, 0]
-];
-
-const MELODY_RHYTHMS = {
-  1: [[1, 1, 1, 1], [2, 1, 1], [1, 1, 2], [1, 0.5, 0.5, 1, 1]],
-  2: [[1, 1, 1, 1], [1.5, 0.5, 1, 1], [1, 0.5, 0.5, 1, 1], [0.5, 0.5, 1, 1, 1]],
-  3: [[1, 1, 0.5, 0.5, 1], [1.5, 0.5, 1, 1], [0.5, 0.5, 1, 0.5, 0.5, 1], [0.5, 0.25, 0.25, 1, 1, 1]]
-};
-
-const MELODY_REST_RHYTHMS = {
-  2: [[-0.5, 0.5, 1, 1, 1], [1, -0.5, 0.5, 1, 1], [1, 1, -0.5, 0.5, 1]],
-  3: [[-0.5, 0.5, 1, 1, 1], [0.5, -0.5, 0.5, 0.5, 1, 1], [1, -0.25, 0.25, 0.5, 1, 1], [1, 1, -0.5, 0.5, 1]]
-};
-
-function pickMelodyKey(difficulty) {
-  if (difficulty === 1) return MELODY_KEYS.C;
-  const choices = difficulty === 2 ? ['C', 'C', 'G', 'F'] : ['C', 'G', 'G', 'F', 'F'];
-  return MELODY_KEYS[choices[randInt(0, choices.length - 1)]];
-}
-
-function degreeNote(key, degree, alter = 0) {
-  const octaveShift = Math.floor(degree / 7);
-  const scaleIndex = ((degree % 7) + 7) % 7;
-  const letter = key.letters[scaleIndex];
-  const scale = key.scale || MAJOR_SCALE;
-  const keyAccidental = key.id === 'G' && letter === 'F' ? '#' : key.id === 'F' && letter === 'B' ? 'b' : '';
-  const keyShift = keyAccidental === '#' ? 1 : keyAccidental === 'b' ? -1 : 0;
-  const diatonicMidi = key.tonic + octaveShift * 12 + scale[scaleIndex];
-  const midi = diatonicMidi + alter;
-
-  const accidental = alter !== 0 ? (alter > 0 ? '#' : 'b') : keyAccidental;
-
-  const octave = Math.floor((diatonicMidi - keyShift) / 12) - 1;
-  return { midi, spelling: `${letter}${accidental}${octave}` };
-}
-
-function fitContour(contour, count) {
-  if (count <= 1) return [contour[contour.length - 1]];
-  return Array.from({ length: count }, (_, index) => (
-    contour[Math.round(index * (contour.length - 1) / (count - 1))]
-  ));
-}
 
 function buildMelodyPhrasePlan(barCount) {
   const baseLength = Math.floor(barCount / 4);
@@ -713,195 +613,6 @@ function buildMelodyPhrasePlan(barCount) {
     return phrase;
   });
 }
-
-function phraseForBar(phrases, barNumber) {
-  return phrases.findIndex((phrase) => barNumber >= phrase.startBar && barNumber <= phrase.endBar);
-}
-
-function phraseContour(template, phrase, phraseIndex, barNumber) {
-  const source = template[phraseIndex];
-  const phraseLength = phrase.endBar - phrase.startBar + 1;
-  if (phraseLength <= 1) return source.reduce((all, contour) => all.concat(contour), []);
-  const localIndex = barNumber - phrase.startBar;
-  const sourceIndex = Math.round(localIndex * (source.length - 1) / (phraseLength - 1));
-  return source[sourceIndex];
-}
-
-function smoothMelodyDegrees(values) {
-  const result = values.map((degree) => Math.max(0, Math.min(7, degree)));
-  for (let index = 1; index < result.length; index++) {
-
-    if (result[index] === result[index - 1]) {
-      const next = values[index + 1];
-      const preferred = Number.isFinite(next) && next < result[index] ? -1 : 1;
-      const candidate = result[index] + preferred;
-      result[index] = candidate >= 0 && candidate <= 7 ? candidate : result[index] - preferred;
-    }
-
-    const leap = result[index] - result[index - 1];
-    if (Math.abs(leap) > 4) result[index] = result[index - 1] + Math.sign(leap) * 4;
-  }
-  return result;
-}
-
-function applyPhraseCadence(degrees, phraseIndex) {
-  const result = degrees.slice();
-  const approach = MELODY_CADENCE_APPROACHES[phraseIndex] || [0];
-  const count = Math.min(result.length, approach.length);
-  const cadenceStart = result.length - count;
-  if (cadenceStart > 0 && result[cadenceStart - 1] === approach[approach.length - count]) {
-    const pivot = result[cadenceStart - 1] + (phraseIndex === 0 ? -1 : 1);
-    result[cadenceStart - 1] = Math.max(0, Math.min(7, pivot));
-  }
-  for (let index = 0; index < count; index++) {
-    result[cadenceStart + index] = approach[approach.length - count + index];
-  }
-  return result;
-}
-
-
-function isKeyAccidentalDegree(key, degree) {
-  const scaleIndex = ((degree % 7) + 7) % 7;
-  const letter = key.letters[scaleIndex];
-  return (key.id === 'G' && letter === 'F') || (key.id === 'F' && letter === 'B');
-}
-
-
-function pickChromaticSlot(key, degrees, soundingCount) {
-  const maxSlot = soundingCount - 3;
-  if (maxSlot < 1) return -1;
-  const candidates = [];
-  for (let index = 1; index <= maxSlot; index++) {
-    const degree = degrees[index];
-    const scaleIndex = ((degree % 7) + 7) % 7;
-    if (scaleIndex === 2 || scaleIndex === 6) continue;
-    if (isKeyAccidentalDegree(key, degree)) continue;
-    candidates.push(index);
-  }
-  return candidates.length ? candidates[randInt(0, candidates.length - 1)] : -1;
-}
-
-function cadenceRhythm(meter, phraseIndex) {
-  const patterns = {
-    '2/4': [[0.5, 0.5, 1], [1, 1], [0.5, 0.5, 1], [1, 1]],
-    '3/4': [[1, 2], [0.5, 0.5, 2], [0.5, 0.5, 2], [1, 2]],
-    '4/4': [[1, 1, 2], [0.5, 0.5, 1, 2], [1, 0.5, 0.5, 2], [1, 1, 2]],
-    '3/8': [[0.5, 1], [0.25, 0.25, 1], [0.25, 0.25, 1], [0.5, 1]],
-    '6/8': [[0.5, 1, 1.5], [0.5, 0.5, 0.5, 1.5], [0.5, 0.5, 0.5, 1.5], [1.5, 1.5]]
-  };
-  const choices = patterns[meter.id];
-  if (choices) return choices[Math.min(phraseIndex, choices.length - 1)].slice();
-  return [meter.beatsPerBar / 3, meter.beatsPerBar * 2 / 3];
-}
-
-function pickRhythmVariation(pool, source, excluded = []) {
-  const blocked = new Set([source].concat(excluded).map((bar) => JSON.stringify(bar)));
-  const sourceNotes = source.filter((duration) => duration > 0).length;
-  const close = pool.filter((bar) => (
-    !blocked.has(JSON.stringify(bar))
-    && Math.abs(bar.filter((duration) => duration > 0).length - sourceNotes) <= 1
-  ));
-  const candidates = close.length ? close : pool.filter((bar) => !blocked.has(JSON.stringify(bar)));
-  return (candidates.length ? candidates[randInt(0, candidates.length - 1)] : source).slice();
-}
-
-function buildPhraseRhythmBars(level, meter, barCount, phrases, allowRest = null) {
-  const bars = genExamBars(level, meter, barCount, allowRest);
-
-  if (barCount >= 8) {
-    const pool = examPatterns(meter, level);
-    const openingPool = pool.filter((bar) => bar[0] > 0 && bar.filter((duration) => duration > 0).length >= 2);
-    const opening = (openingPool.length ? openingPool[randInt(0, openingPool.length - 1)] : pool[0]).slice();
-    const response = pickRhythmVariation(openingPool, opening);
-    const development = pickRhythmVariation(openingPool, response, [opening]);
-    const returnBar = pickRhythmVariation(openingPool, opening, [response]);
-    bars[phrases[0].startBar - 1] = opening;
-    bars[phrases[1].startBar - 1] = response;
-    bars[phrases[2].startBar - 1] = development;
-    bars[phrases[3].startBar - 1] = returnBar;
-  }
-  phrases.forEach((phrase, phraseIndex) => {
-    bars[phrase.endBar - 1] = cadenceRhythm(meter, phraseIndex);
-  });
-  return bars;
-}
-
-function buildMelodyRhythms(difficulty) {
-  const pool = MELODY_RHYTHMS[difficulty];
-  const opening = pool[randInt(0, pool.length - 1)].slice();
-  const response = pool[randInt(0, pool.length - 1)].slice();
-  const bars = [
-    opening, response, opening.slice(), [1, 1, 2],
-    pool[randInt(0, pool.length - 1)].slice(), response.slice(),
-    pool[randInt(0, pool.length - 1)].slice(), difficulty === 1 ? [2, 2] : [1, 1, 2]
-  ];
-  if (difficulty > 1) {
-    const candidates = shuffle([1, 5, 6]);
-    const restBarCount = difficulty === 2 ? 1 : 2;
-    for (let index = 0; index < restBarCount; index++) {
-      const restPool = MELODY_REST_RHYTHMS[difficulty];
-      bars[candidates[index]] = restPool[randInt(0, restPool.length - 1)].slice();
-    }
-  }
-  return bars;
-}
-
-function genMelody(difficulty) {
-  const key = pickMelodyKey(difficulty);
-  const contours = MELODY_CONTOURS[randInt(0, MELODY_CONTOURS.length - 1)];
-  const rhythmBars = buildMelodyRhythms(difficulty);
-  const durs = [];
-  const midis = [];
-  const spellings = [];
-  const answer = [];
-  const answerSpellings = [];
-
-  rhythmBars.forEach((rhythm, barIndex) => {
-    const soundingCount = rhythm.filter((duration) => duration > 0).length;
-    const degrees = fitContour(contours[barIndex], soundingCount);
-
-    if (barIndex === 4 && (key.id === 'G' || key.id === 'F') && degrees.length) {
-      degrees[Math.floor(degrees.length / 2)] = key.id === 'G' ? 6 : 3;
-    }
-    let degreeIndex = 0;
-    let lastNote = degreeNote(key, degrees[0]);
-    rhythm.forEach((duration) => {
-      if (duration > 0) {
-        lastNote = degreeNote(key, degrees[degreeIndex++]);
-        answer.push(lastNote.midi);
-        answerSpellings.push(lastNote.spelling);
-      }
-
-      durs.push(duration);
-      midis.push(lastNote.midi);
-      spellings.push(lastNote.spelling);
-    });
-  });
-
-  const span = Math.max(...answer) - Math.min(...answer);
-  const preview = answerSpellings.slice(0, 8).join(' ');
-  const restCount = durs.filter((duration) => duration < 0).length;
-  return {
-    type: 'melody',
-    typeName: '旋律听记',
-    midis,
-    durs,
-    spellings,
-    bpm: difficulty === 1 ? 72 : difficulty === 2 ? 82 : 92,
-    noteCount: answer.length,
-    answer,
-    answerText: `正确旋律见谱面（${preview}${answer.length > 8 ? ' …' : ''}）`,
-    answerNotes: answerSpellings.join(' '),
-    keySignature: key.id,
-    keyName: key.name,
-    melodicStructure: 'A-A′-B-A″',
-    restCount,
-    knowledgeKey: `melody:d${difficulty}:key${key.id}:rest${restCount}:span${span <= 5 ? 'narrow' : span <= 9 ? 'medium' : 'wide'}`,
-    hint: '听 8 小节旋律，按顺序在键盘上听记音高；不考点击节奏'
-  };
-}
-
-
 
 const MIXED_EXAM_COUNT = 21;
 
@@ -1081,7 +792,7 @@ function genExamChord(difficulty, options = {}) {
   };
 }
 
-// 60 套参考答案共用一个全局抽题袋；前 60 次不重复，第 61 次重新洗牌。
+// 60 套模拟卷 + 12 条省级真题共用一个全局抽题袋；一轮抽完前不重复。
 const RHYTHM_BANK = RHYTHM_BANK_2025;
 const RHYTHM_META = RHYTHM_BANK.map(function (record) { return record.meter; });
 let _rhythmQueue = [];
@@ -1114,6 +825,20 @@ function pickFromRhythmBank() {
     events,
     bars,
   };
+}
+
+const MELODY_BANK = MELODY_BANK_2025;
+let _melodyQueue = [];
+
+function pickFromMelodyBank() {
+  if (_melodyQueue.length === 0) {
+    _melodyQueue = _shuffleArr(MELODY_BANK.map(function (_, index) { return index; }));
+  }
+  const record = MELODY_BANK[_melodyQueue.shift()];
+  const bars = record.bars.map(function (bar) {
+    return bar.map(function (event) { return { ...event }; });
+  });
+  return { ...record, bars, barCount: bars.length };
 }
 const EXAM_METERS = [
   { id: '2/4', numerator: 2, denominator: 4, beatsPerBar: 2 },
@@ -1166,14 +891,6 @@ function pickMeterFromPool(meterIds) {
 }
 
 
-function pickKeyFromPool(keyIds, difficulty) {
-  const keys = (keyIds || [])
-    .map((id) => MELODY_KEYS[id])
-    .filter(Boolean);
-  if (!keys.length) return pickMelodyKey(difficulty);
-  return keys[randInt(0, keys.length - 1)];
-}
-
 function examPatterns(meter, difficulty) {
   const groups = EXAM_BAR_PATTERNS[meter.id];
   return groups[1]
@@ -1216,19 +933,15 @@ function genExamBars(difficulty, meter, barCount, allowRest = null, minKinds = 0
   return build();
 }
 
-function genExamRhythm(difficulty, barCount = 4, forcedMeterId = '', options = {}) {
+function genExamRhythm(difficulty, barCount = 4, options = {}) {
   const tier = hasExamValue(options.tier) ? (RHYTHM_TIERS[options.tier] || RHYTHM_TIERS[3]) : null;
 
   const level = tier ? tier.level : (hasExamValue(options.level) ? options.level : difficulty);
 
   let meter;
   let bars = null;
-  if (forcedMeterId) {
-    meter = EXAM_METERS.find((item) => item.id === forcedMeterId) || pickExamMeter(difficulty);
-  } else if (tier) {
+  if (tier) {
     meter = pickMeterFromPool(tier.meters);
-  } else if (Array.isArray(options.meters) && options.meters.length) {
-    meter = pickMeterFromPool(options.meters);
   } else {
     meter = pickExamMeter(difficulty);
   }
@@ -1239,8 +952,8 @@ function genExamRhythm(difficulty, barCount = 4, forcedMeterId = '', options = {
   let rhythmEvents = null;
   let sourcePaper = null;
   if (useBank) {
-    // 从 60 套真题节奏题库抽取（60 次内不重复，用尽自动重新洗牌）。
-    // 题库原题拍号优先于省份卷面默认值，保证节奏与参考答案不被改写。
+    // 从节奏题库（60 套模拟卷 + 12 条省级真题）抽取，一轮内不重复，用尽自动重新洗牌。
+    // 使用题库原题拍号，保证节奏与参考答案不被改写。
     const picked = pickFromRhythmBank();
     if (picked) {
       bars = picked.bars;
@@ -1281,116 +994,70 @@ function genExamRhythm(difficulty, barCount = 4, forcedMeterId = '', options = {
 }
 
 function genExamMelody(difficulty, barCount = 8, forcedMeterId = '', forcedKeySignature = '', options = {}) {
+  const picked = pickFromMelodyBank();
+  const meter = EXAM_METERS.find((item) => item.id === picked.meter);
   const tier = hasExamValue(options.tier) ? (MELODY_TIERS[options.tier] || MELODY_TIERS[3]) : null;
-  const forcedKeyId = typeof forcedKeySignature === 'string'
-    ? forcedKeySignature.replace(/\s+/g, '').replace('大调', '').toUpperCase()
-    : forcedKeySignature && forcedKeySignature.id;
-
-  const key = forcedKeyId
-    ? (MELODY_KEYS[forcedKeyId] || pickMelodyKey(difficulty))
-    : tier
-      ? pickKeyFromPool(tier.keys, difficulty)
-      : Array.isArray(options.keys) && options.keys.length
-        ? pickKeyFromPool(options.keys, difficulty)
-        : pickMelodyKey(difficulty);
-
-  let meter;
-  if (forcedMeterId) {
-    meter = EXAM_METERS.find((item) => item.id === forcedMeterId) || pickExamMeter(difficulty);
-  } else if (tier) {
-    meter = pickMeterFromPool(tier.meters);
-  } else if (Array.isArray(options.meters) && options.meters.length) {
-    meter = pickMeterFromPool(options.meters);
-  } else {
-    meter = pickExamMeter(difficulty);
-  }
-
-  const level = tier ? tier.level : (hasExamValue(options.level) ? options.level : difficulty);
-
-  const chromatic = tier ? tier.chromatic : (hasExamValue(options.chromatic) ? options.chromatic : 'natural');
-
-  const allowRest = tier ? tier.allowRest : (hasExamValue(options.allowRest) ? options.allowRest : null);
-
-  const bpm = tier ? tier.bpm : (hasExamValue(options.bpm) ? options.bpm : (difficulty === 1 ? 70 : difficulty === 2 ? 78 : 86));
-  const phraseTemplate = FOUR_PHRASE_MELODY_TEMPLATES[randInt(0, FOUR_PHRASE_MELODY_TEMPLATES.length - 1)];
-  const phrases = buildMelodyPhrasePlan(barCount);
-  const rhythmBars = buildPhraseRhythmBars(level, meter, barCount, phrases, allowRest);
+  const configuredBpm = tier ? tier.bpm
+    : (hasExamValue(options.bpm) ? options.bpm : (difficulty === 1 ? 70 : difficulty === 2 ? 78 : 86));
+  const melodyEvents = picked.bars;
+  const flatEvents = flattenBars(melodyEvents);
   const durs = [];
   const midis = [];
   const spellings = [];
   const answer = [];
   const answerSpellings = [];
+  let lastMidi = 60;
+  let lastSpelling = 'C4';
 
-  const chromaticBar = chromatic === 'some' ? phrases[1].startBar - 1 : -1;
-  let chromaticCount = 0;
-
-  rhythmBars.forEach((rhythm, barIndex) => {
-    const barNumber = barIndex + 1;
-    const phraseIndex = phraseForBar(phrases, barNumber);
-    const phrase = phrases[phraseIndex];
-    const soundingCount = rhythm.filter((duration) => duration > 0).length;
-    const contour = phraseContour(phraseTemplate, phrase, phraseIndex, barNumber);
-    let degrees = smoothMelodyDegrees(fitContour(contour, soundingCount));
-    const atPhraseEnd = barNumber === phrase.endBar;
-
-    if (phraseIndex === 2 && barNumber === phrase.startBar && (key.id === 'G' || key.id === 'F') && degrees.length > 1) {
-      const cadenceSlots = atPhraseEnd
-        ? Math.min(degrees.length, MELODY_CADENCE_APPROACHES[phraseIndex].length)
-        : 0;
-      const expressiveSlots = Math.max(1, degrees.length - cadenceSlots);
-      degrees[Math.min(expressiveSlots - 1, Math.floor(expressiveSlots / 2))] = key.id === 'G' ? 6 : 3;
+  flatEvents.forEach(function (event) {
+    if (!event.rest) {
+      lastMidi = event.midi;
+      lastSpelling = event.spelling;
+      answer.push(lastMidi);
+      answerSpellings.push(lastSpelling);
     }
-
-    if (atPhraseEnd && degrees.length) degrees = applyPhraseCadence(degrees, phraseIndex);
-    const chromaticSlot = barIndex === chromaticBar ? pickChromaticSlot(key, degrees, soundingCount) : -1;
-    let degreeIndex = 0;
-    let lastNote = degreeNote(key, degrees[0]);
-    rhythm.forEach((duration) => {
-      if (duration > 0) {
-        const slotIndex = degreeIndex;
-        const alter = slotIndex === chromaticSlot ? 1 : 0;
-        lastNote = degreeNote(key, degrees[slotIndex], alter);
-        degreeIndex++;
-        if (alter !== 0) chromaticCount++;
-        answer.push(lastNote.midi);
-        answerSpellings.push(lastNote.spelling);
-      }
-      durs.push(duration);
-      midis.push(lastNote.midi);
-      spellings.push(lastNote.spelling);
-    });
+    durs.push(event.rest ? -event.duration : event.duration);
+    midis.push(lastMidi);
+    spellings.push(lastSpelling);
   });
 
+  const phrases = buildMelodyPhrasePlan(picked.barCount);
   return {
     type: 'melody',
     typeName: '单声部旋律听写',
     midis,
     durs,
     spellings,
-    bars: rhythmBars,
-    bpm,
+    bars: melodyEvents.map(function (bar) {
+      return bar.map(function (event) { return event.rest ? -event.duration : event.duration; });
+    }),
+    melodyEvents,
+    bpm: rhythmPlaybackBpm(meter.id, configuredBpm),
     noteCount: answer.length,
     answer,
     answerText: `正确旋律见谱面（${answerSpellings.slice(0, 8).join(' ')} …）`,
     answerNotes: answerSpellings.join(' '),
-    keySignature: key.id,
-    keyName: key.name,
+    keySignature: picked.keySignature,
+    keyName: picked.keyName,
     meter: meter.id,
     meterNumerator: meter.numerator,
     meterDenominator: meter.denominator,
     beatsPerBar: meter.beatsPerBar,
-    barCount,
-    melodicStructure: 'A-A′-B-A″',
-    phraseCount: 4,
+    barCount: picked.barCount,
+    sourcePaper: picked.sourcePaper,
+    melodicStructure: picked.sourceLabel || '2025年模拟试卷原题',
+    phraseCount: phrases.length,
     phrases,
     phraseEndDegrees: phrases.map((phrase) => phrase.cadenceDegree),
-    restCount: durs.filter((duration) => duration < 0).length,
-    chromaticCount,
+    restCount: flatEvents.filter((event) => event.rest).length,
+    chromaticCount: 0,
     examSection: 'melody',
     examPoints: 4,
     repeatCount: 4,
-    knowledgeKey: `exam-melody:d${difficulty}:key${key.id}:meter${meter.id}`,
-    hint: `按第一句、第二句、第三句、第四句听记，再写入${barCount}小节旋律`
+    knowledgeKey: `exam-melody:paper${picked.sourcePaper}`,
+    hint: picked.sourceLabel
+      ? `辨认拍号与调号，写出${picked.sourceLabel}的 ${picked.barCount} 小节完整旋律`
+      : `辨认拍号与调号，写出参考答案第 7 题的 ${picked.barCount} 小节完整旋律`
   };
 }
 
@@ -1425,7 +1092,7 @@ function generateExamMixed() {
   appendUnique(2, () => genExamInterval(standard, true), intervalKey);
   questions.push(genIntervalConnection(standard));
   appendUnique(5, () => genExamChord(standard), practiceQuestionKey);
-  questions.push(genExamRhythm(standard, 6, '', { useBank: true }));
+  questions.push(genExamRhythm(standard, 6, { useBank: true }));
   questions.push(genExamMelody(standard));
   return questions.map((question, index) => ({
     ...question,
@@ -1467,7 +1134,8 @@ function withExamSectionMeta(question, section, item, itemCount) {
   const meter = examSectionValue(section, item, 'meter');
   const keySignature = examSectionValue(section, item, 'keySignature');
 
-  out.examPoints = resolveExamPoints(section, item, itemCount, question.examPoints);
+  const fallbackPoints = question.type === 'rhythm' ? 12 : question.type === 'melody' ? 16 : question.examPoints;
+  out.examPoints = resolveExamPoints(section, item, itemCount, fallbackPoints);
   if (hasExamValue(title)) {
     out.title = title;
     out.typeName = title;
@@ -1494,21 +1162,25 @@ function withExamSectionMeta(question, section, item, itemCount) {
       : question.typeName;
 
 
-  if (hasExamValue(bars)) out.examBars = question.type === 'rhythm' ? 6 : Number(bars);
+  if (hasExamValue(bars)) out.examBars = question.type === 'rhythm' ? 6 : question.sourcePaper ? 8 : Number(bars);
   if (hasExamValue(systems)) {
-    out.systems = Number(systems);
-    out.examSystems = Number(systems);
+    const resolvedSystems = question.type === 'melody' && question.sourcePaper ? 4 : Number(systems);
+    out.systems = resolvedSystems;
+    out.examSystems = resolvedSystems;
   }
   if (hasExamValue(meter)) {
-    const resolvedMeter = question.type === 'rhythm' && question.sourcePaper
+    const resolvedMeter = question.sourcePaper && (question.type === 'rhythm' || question.type === 'melody')
       ? question.meter
       : meter;
     out.meter = resolvedMeter;
     out.examMeter = resolvedMeter;
   }
   if (hasExamValue(keySignature)) {
-    out.keySignature = keySignature;
-    out.examKeySignature = keySignature;
+    const resolvedKey = question.type === 'melody' && question.sourcePaper
+      ? question.keySignature
+      : keySignature;
+    out.keySignature = resolvedKey;
+    out.examKeySignature = resolvedKey;
   }
   return out;
 }
@@ -1667,7 +1339,6 @@ function generateExamFromSections(sections) {
       const rhythmOptions = {};
       if (hasExamValue(section.tier)) rhythmOptions.tier = section.tier;
       if (hasExamValue(section.level)) rhythmOptions.level = section.level;
-      if (Array.isArray(section.meters) && section.meters.length) rhythmOptions.meters = section.meters;
       if (hasExamValue(section.allowRest)) rhythmOptions.allowRest = section.allowRest;
       if (hasExamValue(section.bpm)) rhythmOptions.bpm = section.bpm;
       rhythmOptions.useBank = true;
@@ -1675,8 +1346,7 @@ function generateExamFromSections(sections) {
         const item = items ? items[index] : null;
         const spec = item || section;
         const bars = Math.max(6, examCount(spec.bars, examCount(section.bars, 4)));
-        const meter = spec.meter || section.meter || '';
-        return withExamSectionMeta(genExamRhythm(standard, bars, meter, rhythmOptions), section, item, count);
+        return withExamSectionMeta(genExamRhythm(standard, bars, rhythmOptions), section, item, count);
       }, practiceQuestionKey, '节奏');
       return;
     }
@@ -1738,7 +1408,7 @@ function generateExamGuangxi() {
   appendUnique(2, () => ({ ...genExamInterval(standard, false), examPoints: 0.5 }), intervalKey);
   appendUnique(2, () => ({ ...genExamInterval(standard, true), examPoints: 0.5 }), intervalKey);
   appendUnique(4, () => ({ ...genExamChord(standard), examPoints: 0.75 }), practiceQuestionKey);
-  questions.push({ ...genExamRhythm(standard, 8, '', { useBank: true }), examPoints: 5, repeatCount: 4 });
+  questions.push({ ...genExamRhythm(standard, 8, { useBank: true }), examPoints: 5, repeatCount: 4 });
   questions.push({ ...genExamMelody(standard, 8), barCount: 8, examPoints: 13.5, repeatCount: 6 });
   return questions.map((question, index) => ({ ...question, examOrder: index + 1, examTotal: questions.length }));
 }
@@ -1762,14 +1432,14 @@ function generateExamJiangsu() {
     .concat(unique(2, () => ({ ...genExamInterval(standard, true), examPoints: 1.5 }), intervalKey))
     .concat(unique(4, () => ({ ...genExamInterval(standard, true), examPoints: 2 }), intervalKey));
   const chords = unique(6, () => ({ ...genExamChord(standard), examPoints: 3, repeatCount: 3 }), practiceQuestionKey);
-  const makeRhythm = (meterId) => {
-    const question = genExamRhythm(standard, 6, meterId, { useBank: true });
+  const makeRhythm = () => {
+    const question = genExamRhythm(standard, 6, { useBank: true });
     return { ...question, examPoints: 12, repeatCount: 4 };
   };
-  const rhythmQuestions = [makeRhythm('2/4'), makeRhythm('3/4')];
+  const rhythmQuestions = [makeRhythm(), makeRhythm()];
   const melodyQuestions = [
-    { ...genExamMelody(standard, 4, '3/4'), barCount: 4, examPoints: 16, repeatCount: 5 },
-    { ...genExamMelody(standard, 4, '6/8'), barCount: 4, examPoints: 16, repeatCount: 5 }
+    { ...genExamMelody(standard, 8), examPoints: 16, repeatCount: 5 },
+    { ...genExamMelody(standard, 8), examPoints: 16, repeatCount: 5 }
   ];
   return { singles, groups, intervals, chords, rhythmQuestions, melodyQuestions };
 }
@@ -1993,5 +1663,7 @@ module.exports = {
   RHYTHM_BANK,
   RHYTHM_META,
   pickFromRhythmBank,
+  MELODY_BANK,
+  pickFromMelodyBank,
   rhythmPlaybackBpm
 };

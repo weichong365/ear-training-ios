@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo } from 'react';
 import { AccessibilityInfo, Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 
 import { pianoBlackKeys, pianoWhiteMidis } from '@/core/music-notation';
+import { Btn } from '@/constants/button-tokens';
 
 type Highlight = 'correct' | 'wrong' | 'play' | 'std' | undefined;
 const KEY_STATES = {
@@ -108,18 +109,22 @@ function keyColor(highlight: Highlight, black: boolean) {
 }
 
 const styles = StyleSheet.create({
-  keyboard: { width: '100%', height: 150, padding: 3, borderRadius: 10, backgroundColor: '#0C0D10' },
+  // 小程序 .keyboard 300rpx / 5rpx / 7rpx
+  keyboard: { width: '100%', ...Btn.piano.keyboard, backgroundColor: '#0C0D10' },
   compactKeyboard: { height: 116 },
   disabled: { opacity: 0.72 },
   keybed: { position: 'relative', flex: 1, flexDirection: 'row' },
-  whiteKey: { flex: 1, borderWidth: 0.5, borderColor: '#BDBBB5', borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: '#FFFEFA', overflow: 'hidden' },
+  // 小程序 .white border-radius 1rpx 1rpx 3rpx 3rpx
+  whiteKey: { flex: 1, borderWidth: 0.5, borderColor: '#BDBBB5', ...Btn.piano.whiteKey, backgroundColor: '#FFFEFA', overflow: 'hidden' },
   whiteFace: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8 },
-  blackKey: { position: 'absolute', zIndex: 2, top: 0, height: '59%', borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: '#121313', borderWidth: 0.5, borderColor: '#050506', overflow: 'hidden' },
+  // 小程序 .black height 59% / border-radius 0 0 2rpx 2rpx
+  blackKey: { position: 'absolute', zIndex: 2, top: 0, height: '59%', ...Btn.piano.blackKey, backgroundColor: '#121313', borderWidth: 0.5, borderColor: '#050506', overflow: 'hidden' },
   blackFace: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 6 },
+  /** 键位对错标记为 App 独有，小程序无对应字样 */
   keyMark: { color: '#FFFFFF', fontSize: 12, lineHeight: 16, fontWeight: '900' },
   blackMark: { fontSize: 10 },
   standardMark: { color: '#17372C' },
-  keyLabel: { color: '#9AA0AD', fontSize: 7 },
+  keyLabel: { color: '#9AA0AD', ...Btn.piano.keyLabel },
   highlightedLabel: { color: '#FFFFFF' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   legendText: { color: '#53645D', fontSize: 10, lineHeight: 14 },

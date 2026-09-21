@@ -75,6 +75,18 @@ export const Brand = {
   gold: '#F18A62',
   border: '#DEE6E2',
   divider: '#ECF1EE',
+  /**
+   * 窗口分隔线（hairline）：顶部（状态栏下沿）与底部 tabBar 上沿共用同一条线。
+   *
+   * 颜色 = 底部那条线的**原值本身**，不是近似：底部 tabBar 的上沿线由框架画，
+   * 真源 = expo-router 内联的 React Navigation `DefaultTheme.colors.border`
+   * （`node_modules/expo-router/build/react-navigation/native/theming/DefaultTheme.js`），
+   * 而 `BottomTabBar.js` 里就是 `borderColor: colors.border` + `borderTopWidth: hairlineWidth`。
+   * 写成不透明 rgb 而不是 rgba(0,0,0,.15)：顶部那一段落在 cream(#F7F7F1) 上、
+   * 首页那段落在纯白上，半透明色会被底色带偏（≈211 vs ≈217），不透明色两端恒定。
+   * ⚠️ 顶部改色必须同步改底部，反之亦然 —— scripts/nav-hairline-smoke.cjs 会拦。
+   */
+  hairline: 'rgb(216, 216, 216)',
   success: '#2E8B6F',
   successSoft: '#E2F2EC',
   warning: '#D79A45',

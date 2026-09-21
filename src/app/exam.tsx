@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppIcon } from '@/components/app-icon';
-import { Fonts, TouchTarget, TypeScale } from '@/constants/theme';
+import { Btn, hitSlopFor } from '@/constants/button-tokens';
+import { Brand, TypeScale } from '@/constants/theme';
 import { generateProvincePaper, getProvinceFramework, getProvinceVariants, PROVINCES, type ProvinceId } from '@/core/provinces';
 import { emptyExamAnswer } from '@/core/exam-answer';
 import { getActiveExamSession, saveExamSession, type ExamSession } from '@/services/local-data';
@@ -11,13 +12,21 @@ import { useProvince } from '@/services/province-context';
 
 const EXAM_PAPER_ROUTE = '/exam-paper' as Href;
 
+/** 与小程序的考试页（亚麻米白底 + 森林绿）保持一致，替代此前的纯黑白卷面风。 */
 const PAPER = {
-  bg: '#FFFFFF',
-  ink: '#111111',
-  muted: '#666666',
-  line: '#141414',
-  rule: '#D8D8D8',
+  linen: '#F4EAD5',
+  shell: '#FFFFFF',
+  ink: '#18201E',
+  muted: '#75827E',
+  forest: Brand.forest,
+  forestSoft: '#E7F2EE',
+  accent: Brand.success,
+  accentTint: '#F1F7EF',
+  border: '#D7E1D5',
+  rule: '#C7DACA',
 } as const;
+
+const R = { card: 7, option: 6, button: 5 } as const;
 
 export default function ExamScreen() {
   const { provinceId: selectedProvince } = useProvince();
@@ -107,6 +116,7 @@ export default function ExamScreen() {
             <Text style={[styles.provinceText, provinceId === item.id && styles.provinceTextActive]}>{item.label}</Text>
           </Pressable>
         ))}
+        {Array.from({ length: (3 - (PROVINCES.length % 3)) % 3 }, (_, index) => <View key={`filler-${index}`} style={styles.provinceFiller} />)}
       </View>
 
       {variants.length > 1 && <>
@@ -145,7 +155,7 @@ export default function ExamScreen() {
         </View>
       </View>
 
-      <Pressable accessibilityRole="button" accessibilityState={{ disabled: creating, busy: creating }} disabled={creating} onPress={startNew} style={({ pressed }) => [styles.startButton, creating && styles.startDisabled, pressed && styles.pressed]}>
+      <Pressable accessibilityRole="button" accessibilityState={{ disabled: creating, busy: creating }} disabled={creating} hitSlop={hitSlopFor(Btn.exam.provinceConfirm.height)} onPress={startNew} style={({ pressed }) => [styles.startButton, creating && styles.startDisabled, pressed && styles.pressed]}>
         <Text style={styles.startText}>{creating ? '正在生成试卷…' : activeSession ? '生成并开始新试卷' : '开始整卷模拟'}</Text>
       </Pressable>
       <Text style={styles.footnote}>交卷前可退出页面，答题内容和播放次数会保存在当前设备。</Text>
@@ -154,46 +164,50 @@ export default function ExamScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: PAPER.bg },
-  content: { padding: 20, paddingBottom: 42, gap: 16 },
-  hero: { padding: 22, borderRadius: 4, backgroundColor: PAPER.ink },
-  title: { color: '#FFFFFF', fontSize: TypeScale.title1, fontWeight: '900', fontFamily: Fonts.serif },
-  subtitle: { marginTop: 6, color: 'rgba(255,255,255,.72)', fontSize: TypeScale.footnote },
-  resumeCard: { minHeight: 88, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 4, borderWidth: 1, borderColor: PAPER.line, backgroundColor: PAPER.bg },
+  page: { flex: 1, backgroundColor: PAPER.linen },
+  content: { padding: 14, paddingBottom: 42, gap: 16 },
+  hero: { padding: 20, borderRadius: R.card, backgroundColor: PAPER.forest },
+  title: { color: PAPER.shell, fontSize: TypeScale.title1, fontWeight: '900' },
+  subtitle: { marginTop: 6, color: 'rgba(255,255,255,.76)', fontSize: TypeScale.footnote },
+  resumeCard: { ...Btn.exam.provincePicker, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: PAPER.forest, backgroundColor: PAPER.shell },
   resumeKicker: { color: PAPER.muted, fontSize: TypeScale.caption, fontWeight: '800' },
-  resumeTitle: { marginTop: 3, maxWidth: 220, color: PAPER.ink, fontSize: TypeScale.subheadline, fontWeight: '900', fontFamily: Fonts.serif },
+  resumeTitle: { marginTop: 3, maxWidth: 220, color: PAPER.ink, fontSize: TypeScale.subheadline, fontWeight: '900' },
   resumeSub: { marginTop: 4, color: PAPER.muted, fontSize: TypeScale.caption },
-  resumeAction: { minHeight: TouchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
-  resumeActionText: { color: PAPER.ink, fontSize: TypeScale.caption, fontWeight: '900' },
-  sectionTitle: { marginTop: 3, color: PAPER.ink, fontSize: TypeScale.headline, fontWeight: '900', fontFamily: Fonts.serif },
-  provinceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  provinceButton: { width: '23.3%', minHeight: TouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: 4, borderWidth: 1, borderColor: PAPER.line, backgroundColor: PAPER.bg },
-  provinceActive: { borderColor: PAPER.ink, backgroundColor: PAPER.ink },
-  provinceText: { color: PAPER.muted, fontSize: TypeScale.caption, fontWeight: '700' },
-  provinceTextActive: { color: '#FFFFFF' },
+  resumeAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
+  resumeActionText: { color: PAPER.forest, fontSize: TypeScale.caption, fontWeight: '900' },
+  sectionTitle: { marginTop: 3, color: PAPER.ink, fontSize: TypeScale.headline, fontWeight: '900' },
+  // 小程序 .province-grid = repeat(3, minmax(0,1fr)) + gap 10rpx → 3 列、列距 5pt。
+  // RN 没有 grid，用 flexBasis 30% + flexGrow 1 复刻：每行 3 格等宽，末行不足 3 格时
+  // 用透明填充格补齐，保证最后一格的宽度与前几行一致（不会拉成整行）。
+  provinceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  provinceButton: { flexBasis: '30%', flexGrow: 1, ...Btn.exam.provincePill, alignItems: 'center', justifyContent: 'center', borderColor: '#CBDED2', backgroundColor: PAPER.shell },
+  provinceFiller: { flexBasis: '30%', flexGrow: 1 },
+  provinceActive: { borderColor: PAPER.forest, backgroundColor: PAPER.forestSoft },
+  provinceText: { color: '#566B60', fontSize: Btn.exam.provincePill.fontSize, fontWeight: '700' },
+  provinceTextActive: { color: PAPER.forest },
   yearRow: { flexDirection: 'row', gap: 8 },
-  yearButton: { minHeight: TouchTarget, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 4, borderWidth: 1, borderColor: PAPER.line, backgroundColor: PAPER.bg },
-  paper: { padding: 16, borderRadius: 4, borderWidth: 1, borderColor: PAPER.line, backgroundColor: PAPER.bg },
+  yearButton: { flexBasis: '30%', flexGrow: 1, ...Btn.exam.provincePill, alignItems: 'center', justifyContent: 'center', borderColor: '#CBDED2', backgroundColor: PAPER.shell },
+  paper: { padding: 16, borderRadius: R.card, borderWidth: 1, borderColor: PAPER.border, backgroundColor: PAPER.shell },
   paperHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: PAPER.rule },
   paperHeadCopy: { flex: 1, paddingRight: 10 },
   paperKicker: { color: PAPER.muted, fontSize: TypeScale.caption, fontWeight: '700' },
-  paperTitle: { marginTop: 4, color: PAPER.ink, fontSize: TypeScale.headline, fontWeight: '900', fontFamily: Fonts.serif },
+  paperTitle: { marginTop: 4, color: PAPER.ink, fontSize: TypeScale.headline, fontWeight: '900' },
   paperYear: { marginTop: 4, color: PAPER.muted, fontSize: TypeScale.caption },
   scoreBadge: { flexDirection: 'row', alignItems: 'baseline' },
-  scoreMain: { color: PAPER.ink, fontSize: 30, fontWeight: '900' },
+  scoreMain: { color: PAPER.forest, fontSize: 30, fontWeight: '900' },
   scoreUnit: { marginLeft: 2, color: PAPER.muted, fontSize: TypeScale.caption },
   ruleRow: { paddingVertical: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' },
   ruleText: { color: PAPER.muted, fontSize: TypeScale.caption },
-  ruleDot: { marginHorizontal: 6, color: PAPER.ink },
+  ruleDot: { marginHorizontal: 6, color: PAPER.accent },
   sectionList: { gap: 7 },
-  sectionRow: { minHeight: 44, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', borderRadius: 4, backgroundColor: '#F7F7F7' },
-  sectionIndex: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: PAPER.ink },
-  sectionIndexText: { color: '#FFFFFF', fontSize: TypeScale.caption, fontWeight: '800' },
+  sectionRow: { minHeight: 44, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', borderRadius: R.option, backgroundColor: PAPER.accentTint },
+  sectionIndex: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: PAPER.forest },
+  sectionIndexText: { color: PAPER.shell, fontSize: TypeScale.caption, fontWeight: '800' },
   sectionName: { flex: 1, marginLeft: 10, color: PAPER.ink, fontSize: TypeScale.footnote, fontWeight: '700' },
   sectionCount: { color: PAPER.muted, fontSize: TypeScale.caption },
-  startButton: { minHeight: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 4, backgroundColor: PAPER.ink },
+  startButton: { ...Btn.exam.provinceConfirm, alignItems: 'center', justifyContent: 'center', backgroundColor: PAPER.forest },
   startDisabled: { opacity: 0.5 },
-  startText: { color: '#FFFFFF', fontSize: TypeScale.subheadline, fontWeight: '900' },
+  startText: { color: PAPER.shell, fontSize: Btn.exam.provinceConfirm.fontSize, fontWeight: '700' },
   footnote: { paddingHorizontal: 6, color: PAPER.muted, fontSize: TypeScale.caption, lineHeight: 18, textAlign: 'center' },
   pressed: { opacity: 0.72 },
 });

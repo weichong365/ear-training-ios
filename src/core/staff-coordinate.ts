@@ -1,36 +1,38 @@
-export const STAFF_VIEWBOX_HEIGHT = 96;
-export const ANSWER_STAFF_HEIGHT = 122;
-
-const STAFF_E4_Y = 68;
-const STAFF_DIATONIC_STEP = 5;
-const NATURAL_SCALE = [0, 2, 4, 5, 7, 9, 11];
-const LETTER_INDEX: Record<string, number> = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
-const SHARP_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const E4_DIATONIC = 4 * 7 + LETTER_INDEX.E;
-
 /**
- * Convert a written MIDI pitch to the vertical coordinate used by the answer staff.
- * Chromatic MIDI values use the same default sharp spelling as the mini program.
+ * 五线谱 viewBox 与触摸坐标换算。
+ *
+ * viewBox 用 **rpx**（与小程序同坐标系）：宽 = 实际渲染 pt 宽 × 2、高 = 140rpx，
+ * 画布高 70pt ⇒ 1 单位 = 0.5pt，两端逐像素一致。
  */
-export function staffSvgYFromWrittenMidi(midi: number) {
-  const name = SHARP_NAMES[((midi % 12) + 12) % 12];
-  const octave = Math.floor(midi / 12) - 1;
-  const diatonic = octave * 7 + LETTER_INDEX[name[0]];
-  return STAFF_E4_Y - (diatonic - E4_DIATONIC) * STAFF_DIATONIC_STEP;
+
+import { DEFAULT_STAFF_WIDTH_RPX, RPX_TO_PT, STAFF_HEIGHT_RPX } from './staff-layout.ts';
+import { staffSvgYFromWrittenMidi, writtenMidiFromStaffSvgY } from './music-notation.ts';
+
+export { staffSvgYFromWrittenMidi, writtenMidiFromStaffSvgY };
+
+/** viewBox 高度（rpx） */
+export const STAFF_VIEWBOX_HEIGHT = STAFF_HEIGHT_RPX;
+/** 首次布局前的默认 viewBox 宽度（小程序 answer-staff 的 width prop） */
+export const STAFF_VIEWBOX_WIDTH = DEFAULT_STAFF_WIDTH_RPX;
+/** 画布渲染高度（pt）= 140rpx × 0.5 */
+export const ANSWER_STAFF_HEIGHT = STAFF_HEIGHT_RPX * RPX_TO_PT;
+
+/** 实际渲染宽度（pt）→ viewBox 宽度（rpx） */
+export function staffViewBoxWidth(renderedWidth: number) {
+  if (!(renderedWidth > 0)) return STAFF_VIEWBOX_WIDTH;
+  return Math.round(renderedWidth / RPX_TO_PT * 2) / 2;
 }
 
-/** Convert a coordinate in the 96-unit staff viewBox to a natural MIDI pitch. */
+/** 谱面 y（rpx）→ 最近的记谱自然音 MIDI。 */
 export function naturalMidiFromStaffSvgY(y: number, minimum = 55, maximum = 81) {
-  const diatonic = E4_DIATONIC + Math.round((STAFF_E4_Y - y) / STAFF_DIATONIC_STEP);
-  const octave = Math.floor(diatonic / 7);
-  const index = ((diatonic % 7) + 7) % 7;
-  return Math.max(minimum, Math.min(maximum, (octave + 1) * 12 + NATURAL_SCALE[index]));
+  const midi = writtenMidiFromStaffSvgY(y);
+  return Math.max(minimum, Math.min(maximum, midi));
 }
 
 /**
- * Convert the physical tap coordinate into the staff viewBox before resolving pitch.
- * Staff SVGs deliberately use preserveAspectRatio="none", so this conversion remains
- * correct on every screen width and does not inherit SVG letterboxing offsets.
+ * 物理触摸点 → 谱面音高。
+ * 谱面 SVG 刻意使用 preserveAspectRatio="none"，此换算在任何屏宽下都成立，
+ * 且不继承 SVG 的 letterbox 偏移。
  */
 export function naturalMidiFromStaffTapY(y: number, renderedHeight = ANSWER_STAFF_HEIGHT, minimum = 55, maximum = 81) {
   const safeHeight = renderedHeight > 0 ? renderedHeight : ANSWER_STAFF_HEIGHT;

@@ -1,8 +1,12 @@
 import type { PracticeQuestion } from '@/core';
 import type { ExamAnswer, NotationEvent } from '@/core/exam-answer';
+import timedScoreCore from './legacy/timed-score.js';
 
 const EPSILON = 1e-6;
 export const STANDARD_MIDI = 69;
+
+/** 题库（utils/*-bank-2025.js）里的事件形状：duration + rest + tieToNext */
+type RhythmicBankEvent = { duration: number; rest?: boolean; tieToNext?: boolean; midi?: number };
 
 export function meterCapacity(meter: string, fallback = 4) {
   const [topText, bottomText] = String(meter || '').split('/');
@@ -20,10 +24,15 @@ export function sumDuration(events: NotationEvent[]) {
   return events.reduce((sum, event) => sum + Math.abs(Number(event.duration) || 0), 0);
 }
 
+/**
+ * 判题签名 —— 与小程序 `practice.js: eventSignature` 逐字段一致。
+ * ⚠️ 连音线**参与判题**：小程序用 `${midis[0]}:${duration}:${tieToNext?1:0}`，
+ * 少一个 `~` 就是错答案。App 侧漏掉会把「该连的没连」判成对。
+ */
 export function eventSignature(event: NotationEvent) {
   const duration = Math.round(Math.abs(Number(event.duration) || 0) * 1_000_000) / 1_000_000;
   if (event.rest || Number(event.duration) < 0) return `r:${duration}`;
-  return `${event.midi}:${duration}`;
+  return `${event.midi}:${duration}:${event.tieToNext ? 1 : 0}`;
 }
 
 export function splitBars(events: NotationEvent[], beatsPerBar: number, barCount: number) {
@@ -75,20 +84,41 @@ export function sameUnorderedMidis(actual: number[], expected: number[]) {
   return sameOrderedMidis(left, right);
 }
 
+/**
+ * 标准答案事件 —— 与小程序 `practice.js: targetTimedEvents` 逐分支一致。
+ * 节奏优先取题库原题 `question.rhythmEvents`（带 `tieToNext`，谱面要画连音线），
+ * 旋律用 `question.melodyEvents` 把连音线映射到 `question.durs` 的第 i 个音上。
+ * 两者都缺失（纯生成题）时退回 `beats` / `durs`。
+ */
 export function targetTimedEvents(question: PracticeQuestion): NotationEvent[] {
   const spellings = Array.isArray(question.spellings) ? question.spellings as string[] : [];
   if (question.type === 'rhythm') {
+    const bars = Array.isArray(question.rhythmEvents) ? (question.rhythmEvents as RhythmicBankEvent[][]) : null;
+    if (bars) {
+      const source = bars.reduce<RhythmicBankEvent[]>((all, bar) => all.concat(bar), []);
+      return source.map((event, index) => ({
+        midi: STANDARD_MIDI,
+        duration: event.rest ? -Number(event.duration) : Number(event.duration),
+        rest: Boolean(event.rest),
+        tieToNext: Boolean(event.tieToNext),
+        tieFromPrevious: index > 0 && Boolean(source[index - 1].tieToNext),
+      }));
+    }
     return (question.beats || []).map((duration) => ({
       midi: STANDARD_MIDI,
       duration,
       rest: duration < 0,
     }));
   }
+  const melodyBars = Array.isArray(question.melodyEvents) ? (question.melodyEvents as RhythmicBankEvent[][]) : null;
+  const melodySource = melodyBars ? melodyBars.reduce<RhythmicBankEvent[]>((all, bar) => all.concat(bar), []) : [];
   return (question.durs || []).map((duration, index) => ({
     midi: Number(question.midis?.[index] ?? STANDARD_MIDI),
     spelling: spellings[index],
     duration,
     rest: duration < 0,
+    tieToNext: Boolean(melodySource[index]?.tieToNext),
+    tieFromPrevious: index > 0 && Boolean(melodySource[index - 1]?.tieToNext),
   }));
 }
 
@@ -139,11 +169,7 @@ export function practiceAnswerCorrect(question: PracticeQuestion, answer: ExamAn
 
 export function timedExamScore(question: PracticeQuestion, answer: ExamAnswer, totalPoints: number) {
   const review = timedAnswerReview(question, answer);
-  const setupShare = totalPoints * 0.1;
-  let score = review.meterCorrect ? (question.type === 'melody' ? setupShare / 2 : setupShare) : 0;
-  if (question.type === 'melody' && review.keyCorrect) score += setupShare / 2;
-  score += (totalPoints - setupShare) * review.correctBars / Math.max(1, review.barCount);
-  score = Math.round(score * 100) / 100;
+  const score = timedScoreCore.scoreTimedDictation(question.type, totalPoints,
+    review.meterCorrect, review.keyCorrect, review.correctBars);
   return { score, total: totalPoints, ratio: totalPoints ? score / totalPoints : 0, correct: review.correct };
 }
-

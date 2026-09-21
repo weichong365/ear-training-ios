@@ -92,6 +92,10 @@ function normalizeAnswer(value) {
       ...(text(event.spelling) ? { spelling: event.spelling } : {}),
       ...(Number.isFinite(event.barIndex) ? { barIndex: Math.max(0, Math.floor(Number(event.barIndex))) } : {}),
       ...(Number.isFinite(event.inputOrder) ? { inputOrder: Math.max(0, Math.floor(Number(event.inputOrder))) } : {}),
+      // 连音线参与判题签名（answer-sync.eventSignature）⇒ 必须显式保留，
+      // 否则重载后 tieToNext 丢失、已答对的节奏题会被重判为错。
+      ...(event.tieToNext === true ? { tieToNext: true } : {}),
+      ...(event.tieFromPrevious === true ? { tieFromPrevious: true } : {}),
     }];
   }) : [];
   return {

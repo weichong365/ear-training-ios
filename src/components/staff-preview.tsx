@@ -1,32 +1,45 @@
-import { memo } from 'react';
-import { GestureResponderEvent, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { G, Line } from 'react-native-svg';
+import { memo, useState } from 'react';
+import { GestureResponderEvent, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import {
-  MUSIC_STAFF_LEFT,
-  MUSIC_STAFF_RIGHT,
-  MUSIC_STAFF_VIEW_BOX,
-  MusicAccidental,
-  MusicNotehead,
-  musicAccidentalX,
-  musicLedgerBounds,
-  noteheadHalfWidth,
-} from '@/components/music-glyphs';
-import { Brand, TouchTarget, TypeScale } from '@/constants/theme';
+import { StaffNotation } from '@/components/staff-notation';
+import { Btn } from '@/constants/button-tokens';
+import { Brand } from '@/constants/theme';
 import type { AccidentalMode } from '@/core/exam-answer';
-import { accidentalColumns, barlineBounds, chordHeadOffsets, ledgerLineYs, noteheadStemStart, STAFF_LINE_YS, STAFF_MIDDLE_LINE_Y, STAFF_STROKE_WIDTH, stemDirectionForWrittenMidis } from '@/core/music-notation';
-import { accidentalGlyphForPitch, defaultPitchSpelling, naturalMidiForPitchSpelling } from '@/core/pitch-spelling';
-import { ANSWER_STAFF_HEIGHT, staffSvgYFromWrittenMidi } from '@/core/staff-coordinate';
+import { defaultPitchSpelling } from '@/core/pitch-spelling';
+import {
+  DEFAULT_STAFF_WIDTH_RPX,
+  RPX_TO_PT,
+  STAFF_SHELL_BORDER,
+  STAFF_SHELL_RADIUS,
+  type StaffEvent,
+} from '@/core/staff-layout';
+import { ANSWER_STAFF_HEIGHT, staffViewBoxWidth } from '@/core/staff-coordinate';
 
-const COMPACT_STAFF_HEIGHT = 92;
+/**
+ * 谱例预览 —— 与小程序的 `<answer-staff>`（`exam.wxml` 的选择题谱面）同源：
+ * 同一套 rpx 几何、同一批 Bravura 字形、同一份「调号已含的升降号不重复标注」规则。
+ * 容器高 140rpx = 70pt，viewBox 用 rpx ⇒ 1 单位 = 0.5pt，与小程序逐像素一致。
+ */
 
 type StaffPreviewProps = {
+  /** 小程序形状的事件（midis/dur/rest/barIndex）；给了它就不再从 midis 反推 */
+  events?: StaffEvent[];
   midis?: number[];
+  spellings?: string[];
+  /** 纵向叠写（和弦 / 和声音程） */
   harmonic?: boolean;
-  compact?: boolean;
+  meter?: string;
+  keySignature?: string;
+  barCount?: number;
+  /** 小程序 exam.wxml `style="width: {{option.staffWidth}}rpx"` */
+  staffWidth?: number;
   ink?: boolean;
+  tone?: 'red' | 'green' | '';
   accidentals?: AccidentalMode[];
+  /** true → 全音符（无符干）；false → 四分音符（带符干） */
   wholeNotes?: boolean;
+  /** @deprecated 小程序答题谱只有 140rpx 一种尺寸；保留 prop 仅为兼容既有调用 */
+  compact?: boolean;
   onPressY?: (y: number) => void;
 };
 
@@ -47,12 +60,40 @@ export function AccidentalPicker({ value, disabled, onChange }: { value: Acciden
   return (
     <View style={styles.accidentalWrap} accessibilityLabel="临时记号选择">
       {ACCIDENTAL_OPTIONS.map((option) => (
-        <Pressable accessibilityRole="radio" accessibilityLabel={`临时记号${option.label}`} accessibilityState={{ selected: value === option.value, disabled }} key={option.value} disabled={disabled} onPress={() => onChange(option.value)} style={[styles.accidentalButton, value === option.value && styles.accidentalActive, disabled && styles.accidentalDisabled]}>
+        <Pressable accessibilityRole="radio" accessibilityLabel={`临时记号${option.label}`} accessibilityState={{ selected: value === option.value, disabled }} hitSlop={Btn.staff.accidentalHitSlop} key={option.value} disabled={disabled} onPress={() => onChange(option.value)} style={[styles.accidentalButton, value === option.value && styles.accidentalActive, disabled && styles.accidentalDisabled]}>
           <Text style={[styles.accidentalText, value === option.value && styles.accidentalTextActive]}>{option.label}</Text>
         </Pressable>
       ))}
     </View>
   );
+}
+
+/** 把「谱位自然音 + 记号」拼成拼写串（'C#5' / 'Bb4' / 'Fn4'）。 */
+function spelled(writtenMidi: number, acc: '#' | 'b' | 'n') {
+  return defaultPitchSpelling(writtenMidi).replace(/^([A-G])([#bn]?)/, `$1${acc}`);
+}
+
+/**
+ * midis + 可选临时记号 → 小程序形状的事件。
+ * 记号的语义与旧实现一致：显式 'sharp'/'flat' 时符头落在自然音位、另画记号；
+ * 未显式给出记号时用默认拼写（黑键自带 ♯），交给 staffAccidental 决定是否落笔。
+ */
+function previewEvents(midis: number[], spellings: string[], accidentals: AccidentalMode[], harmonic: boolean, wholeNotes: boolean): StaffEvent[] {
+  const notes = midis.filter((midi) => Number.isFinite(midi)).slice(0, 10);
+  if (!notes.length) return [];
+  const pitched = notes.map((midi, index) => {
+    if (spellings[index]) return { midi, spelling: spellings[index] };
+    const accidental = accidentals[index] || 'none';
+    if (accidental === 'sharp') return { midi, spelling: spelled(midi - 1, '#') };
+    if (accidental === 'flat') return { midi, spelling: spelled(midi + 1, 'b') };
+    if (accidental === 'natural') return { midi, spelling: spelled(midi, 'n') };
+    return { midi, spelling: defaultPitchSpelling(midi) };
+  });
+  if (harmonic) {
+    return [{ midis: pitched.map((note) => note.midi), spellings: pitched.map((note) => note.spelling), dur: 4, rest: false }];
+  }
+  const dur = wholeNotes ? 4 : 1;
+  return pitched.map((note) => ({ midis: [note.midi], spellings: [note.spelling], dur, rest: false }));
 }
 
 function resolvePressY(event: GestureResponderEvent, height: number) {
@@ -76,69 +117,18 @@ function resolvePressY(event: GestureResponderEvent, height: number) {
   return height / 2;
 }
 
-export const StaffPreview = memo(function StaffPreview({ midis = [], harmonic = false, compact = false, ink = false, accidentals = [], wholeNotes = false, onPressY }: StaffPreviewProps) {
-  const source = midis.length ? midis : onPressY ? [] : [64, 67, 69, 67, 72];
-  const notes = source.slice(0, compact ? 5 : 10);
-  const writtenNotes = notes.map((midi, index) => {
-    const suppliedAccidental = accidentals[index];
-    const spelling = suppliedAccidental === undefined ? defaultPitchSpelling(midi) : undefined;
-    const accidental = suppliedAccidental || 'none';
-    return spelling
-      ? naturalMidiForPitchSpelling(midi, spelling)
-      : accidental === 'sharp' ? midi - 1 : accidental === 'flat' ? midi + 1 : midi;
-  });
-  const chordOffsets = harmonic ? chordHeadOffsets(writtenNotes) : writtenNotes.map(() => 0);
-  const accidentalColumn = accidentalColumns(writtenNotes);
-  const noteX = (index: number) => harmonic
-    ? 157 + chordOffsets[index]
-    : 92 + index * Math.min(27, 188 / Math.max(1, notes.length - 1));
-  const noteYs = writtenNotes.map(staffSvgYFromWrittenMidi);
-  const previewHeadKind = wholeNotes ? 'whole' : 'black';
-  const previewHeadHalfWidth = noteheadHalfWidth(previewHeadKind);
-  const harmonicStemDirection = stemDirectionForWrittenMidis(writtenNotes);
-  const barline = barlineBounds();
+export const StaffPreview = memo(function StaffPreview({ events, midis = [], spellings = [], harmonic = false, meter = '', keySignature = '', barCount = 0, staffWidth, ink = false, tone = '', accidentals = [], wholeNotes = false, onPressY }: StaffPreviewProps) {
+  const [measured, setMeasured] = useState(0);
+  const staffEvents = events || previewEvents(midis, spellings, accidentals, harmonic, wholeNotes);
+  /** 布局宽度（rpx）=小程序 answer-staff 的 width prop；实测宽度只在没指定时兜底 */
+  const layoutWidth = staffWidth || DEFAULT_STAFF_WIDTH_RPX;
+  const viewBoxWidth = staffWidth || staffViewBoxWidth(measured);
 
   const staff = (
-    <View style={[styles.container, ink && styles.inkContainer, compact && styles.compact]} accessibilityLabel="五线谱预览">
-      <Svg viewBox={MUSIC_STAFF_VIEW_BOX} preserveAspectRatio="none" width="100%" height="100%">
-        {STAFF_LINE_YS.map((y) => (
-          <Line key={y} x1={MUSIC_STAFF_LEFT} x2={MUSIC_STAFF_RIGHT} y1={y} y2={y} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />
-        ))}
-        <Line key="final-bar-thin" x1="304" x2="304" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth={STAFF_STROKE_WIDTH} />
-        <Line key="final-bar-thick" x1="308" x2="308" y1={barline.top} y2={barline.bottom} stroke={ink ? '#141414' : '#596169'} strokeWidth="3" />
-        {!wholeNotes && harmonic && notes.length > 0 && (() => {
-          const noteXs = notes.map((_, index) => noteX(index));
-          const topY = Math.min(...noteYs);
-          const bottomY = Math.max(...noteYs);
-          const stemHeadX = harmonicStemDirection === 'up' ? Math.min(...noteXs) : Math.max(...noteXs);
-          const stemHeadY = harmonicStemDirection === 'up' ? bottomY : topY;
-          const stemStart = noteheadStemStart(stemHeadX, stemHeadY, previewHeadHalfWidth, harmonicStemDirection);
-          return <Line x1={stemStart.x} x2={stemStart.x} y1={stemStart.y} y2={harmonicStemDirection === 'up' ? topY - 27 : bottomY + 27} stroke={Brand.ink} strokeWidth="1.5" />;
-        })()}
-        {notes.map((midi, index) => {
-          const x = noteX(index);
-          const suppliedAccidental = accidentals[index];
-          const spelling = suppliedAccidental === undefined ? defaultPitchSpelling(midi) : undefined;
-          const accidental = suppliedAccidental || 'none';
-          const writtenMidi = writtenNotes[index];
-          const y = staffSvgYFromWrittenMidi(writtenMidi);
-          const glyph = spelling
-            ? accidentalGlyphForPitch(midi, spelling)
-            : accidental === 'sharp' ? '♯' : accidental === 'flat' ? '♭' : accidental === 'natural' ? '♮' : '';
-          const direction = stemDirectionForWrittenMidis([writtenMidi]);
-          const stemStart = noteheadStemStart(x, y, previewHeadHalfWidth, direction);
-          const ledger = musicLedgerBounds(x);
-          return (
-            <G key={`${midi}-${index}`}>
-              {ledgerLineYs(writtenMidi).map((ledgerY) => <Line key={`ledger-${ledgerY}`} x1={ledger.x1} x2={ledger.x2} y1={ledgerY} y2={ledgerY} stroke={Brand.ink} strokeWidth={STAFF_STROKE_WIDTH} />)}
-              {!wholeNotes && !harmonic && <Line x1={stemStart.x} x2={stemStart.x} y1={stemStart.y} y2={direction === 'up' ? y - 27 : y + 27} stroke={Brand.ink} strokeWidth="1.5" />}
-              {!!glyph && <MusicAccidental x={musicAccidentalX(x, accidentalColumn[index])} y={y} glyph={glyph} color={Brand.ink} />}
-              <MusicNotehead x={x} y={y} kind={previewHeadKind} color={Brand.ink} />
-            </G>
-          );
-        })}
-      </Svg>
-      <Image source={require('../../assets/images/g-clef.png')} resizeMode="contain" style={[styles.clef, compact && styles.compactClef]} />
+    <View style={[styles.container, ink && styles.inkContainer, staffWidth ? { width: staffWidth * RPX_TO_PT } : null]}>
+      <View style={styles.touchArea} onLayout={(event: LayoutChangeEvent) => setMeasured(event.nativeEvent.layout.width)}>
+        <StaffNotation events={staffEvents} viewBoxWidth={viewBoxWidth} width={layoutWidth} meter={meter} beamMeter={meter} keySignature={keySignature} barCount={barCount} tone={tone} ink={ink} />
+      </View>
     </View>
   );
 
@@ -147,35 +137,32 @@ export const StaffPreview = memo(function StaffPreview({ midis = [], harmonic = 
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="点击五线谱写入音符"
-      onPress={(event) => onPressY(resolvePressY(event, compact ? COMPACT_STAFF_HEIGHT : ANSWER_STAFF_HEIGHT))}>
+      onPress={(event) => onPressY(resolvePressY(event, ANSWER_STAFF_HEIGHT))}>
       {staff}
     </Pressable>
   );
 });
 
 const styles = StyleSheet.create({
+  /** 小程序 .answer-staff-shell：140rpx / 1rpx 描边 / 12rpx 圆角 */
   container: {
-    height: 122,
+    height: ANSWER_STAFF_HEIGHT,
     overflow: 'hidden',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#D5DBE0',
+    borderRadius: STAFF_SHELL_RADIUS,
+    borderWidth: STAFF_SHELL_BORDER * RPX_TO_PT,
+    borderColor: '#D9DDE8',
     backgroundColor: '#FFFFFF',
   },
   inkContainer: { borderColor: '#141414' },
-  compact: { height: COMPACT_STAFF_HEIGHT },
-  clef: {
-    position: 'absolute',
-    left: 6,
-    top: STAFF_MIDDLE_LINE_Y * ANSWER_STAFF_HEIGHT / 96 - 101 / 2,
-    width: 40,
-    height: 101,
-  },
-  compactClef: { top: STAFF_MIDDLE_LINE_Y * COMPACT_STAFF_HEIGHT / 96 - 76 / 2, width: 30, height: 76 },
+  touchArea: { height: ANSWER_STAFF_HEIGHT, borderRadius: STAFF_SHELL_RADIUS, overflow: 'hidden' },
   accidentalWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  accidentalButton: { minWidth: TouchTarget, minHeight: TouchTarget, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: Brand.border, backgroundColor: Brand.ivory },
+  /**
+   * 小程序只有谱面上的浮层菜单（.accidental-choice 46 × 34rpx，纯字形），
+   * 没有这种带文字的独立选择行 —— 就近取练习页 .choice-pill 的文字芯片盒。
+   */
+  accidentalButton: { ...Btn.practice.choicePill, alignItems: 'center', justifyContent: 'center', backgroundColor: Brand.ivory, borderColor: Brand.border },
   accidentalActive: { borderColor: Brand.forest, backgroundColor: Brand.forest },
   accidentalDisabled: { opacity: 0.45 },
-  accidentalText: { color: Brand.muted, fontSize: TypeScale.caption, fontWeight: '700' },
+  accidentalText: { color: Brand.muted, fontSize: Btn.practice.choicePill.fontSize, fontWeight: '700' },
   accidentalTextActive: { color: Brand.textOnAccent },
 });

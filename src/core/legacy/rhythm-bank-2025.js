@@ -74,6 +74,20 @@ const ENCODED_RHYTHM_BANK = [
 '3/8|dse/sdss~/eee~/esse/eds/eq',
 '3/4|sessse~ee/eqeee/sessssssse~/seseeq/rseseeds/sdh',
 '2/4|ssqe/eqe~/essds/sesess/reessss/h',
+// —— 2024-2025 各省统考真题第 5/6 题（节奏听记），由 omr-score-to-code 提取 ——
+// 入库判据：修正分 0.00、小节精确闭合、谱号正确、引擎小节数等于拟合小节数、每条 6 小节。
+'2/4|ae/eesse/eqe/ds~sse/sesssss/tttq',
+'2/4|eqe/ssssds/sserses/ass/tttree/essq',
+'2/4|sesee/ass/eersse/dsttt/essree/ssssq',
+'2/4|essee/ss~eds/ass/sss~sses/tttsd/h',
+'2/4|ass/sesee/dsee/eesd/essee/dsq',
+'3/4|asssse~/dsessq/ssqesse/ss~sseeq/sestttee/w3',
+'2/4|ass/dsree/ssqe/rqsse/tttee/ssa',
+'3/4|aeee/dssesree/ssssresssse/assq/ttteeress/essrssssq',
+'2/4|dsses/ssssree/eqe/sseq/ass/tttq',
+'3/4|eeeqe/essrssssee/aesse/sesreeq/dsesssd/eersseq',
+'6/8|eeeqe/essea/eeedse/eeeeq/essedse/sseea',
+'3/4|aeq/esseeds/eqqe/qsesee/tttqq/essqsd',
 ];
 
 function decodeEvent(encoded) {
@@ -85,6 +99,23 @@ function decodeEvent(encoded) {
   return { duration: DURATION_BY_TOKEN[token], rest, tieToNext };
 }
 
+// 省级统考真题的来源标注，下标从 60 起（对应 ENCODED_RHYTHM_BANK 的第 61 条起）。
+// 题号按各省卷面实际题号：山东是第六题，其余省份是第五题。
+const PROVINCE_SOURCE_METADATA = [
+  { sourceProvince: '山东', sourceYear: 2024, sourceQuestion: 6, sourceItem: 1, sourceLabel: '2024年山东练耳真题第6题（1）' },
+  { sourceProvince: '山东', sourceYear: 2025, sourceQuestion: 6, sourceItem: 1, sourceLabel: '2025年山东练耳真题第6题（1）' },
+  { sourceProvince: '广西', sourceYear: 2025, sourceQuestion: 5, sourceItem: 1, sourceLabel: '2025年广西练耳真题第5题（1）' },
+  { sourceProvince: '江西', sourceYear: 2024, sourceQuestion: 6, sourceItem: 1, sourceLabel: '2024年江西练耳真题第6题（1）' },
+  { sourceProvince: '湖北', sourceYear: 2025, sourceQuestion: 5, sourceItem: 1, sourceLabel: '2025年湖北练耳真题第5题（1）' },
+  { sourceProvince: '湖南', sourceYear: 2024, sourceQuestion: 5, sourceItem: 1, sourceLabel: '2024年湖南练耳真题第5题（1）' },
+  { sourceProvince: '甘肃', sourceYear: 2024, sourceQuestion: 5, sourceItem: 1, sourceLabel: '2024年甘肃练耳真题第5题（1）' },
+  { sourceProvince: '甘肃', sourceYear: 2024, sourceQuestion: 5, sourceItem: 2, sourceLabel: '2024年甘肃练耳真题第5题（2）' },
+  { sourceProvince: '甘肃', sourceYear: 2025, sourceQuestion: 5, sourceItem: 1, sourceLabel: '2025年甘肃练耳真题第5题（1）' },
+  { sourceProvince: '甘肃', sourceYear: 2025, sourceQuestion: 5, sourceItem: 2, sourceLabel: '2025年甘肃练耳真题第5题（2）' },
+  { sourceProvince: '重庆', sourceYear: 2025, sourceQuestion: 5, sourceItem: 1, sourceLabel: '2025年重庆练耳真题第5题（1）' },
+  { sourceProvince: '黑龙江', sourceYear: 2025, sourceQuestion: 5, sourceItem: 2, sourceLabel: '2025年黑龙江练耳真题第5题（2）' },
+];
+
 function decodeRecord(encoded, index) {
   const separator = encoded.indexOf('|');
   const meter = encoded.slice(0, separator);
@@ -94,6 +125,7 @@ function decodeRecord(encoded, index) {
   return {
     id: `paper-${String(index + 1).padStart(2, '0')}`,
     sourcePaper: index + 1,
+    ...(PROVINCE_SOURCE_METADATA[index - 60] || {}),
     meter,
     bars,
   };
